@@ -3,8 +3,8 @@ import { Icon } from './icons';
 import { useAuth } from './auth/context';
 import { matchCities, savePlace, useCities, type City } from './api/profile';
 import { hasToken } from './api/client';
-import { confirmCode, finishRound, me, sendCode, sendMove, startRound } from './api/consumer';
-import { ApiError } from './api/client';
+import { finishRound, sendMove, startRound } from './api/consumer';
+import { EmailCodeStep, useEmailCodeGate } from './EmailCodeStep';
 import { GAMES } from './content';
 import { PROFILE_BONUS, WELCOME_POINTS } from './auth/users';
 
@@ -184,118 +184,6 @@ function Steps({ at }: { at: number }) {
       </div>
       <span className="onb-count">{fill(copy.step, { n: String(at + 1), total: '4' })}</span>
     </div>
-  );
-}
-
-/* ───────────────────────────────────────────────────────────── step zero ── */
-
-/**
- * "Check your inbox" — the six-digit code, asked for before the welcome round.
- *
- * Sign-up has already sent the code, so the first thing a new account sees is
- * the box to type it into, while the email is the newest thing in their inbox.
- * `VerifyEmail` still exists for everybody who leaves this for later: it is the
- * panel on Play and the wallet, and spending stays gated by the server either
- * way, so "later" is honest — nothing is skipped, only deferred.
- *
- * Shown only when the server says so (`emailVerificationRequired` and no
- * stamp) — never for a Google account, which arrives proved, nor on a server
- * with no mail configured, where a code is something nobody could receive.
- */
-function EmailCodeStep({ onDone }: { onDone: () => void }) {
-  const copy = useCopy().auth.verify;
-  const { account, refreshAccount } = useAuth();
-  const [code, setCode] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<{ kind: 'error' | 'status'; text: string } | null>(null);
-
-  const explain = (cause: unknown): string => {
-    if (cause instanceof ApiError && cause.status === 0) return copy.offline;
-    const left = cause instanceof ApiError ? cause.detail.attemptsLeft : undefined;
-    if (typeof left === 'number') return fill(copy.wrongWithTries, { n: String(left) });
-    return cause instanceof ApiError ? cause.message : copy.failed;
-  };
-
-  const digits = code.replace(/\D/g, '');
-
-  const submit = () => {
-    if (busy || digits.length !== 6) return;
-    setBusy(true);
-    setNote(null);
-    confirmCode(digits)
-      .then(async () => {
-        /* The session's own stamp is what the Play and wallet panels read, so
-           it is asked for again rather than assumed. */
-        await refreshAccount();
-        onDone();
-      })
-      .catch((cause: unknown) => setNote({ kind: 'error', text: explain(cause) }))
-      .finally(() => setBusy(false));
-  };
-
-  const resend = () => {
-    if (busy) return;
-    setBusy(true);
-    setNote(null);
-    sendCode()
-      .then((sent) => setNote({ kind: 'status', text: sent.sent ? copy.onItsWay : copy.tooSoon }))
-      .catch((cause: unknown) => setNote({ kind: 'error', text: explain(cause) }))
-      .finally(() => setBusy(false));
-  };
-
-  return (
-    <form
-      className="onb-verify"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-      noValidate
-    >
-      <span className="onb-kicker">
-        <Icon name="lock" size={13} strokeWidth={2} /> {copy.kicker}
-      </span>
-      <h1 className="onb-title">{copy.title}</h1>
-      <p className="onb-lede">
-        {copy.lede}
-        {account?.email ? <b> {account.email}</b> : null}
-      </p>
-
-      <label className="field onb-code">
-        <span className="field-label">{copy.codeLabel}</span>
-        <input
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={8}
-          placeholder={copy.codePlaceholder}
-          value={code}
-          autoFocus
-          onChange={(event) => {
-            setCode(event.target.value);
-            if (note?.kind === 'error') setNote(null);
-          }}
-          aria-invalid={note?.kind === 'error' ? true : undefined}
-        />
-      </label>
-
-      {note && (
-        <p className={note.kind === 'error' ? 'field-error' : 'field-help'} role={note.kind === 'error' ? 'alert' : 'status'}>
-          {note.text}
-        </p>
-      )}
-
-      <div className="onb-actions">
-        <button type="submit" className="btn btn-solid btn-lg" disabled={busy || digits.length !== 6}>
-          {busy ? copy.working : copy.confirm}
-        </button>
-        <button type="button" className="link-btn" onClick={resend} disabled={busy}>
-          {copy.resend}
-        </button>
-        <button type="button" className="link-btn" onClick={onDone} disabled={busy}>
-          {copy.later}
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -1258,30 +1146,8 @@ export function OnboardingPage() {
   const field = useSpotlight<HTMLElement>();
   const [step, setStep] = useState<Step>('lang');
   const [earned, setEarned] = useState(0);
-  /*
-   * Whether the code step comes first. Asked of the server directly rather
-   * than read off the session, because the session's copy arrives on its own
-   * schedule and a gate decided before it lands would flash the language step
-   * and then jump. No token (the offline path) or no answer means no step:
-   * a code nobody could check is not worth holding somebody at.
-   */
-  const [gate, setGate] = useState<'checking' | 'code' | 'open'>(() => (hasToken() ? 'checking' : 'open'));
-  useEffect(() => {
-    if (gate !== 'checking') return;
-    let live = true;
-    const giveUp = window.setTimeout(() => live && setGate('open'), 5000);
-    me()
-      .then((answer) => {
-        if (!live) return;
-        setGate(answer.user.emailVerificationRequired === true && answer.user.emailVerifiedAt === null ? 'code' : 'open');
-      })
-      .catch(() => live && setGate('open'))
-      .finally(() => window.clearTimeout(giveUp));
-    return () => {
-      live = false;
-      window.clearTimeout(giveUp);
-    };
-  }, [gate]);
+  /* The email code comes first — see `EmailCodeStep.tsx`. */
+  const [gate, openGate] = useEmailCodeGate();
 
   const finish = useCallback(() => void finishOnboarding(earned), [finishOnboarding, earned]);
   /* The same call with a destination on it. Not `finish()` followed by a
@@ -1313,7 +1179,7 @@ export function OnboardingPage() {
         <span className="brand">paylez</span>
 
         {gate === 'checking' ? null : gate === 'code' ? (
-          <EmailCodeStep onDone={() => setGate('open')} />
+          <EmailCodeStep onDone={openGate} />
         ) : step === 'lang' ? (
           <LanguageStep onNext={() => setStep('place')} />
         ) : step === 'place' ? (

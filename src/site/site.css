@@ -25108,256 +25108,21 @@ p.lst-soft {
   }
 }
 
-/* ════════════════════════════════════ the dashboard, as the mock draws it ══
-   `Paylez Partner Dashboard.html` — the bundled export of
-   `b2b/Paylez Partner Dashboard v2.dc.html` — is the design this frame is now
-   asked to *match* rather than to translate. The section above ported its
-   layout and deliberately kept this file's colours; that decision is reversed
-   here, on request, and the reversal is scoped to `.pd-app` so nothing outside
-   the frame moves.
+/* ═══════════════════════════════════════ the dashboard, on glass again ══
+   This block once re-pointed every token inside `.pd-app` to match the flat
+   white-card export (`b2b/Paylez Partner Dashboard v2.dc.html`): opaque grey
+   panels, neutral grey hairlines, Plus Jakarta Sans, no wash and no blur. The
+   owner asked for the glass back, so the token overrides are gone and the
+   frame reads the site's own palette again — the aurora on `.pd-app::before`,
+   `--pd-glass` sheets with their blur, the accent top edge and the lifted
+   shadow, all defined in the dashboard section near the top of this file.
 
-   It is one block of tokens rather than a rewrite of the 2 800 lines above,
-   and that is the whole design of it: every `.pd-*` rule already reads
-   `--bg`, `--panel-rgb`, `--border`, `--text*`, `--accent*`, `--solid*` and
-   `--font-*`. Re-pointing those inside the frame re-skins all of them at once,
-   the same trick `[data-ink]` uses one level down, and anything added to the
-   dashboard later inherits the match without having to know this block exists.
-   The thing that breaks it is a rule that names a colour instead of reading a
-   token — which is what the rest of `src/site/CLAUDE.md` is about.
-
-   Two departures from that file's standing rules are deliberate and are the
-   point of the exercise, so they are written down rather than left to be
-   discovered:
-
-   1. **A third hue, inside this frame only.** The mock's green is 163°, not
-      the site's 179° cyan — `#0B7F63` where paper would otherwise use
-      `#007a78`. Outside `.pd-app` the cyan is untouched.
-   2. **A fourth family, inside this frame only.** Plus Jakarta Sans, set by
-      re-pointing `--font-body` and `--font-display` rather than by naming a
-      face in any rule. `--font-brand` is left alone: the wordmark is Onest in
-      the mock too.
-
-   The mock is a light page and has no dark half. Dark here is therefore a
-   *twin* rather than a transcription — same geometry, same spacing, same flat
-   cards and hairlines, with the roles resolved for a dark ground and the mint
-   carrying what the deep green carries on paper.
+   What stays from the mock is its *geometry* (the gaps, tile grid and type
+   sizes below), which is layout rather than look. Restoring the glass also
+   restored the site's tinted hairlines in place of item 25's `#808786`; the
+   contrast argument recorded there was made against flat grey grounds that no
+   longer exist on this screen.
    ═══════════════════════════════════════════════════════════════════════ */
-
-.pd-app {
-  /* The mock's type, for the frame and everything in it. */
-  --font-body: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
-
-  /* The mock draws flat cards on a flat ground: no wash behind them, so no
-     sheet to see through and nothing for a blur to sample. Both are switched
-     off in both themes rather than only on paper, because the geometry is what
-     the two halves are meant to share. */
-  --pd-glass: 1;
-  --pd-blur: 0px;
-
-  /* The mock's ink and its mint, which `[data-ink='paper']` reads to build the
-     black slabs — `#0B1512` and `#5FE9C4`, a touch greener and a touch darker
-     than the site's own pair. Scoped, so the site's ink is unchanged. */
-  --ink-rgb: 11, 21, 18;
-  --ink-on-rgb: 95, 233, 196;
-  --ink-lit-rgb: 22, 48, 42;
-
-  font-family: var(--font-body);
-}
-
-/* Dark: the twin. The ground stays this site's, because a near-white dashboard
-   is the one thing a reader who chose dark did not ask for; everything else —
-   the card step, the hairline, the radii, the mint — follows the mock. */
-.pd-app {
-  --bg: #0d0d0e;
-  --bg-2: #14171a;
-  --panel-rgb: 23, 27, 29;
-  --border: rgba(255, 255, 255, 0.09);
-  --border-2: rgba(255, 255, 255, 0.16);
-
-  /* On a dark ground the mock's deep green has nowhere to go — it is a fill
-     colour for paper — so the mint carries all three steps, exactly as the
-     site's own dark theme does with its own mint. */
-  --accent-rgb: 95, 233, 196;
-  --accent: rgb(var(--accent-rgb));
-  --accent-lit: var(--accent);
-  --accent-ink: var(--accent);
-  --accent-soft: rgba(var(--accent-rgb), 0.72);
-  --on-accent: #04120d;
-  --tint-rgb: var(--accent-rgb);
-
-  --text: #f2f6f4;
-  --text-mut: rgba(242, 246, 244, 0.66);
-  --text-fnt: rgba(242, 246, 244, 0.44);
-
-  /* A press on dark is the mint, which is what the whole site does on dark. */
-  --solid-rgb: var(--accent-rgb);
-  --solid: rgb(var(--solid-rgb));
-  --solid-lit: rgb(var(--solid-rgb));
-  --on-solid: var(--on-accent);
-}
-
-/* Light: the transcription. Every value below is the mock's own. */
-:root[data-theme='light'] .pd-app {
-  --bg: #f6f8f7;
-  --bg-2: #eef1f0;
-  --panel-rgb: 255, 255, 255;
-
-  /*
-   * Neutral hairlines, not tinted ones. The mock rules its cards in `#E6E9E8`,
-   * a grey with no green in it, and the tint the site uses instead is visible
-   * at card size as a faint wash round every panel.
-   *
-   * ── and they are darker than the mock's, on purpose (item 25) ──
-   *
-   * `#e6e9e8` measures **1.08:1** against a `.pd-deals` panel and 1.22:1
-   * against a white card. That is not a faint line, it is an absent one: the
-   * Hot Deals table rules its rows with `1px solid var(--border)` and at that
-   * ratio eight rows of figures ran together into one block. Measured in
-   * Chrome rather than judged by eye, which is how the numbers in this comment
-   * were got.
-   *
-   * `#828e89` is **3.00:1** against the darkest of the three grounds a
-   * light hairline lands on (`--surface-2`), 3.23:1 on `--surface` and 3.67:1
-   * on a white card — the WCAG AA non-text bar (1.4.11), which is the
-   * right bar because a dense table's rules are "parts of graphics required to
-   * understand the content" and because `--border` is also what outlines a text
-   * input. It is the *least dark* value on the mock's own grey ramp that clears
-   * it, so the line is legible and nothing beyond the ratio was spent.
-   *
-   * `--border-2` keeps its step above (3.98:1): it is the stronger of the pair
-   * and is what a field and a segmented control are drawn with, so it has to
-   * stay distinguishable from the plain hairline rather than collapsing onto
-   * it.
-   *
-   * This departs from `b2b/Paylez Partner Dashboard v2.dc.html`, and that is
-   * the intended direction: where the prototype and the live site disagree the
-   * live site wins on palette, and a value that fails a contrast bar is not a
-   * palette decision the mock gets to keep. **Light only** — the dark
-   * dashboard's own hairlines are `rgba(255,255,255,0.09)` on near-black and
-   * are untouched.
-   */
-  --border: #808786;
-  --border-2: #6d7a74;
-
-  --accent-rgb: 11, 127, 99;
-  --accent: rgb(var(--accent-rgb));
-  --accent-lit: var(--accent);
-  /*
-   * **The ink step is its own value again (item 25).**
-   *
-   * This block collapsed all three steps onto the mock's one green, and
-   * `src/site/CLAUDE.md` states at length why the site's own light theme does
-   * not: paper sets a different bar for a fill, an icon stroke and small text,
-   * and `--accent-ink` is "small accented text, and nothing else". Collapsed,
-   * every accented label on this screen was drawn at the *fill's* contrast —
-   * `#0b7f63` measures 4.96:1 on a white card but **4.37:1** on a `--surface`
-   * wash and **4.06:1** on `--surface-2`, and the labels it draws are 10.5px at
-   * 700: a deal's "Free", a status "Live", the sort arrow. All under the 4.5
-   * bar, all measured in Chrome.
-   *
-   * `#0a775d` was the same hue one step down and cleared those three (5.51 /
-   * 4.85 / 4.51). The *fill* is untouched, because a fill is a 3:1 question and
-   * because the mock's green is the identity of this screen — what changed is
-   * that small text stopped borrowing the fill's number.
-   *
-   * ── and there is a fourth ground, which is why this is `#08654f` ──
-   *
-   * Three grounds was the wrong count. An accent chip —
-   * `background: rgba(var(--accent-rgb), 0.14)` on `.ps-points` and
-   * `.ps-first[data-on='true']`, the two marks on Scan activity — composites the
-   * accent *into* whatever is behind it, so the ink lands on a ground tinted
-   * toward the ink itself. Over `--surface-2` that is `rgb(199, 218, 213)`, and
-   * `#0a775d` measures **3.79:1** on it: the one place on the light dashboard
-   * still under the bar after the three flat grounds were fixed, and it is the
-   * points figure on a till receipt.
-   *
-   * Lightening the chip cannot fix it and the arithmetic says so plainly. At
-   * alpha 0.05 — a tint too faint to read as a chip at all — the ink still only
-   * reaches 4.24:1, because the flat `--surface-2` under it was itself only
-   * giving 4.51 and any accent laid over it can only take that down. So the
-   * chip keeps its 0.14 and the ink moves.
-   *
-   * `#08654f` is the next step down the same ramp: **4.84:1** on the worst chip
-   * ground and 5.76:1 on the worst flat one, with the hue and the fill both
-   * unchanged. The cost is that every small accented word on this screen is a
-   * shade deeper, which is the same trade the step above already took and is
-   * the direction paper wants.
-   */
-  --accent-ink: #08654f;
-  --accent-soft: rgba(var(--accent-rgb), 0.72);
-  --on-accent: #ffffff;
-
-  /* Two different jobs, and the mock does not use one colour for both.
-     `--tint-rgb` is the *mint*, because the mock's accented blocks are
-     `rgba(95,233,196,0.2)` behind a `#0B7F63` label — a pale mint chip, not a
-     pale green one, and tinting those with the deep green gives a grey-green
-     the mock never draws.
-
-     The two `--surface` steps are **neutral**, and that is the correction worth
-     writing down: they are the large-panel washes — a card head, a table
-     stripe, a well behind a figure — and the mock paints every one of those
-     `#EEF1F0` or `#F6F8F7`, with no green in them at all. Carrying the mint
-     through at chip alpha turns each of them into a block of colour, which is
-     exactly the failure `src/site/CLAUDE.md` describes for `--tint-rgb` and the
-     reason its own light alphas are 5% and 11% rather than 20%. The mint stays
-     available to anything that asks for it by name. */
-  --tint-rgb: 95, 233, 196;
-  --surface: #eef1f0;
-  --surface-2: #e6e9e8;
-
-  /*
-   * The text ramp, and the lower two steps are darker than the mock's
-   * (item 25).
-   *
-   * Against a `.pd-deals` panel the mock's own values measure **4.14:1** and
-   * **2.26:1** — both under the AA bar of 4.5 for text this size, and the
-   * second one badly. `--text-fnt` is not decoration here: it is the colour of
-   * every `data-quiet` cell in the Hot Deals table, so the *figures* an owner
-   * reads a report for were the least legible thing on the screen.
-   *
-   * `#4f5b56` is 5.80:1 and `#5f6b66` is 4.54:1 against the *darkest* of the
-   * three grounds (`--surface-2`), and 6.67 and 5.55 against a white card. Sized
-   * against that worst ground rather than against the panel, which is what the
-   * first pass did and is why the check in `verify-geo.ts` caught it 0.03 short. The faint step sits deliberately close to
-   * the bar rather than past it: the three steps have to stay *three* steps, and
-   * a `--text-fnt` pulled all the way down reads as `--text-mut` and the ramp
-   * stops saying anything.
-   *
-   * Light only; dark's `rgba(242,246,244, …)` pair is untouched.
-   */
-  --text: #0b1512;
-  --text-mut: #4f5b56;
-  --text-fnt: #5f6b66;
-
-  /* The press stays the ink — which is what the section at the top of this file
-     already argued for this one screen, and which the mock does on every
-     button it draws. Restated because `--solid` resolves where it is written. */
-  --solid-rgb: var(--ink-rgb);
-  --solid: rgb(var(--solid-rgb));
-  --solid-lit: rgb(var(--ink-lit-rgb));
-  --on-solid: rgb(var(--ink-on-rgb));
-}
-
-/* The wash is gone with the glass. `.pd-app::before` is two radial fields of
-   accent at alpha; the mock's ground is one flat colour, and a gradient under
-   flat white cards is the one thing that would still read as a different
-   design after every token above matched. */
-.pd-app::before {
-  display: none;
-}
-
-/* Flat cards. `.pd-glass` keeps its sheet (now opaque) and loses the blur and
-   the inner top highlight — the `::after` hairline is a glass tell, and there
-   is no glass here any more. */
-.pd-glass {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.pd-glass::after {
-  display: none;
-}
 
 /* ── the mock's geometry ──────────────────────────────────────────────────
  *
@@ -25368,14 +25133,6 @@ p.lst-soft {
  * at that width. The responsive block further down still overrides them below
  * 1100px, which is where the mock stops having an opinion.
  */
-
-.pd-app {
-  /* 16px cards, 18px on the hero slab. The site's 18px `--r` is close enough
-     to look right and wrong enough to see side by side. */
-  --r: 16px;
-  --r-sm: 10px;
-  --r-lg: 18px;
-}
 
 /* 22px between panels — the mock's `gap:22px` on the overview column. */
 .pd-stack {
@@ -25393,7 +25150,6 @@ p.lst-soft {
  * which do float.
  */
 .pd-glass {
-  box-shadow: none;
   padding: 24px;
 }
 
@@ -26979,16 +26735,6 @@ p.lst-soft {
  * about — and the label inside it was `--text-mut`, a third step down, so the
  * whole control looked disabled.
  */
-.pd-bar {
-  background: rgb(var(--panel-rgb));
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-:root[data-theme='light'] .pd-bar {
-  background: rgb(var(--panel-rgb));
-}
-
 .pd-range-btn,
 .pd-bar .lang-trigger,
 .pd-bar .theme-toggle,

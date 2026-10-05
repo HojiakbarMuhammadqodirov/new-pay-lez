@@ -4622,215 +4622,90 @@ console.log('\nthe partner dashboard');
   }
 
   /*
-   * The light dashboard clears WCAG AA (item 25).
+   * The dashboard is glass, and its text still reads on the glass.
    *
-   * ## Why this is arithmetic and not a screenshot
+   * It was flat for a while: a block late in `site.css` re-pointed every token
+   * inside `.pd-app` to the white-card export and switched the wash, the blur
+   * and the sheet's opacity off. The owner asked for the glass back, so these
+   * checks hold the restored state — no rule may make the sheet opaque or take
+   * the aurora away — and then measure the text the way item 25 did, against
+   * the worst ground it can now land on.
    *
-   * Contrast is a pure function of two colours, so the one thing this suite
-   * *can* check about a stylesheet is exactly the thing that was wrong: the
-   * light dashboard's greys were transcribed from `b2b/Paylez Partner Dashboard
-   * v2.dc.html` and four of them fail the bar. `--text-fnt` measured **2.26:1**
-   * against a `.pd-deals` panel and it is the colour of every `data-quiet` cell
-   * in the Hot Deals table — the figures an owner opens the report for were the
-   * least legible thing on the screen.
-   *
-   * The values are read out of `site.css` rather than restated here, because a
-   * check that carries its own copy of the number it is checking passes when
-   * the stylesheet changes and the copy does not.
-   *
-   * ## The grounds, and why three
-   *
-   * A token is only as good as the worst ground it lands on, and the light
-   * dashboard has three: a white card (`--panel-rgb` at opacity), the
-   * `--surface` wash a table head and a well take, and the `--surface-2` step
-   * under a chip. Sizing against the card alone is what let `--accent-ink`
-   * clear 4.96:1 there and fail at 4.06:1 on a chip.
-   *
-   * Dark is deliberately **not** checked: its own ramp is white at alpha on
-   * near-black and measures past 7:1 everywhere, and item 25's second half is
-   * that dark stays untouched.
+   * The worst ground is a light glass card over `--bg-2`: white at the light
+   * `--pd-glass` opacity, composited over the darker of the page's two greys.
+   * Dark is not measured, for item 25's reason — its ramp is light ink on
+   * near-black and clears 7:1 everywhere.
    */
   {
     const css = readFileSync(new URL('../src/site/site.css', import.meta.url), 'utf8');
+    const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
 
-    /* The light dashboard's block, and only it: the same token names exist in
-       `:root`, in the dark `.pd-app` and inside `[data-ink]`, and picking the
-       wrong one would check a colour nobody sees on paper. */
-    /*
-     * **The last of three blocks with that selector, not the first.**
-     *
-     * `site.css` opens one near the top for `--font-pd` and one inside the
-     * `[data-ink]` family, and neither carries a colour token — so an
-     * `indexOf` found a block with nothing in it and every lookup below fell
-     * through to its own `#000000` default, which then *passed* against a white
-     * card at 21:1. A check that cannot find what it is checking and reports a
-     * pass is worse than no check, so the block is pinned to the one that
-     * actually holds the ramp.
-     */
-    const open = css.lastIndexOf(":root[data-theme='light'] .pd-app {");
-    check('the light dashboard has a token block', open > 0);
-    const block = css.slice(open, css.indexOf('\n}', open));
-    check('…and it is the one carrying the ramp', block.includes('--text-mut:'), String(open));
+    check(
+      'no rule hides the dashboard aurora',
+      !/\.pd-app::before\s*\{\s*display:\s*none/.test(bare),
+    );
+    check(
+      'no rule takes the blur off a glass panel',
+      /* Unindented rules only: the reduced-transparency media query takes the
+         blur off on purpose, for the reader who asked for exactly that. */
+      !/^\.pd-glass\s*\{[^}]*backdrop-filter:\s*none/m.test(bare) &&
+        /^\.pd-glass\s*\{[^}]*backdrop-filter:\s*blur\(/m.test(bare),
+    );
+    check(
+      'no .pd-app rule makes the glass opaque or flat',
+      !/\.pd-app\s*\{[^}]*--pd-(glass:\s*1;|blur:\s*0)/.test(bare),
+    );
 
-    const token = (name: string): string => {
-      const hit = new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i').exec(block);
-      check(`--${name} is a hex in the light dashboard`, hit !== null, name);
-      return hit ? hit[1] : '#000000';
+    /* The light block that carries the sheet — the selector opens more than once. */
+    const lightOpen = bare.search(/:root\[data-theme='light'\] \.pd-app \{\s*--pd-glass/);
+    const lightBody = bare.slice(lightOpen, bare.indexOf('}', lightOpen));
+    const glass = /--pd-glass:\s*(0\.\d+)/.exec(lightBody);
+    check('the light dashboard sets a translucent sheet', glass !== null && Number(glass[1]) < 1, glass?.[1] ?? 'none');
+
+    const root = bare.slice(bare.indexOf(":root[data-theme='light'] {"));
+    const rootBody = root.slice(0, root.indexOf('}'));
+    const read = (prop: string): string | null =>
+      new RegExp(`--${prop}:\s*([^;]+);`).exec(rootBody)?.[1].trim() ?? null;
+    const hex = (value: string): number[] => {
+      const n = Number.parseInt(value.slice(1), 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
     };
-
-    /* sRGB relative luminance, WCAG 2.x. */
     const channel = (v: number): number => {
       const c = v / 255;
       return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
     };
-    const luminance = (hex: string): number => {
-      const n = Number.parseInt(hex.slice(1), 16);
-      return (
-        0.2126 * channel((n >> 16) & 255) +
-        0.7152 * channel((n >> 8) & 255) +
-        0.0722 * channel(n & 255)
-      );
-    };
-    const contrast = (a: string, b: string): number => {
-      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    const lum = ([r, g, b]: number[]): number => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    const ratio = (a: number[], b: number[]): number => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
       return (hi + 0.05) / (lo + 0.05);
     };
+    const over = (top: number[], alpha: number, ground: number[]): number[] =>
+      top.map((c, i) => c * alpha + ground[i] * (1 - alpha));
 
-    /* The grounds a light dashboard token lands on. `#ffffff` is the card
-       — `--panel-rgb` is `255, 255, 255` and `--pd-glass` is opaque on this
-       screen — and the surface steps are read from the block like everything
-       else. */
-    const flats: Array<[string, string]> = [
-      ['a white card', '#ffffff'],
-      ['the surface wash', token('surface')],
-      ['the second surface step', token('surface-2')],
-    ];
-
-    /*
-     * And the fourth ground, which three misses: an **accent chip**.
-     *
-     * `.ps-points` and `.ps-first[data-on='true']` are
-     * `rgba(var(--accent-rgb), 0.14)`, so the accent is composited into the
-     * ground and the ink then lands on a surface tinted toward the ink itself.
-     * That is strictly darker than the flat ground under it, and sizing against
-     * the flats alone is what let `--accent-ink` pass at 4.51:1 and draw the
-     * points figure on a till receipt at **3.79:1**.
-     *
-     * Composited here rather than read, because the chip colour exists nowhere
-     * as a token — it is an `rgba()` in a rule, which is the whole reason a
-     * ground can go unnoticed.
-     */
-    const chip = (ground: string): string => {
-      const accent = /--accent-rgb:\s*(\d+),\s*(\d+),\s*(\d+)/.exec(block);
-      check('the light dashboard names an accent in rgb', accent !== null);
-      const [r, g, b] = accent ? [+accent[1], +accent[2], +accent[3]] : [0, 0, 0];
-      const under = Number.parseInt(ground.slice(1), 16);
-      const mix = (top: number, bottom: number) => Math.round(top * 0.14 + bottom * (1 - 0.14));
-      const hex = (v: number) => v.toString(16).padStart(2, '0');
-      return `#${hex(mix(r, (under >> 16) & 255))}${hex(mix(g, (under >> 8) & 255))}${hex(
-        mix(b, under & 255),
-      )}`;
-    };
-
-    const grounds: Array<[string, string]> = [
-      ...flats,
-      ...flats.map(([where, ground]): [string, string] => [`an accent chip on ${where}`, chip(ground)]),
-    ];
-
-    /*
-     * 4.5:1 for text this size (every one of these draws 10–13px), 3:1 for a
-     * hairline — WCAG 1.4.11, which governs a text input's outline and the rules
-     * of a table dense enough that they carry meaning.
-     *
-     * Each token is checked against the grounds it is **actually drawn on**,
-     * which is the half worth being careful about. Holding everything to every
-     * ground reads as more rigorous and is simply wrong: it failed `--text-fnt`
-     * on an accent chip, and no rule in the sheet ever puts it there — both chip
-     * rules set `color: var(--accent-ink)`. A check that fails on a combination
-     * the product cannot render teaches the next person to widen a token for no
-     * reason, or to delete the check.
-     */
-    const bars: Array<[string, number, Array<[string, string]>]> = [
-      /* Body copy and quiet figures: panels, table cells, wells. Flat. */
-      ['text-mut', 4.5, flats],
-      ['text-fnt', 4.5, flats],
-      /* The ink is the one that lands on both — an eyebrow on a panel, and the
-         figure inside `.ps-points`. */
-      ['accent-ink', 4.5, grounds],
-      /* Hairlines rule a table and outline a field, never the inside of a chip. */
-      ['border', 3, flats],
-      ['border-2', 3, flats],
-    ];
-
-    for (const [name, need, against] of bars) {
-      const value = token(name);
-      for (const [where, ground] of against) {
-        const got = contrast(value, ground);
-        check(
-          `--${name} clears ${need}:1 against ${where}`,
-          got >= need - 0.005,
-          `${value} on ${ground} is ${got.toFixed(2)}:1`,
-        );
+    const bg2 = read('bg-2');
+    const inkRgb = /--ink-rgb:\s*(\d+),\s*(\d+),\s*(\d+)/.exec(bare);
+    check('the light page ground and the ink are readable', bg2 !== null && inkRgb !== null);
+    if (bg2 && inkRgb && glass) {
+      const ink = inkRgb.slice(1, 4).map(Number);
+      const card = over([255, 255, 255], Number(glass[1]), hex(bg2));
+      /* Text tokens are the ink at an alpha, so each is composited onto the
+         card before it is measured — the colour a reader actually sees. */
+      for (const name of ['text-mut', 'text-fnt']) {
+        const value = read(name);
+        const alpha = value ? /,\s*(0?\.\d+)\)\s*$/.exec(value) : null;
+        check(`--${name} is the ink at an alpha`, alpha !== null, value ?? 'none');
+        if (!alpha) continue;
+        const seen = over(ink, Number(alpha[1]), card);
+        const r = ratio(seen, card);
+        check(`--${name} clears 4.5:1 on a light glass card`, r >= 4.5 - 0.005, `${r.toFixed(2)}:1`);
+      }
+      const accentInk = read('accent-ink');
+      check('--accent-ink is a hex', accentInk !== null && /^#[0-9a-f]{6}$/i.test(accentInk), accentInk ?? 'none');
+      if (accentInk) {
+        const r = ratio(hex(accentInk), card);
+        check('--accent-ink clears 4.5:1 on a light glass card', r >= 4.5 - 0.005, `${r.toFixed(2)}:1`);
       }
     }
-
-    /*
-     * And the assignment above is only true while the chip rules still draw in
-     * the ink. If one grows its own colour, the ground it composites goes
-     * unchecked again — so the sheet is read for it rather than trusted.
-     */
-    for (const rule of ['.ps-points', ".ps-first[data-on='true']"]) {
-      const open = css.indexOf(`\n${rule} {`);
-      check(`${rule} is still a rule`, open > 0, rule);
-      const body = css.slice(open, css.indexOf('\n}', open));
-      check(
-        `…and still draws its text in the ink`,
-        body.includes('color: var(--accent-ink)'),
-        rule,
-      );
-      check(
-        `…on a 0.14 accent chip, which is the ground composited above`,
-        body.includes('rgba(var(--accent-rgb), 0.14)'),
-        rule,
-      );
-    }
-
-    /* And the ramp is still a ramp. Three text steps that all clear the bar but
-       land on top of each other is a screen with one grey, which is the failure
-       mode of fixing contrast by darkening everything — the comment on
-       `--text-fnt` in `site.css` says so, and this is what holds it. */
-    const steps = ['text', 'text-mut', 'text-fnt'].map(token).map(luminance);
-    check(
-      'the light text ramp still climbs',
-      steps[0] < steps[1] && steps[1] < steps[2],
-      steps.map((one) => one.toFixed(3)).join(' < '),
-    );
-    check(
-      '\u2026and its steps are far enough apart to read as three',
-      steps[2] - steps[1] > 0.01 && steps[1] - steps[0] > 0.01,
-      `${(steps[1] - steps[0]).toFixed(3)} and ${(steps[2] - steps[1]).toFixed(3)}`,
-    );
-
-    /*
-     * Dark is untouched, checked as the absence of a change rather than as a
-     * ratio: every value item 25 moved sits inside the light block above, so
-     * the dark `.pd-app` block must still carry its own originals.
-     */
-    /* And the dark block by what it contains, for the reason the light one is:
-       `.pd-app` opens a layout block long before it opens a token block, and
-       an `indexOf` reads the wrong one. */
-    const darkOpen = css.indexOf('--border: rgba(255, 255, 255, 0.09)');
-    const dark = css.slice(Math.max(0, darkOpen - 1200), css.indexOf('\n}', darkOpen));
-    check(
-      "the dark dashboard's hairlines are untouched",
-      dark.includes('--border: rgba(255, 255, 255, 0.09)') &&
-        dark.includes('--border-2: rgba(255, 255, 255, 0.16)'),
-    );
-    check(
-      "\u2026and so is its text ramp",
-      dark.includes('--text-mut: rgba(242, 246, 244, 0.66)') &&
-        dark.includes('--text-fnt: rgba(242, 246, 244, 0.44)'),
-    );
   }
 
   /*

@@ -16,6 +16,7 @@ import {
   SPOKEN_LANGUAGES,
 } from './content';
 import { Icon } from './icons';
+import { EmailCodeStep, useEmailCodeGate } from './EmailCodeStep';
 import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
 import { initial, useAuth } from './auth/context';
@@ -1151,6 +1152,25 @@ function ListingEditor({
 /** The standalone route, for an owner who has just chosen their account type. */
 export function BusinessSetupPage() {
   const copy = useCopy();
+  /* An owner's first screen after sign-up, so the email code is asked for here
+     the way the welcome flow asks a player — same step, same rule. */
+  const [gate, openGate] = useEmailCodeGate();
+
+  if (gate !== 'open') {
+    return (
+      <main>
+        <section className="section auth" id="business-top">
+          <div className="wrap auth-wrap">
+            {gate === 'code' && (
+              <div className="auth-card">
+                <EmailCodeStep onDone={openGate} />
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main>
