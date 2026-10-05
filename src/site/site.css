@@ -5807,6 +5807,86 @@ button {
   color: var(--text);
 }
 
+/* ── "Get the app" (GetApp.tsx) ─────────────────────────────────────────────
+   The `.gs-*` modal, a little wider so two codes sit side by side. Each card
+   is the platform, its code, then its button under the code; on a phone the
+   code is not rendered at all and the button is the card. */
+
+.getapp-panel {
+  width: min(34rem, 100%);
+}
+
+.getapp-head {
+  padding-right: 2.6rem;
+}
+
+.getapp-head h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.25;
+}
+
+.getapp-head p {
+  margin: 0.45rem 0 0;
+  color: var(--text-mut);
+  font-size: 0.92rem;
+}
+
+.getapp-stores {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.9rem;
+  margin-top: 1.15rem;
+}
+
+.getapp-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-align: center;
+}
+
+.getapp-platform {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.getapp-qr {
+  display: block;
+  width: 100%;
+  max-width: 11rem;
+  aspect-ratio: 1;
+  border-radius: var(--r-sm);
+}
+
+.getapp-qr-soon {
+  display: grid;
+  place-items: center;
+  color: var(--text-fnt);
+  border: 1px dashed var(--border-2);
+  background: none;
+}
+
+.getapp-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.getapp-card[data-soon] .getapp-platform,
+.getapp-card[data-soon] .getapp-btn {
+  opacity: 0.6;
+}
+
+.getapp-note {
+  color: var(--text-fnt);
+  font-size: 0.82rem;
+}
+
 .gs-panel-head {
   display: flex;
   align-items: flex-start;

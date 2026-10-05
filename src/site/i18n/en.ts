@@ -3502,6 +3502,21 @@ export const en = {
     stats: ['Buys a voucher', 'Partner stores', 'Cities live'],
   },
 
+  /* The "Get the app" popup (`GetApp.tsx`). */
+  getApp: {
+    button: 'Get the app',
+    title: 'Get the paylez app',
+    lede: 'Scan a code with your phone’s camera, or tap a button on the phone itself.',
+    android: 'Android',
+    iphone: 'iPhone',
+    play: 'Get it on Google Play',
+    appStore: 'Download on the App Store',
+    soon: 'Coming soon',
+    soonNote: 'The iPhone app is on its way.',
+    qrLabel: 'QR code linking to {store}',
+    close: 'Close',
+  },
+
   proof: 'Redeem points at leading partner stores',
 
   guide: {

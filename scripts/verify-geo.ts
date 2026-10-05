@@ -8,6 +8,8 @@
  *   npm run verify
  */
 import { readFileSync } from 'node:fs';
+import { encodeQr } from '../src/site/qr';
+import { APP_STORE_URL, PLAY_STORE_URL } from '../src/site/getAppLinks';
 import { loadAtlas } from '../src/components/GlobeHero/geo/atlas';
 import { locateCountry } from '../src/components/GlobeHero/geo/locate';
 import { buildRouteGeometry } from '../src/components/GlobeHero/geo/routeGeometry';
@@ -5839,6 +5841,79 @@ console.log('\nWord Builder clues, in the reader\'s language');
       check(`…and no ${code} clue spells its answer`, leaks.length === 0, leaks.map((r) => r[0]).join(', '));
     }
   }
+}
+
+console.log('\nThe "Get the app" QR codes');
+{
+  /*
+   * A known answer. This symbol is the phone app's encoder output for
+   * "PY4821" (`test/launch_fixes_test.dart`), which OpenCV's detector decoded
+   * back alongside sixteen others from version 1 to 40. The site's port has to
+   * draw it module for module, or a visitor's camera reads a different URL.
+   */
+  const py4821 = [
+    '#######..#.##.#######',
+    '#.....#.....#.#.....#',
+    '#.###.#.#...#.#.###.#',
+    '#.###.#.##..#.#.###.#',
+    '#.###.#.#####.#.###.#',
+    '#.....#.#.#.#.#.....#',
+    '#######.#.#.#.#######',
+    '........#####........',
+    '#.#####.....#.#####..',
+    '...#.#..#...#..#...#.',
+    '##.#..#.#..#.#..####.',
+    '##.#....##.....##.#..',
+    '..#####..#.#.#..##...',
+    '........########.###.',
+    '#######..##.#.##..##.',
+    '#.....#.#######...#.#',
+    '#.###.#.#.#.#..#.#.#.',
+    '#.###.#.###.#...#....',
+    '#.###.#.#..#.#.#..#..',
+    '#.....#........##.#..',
+    '#######.#.##.#.#.#.#.',
+  ];
+  const m = encodeQr('PY4821');
+  const got = Array.from({ length: m.size }, (_, y) =>
+    Array.from({ length: m.size }, (_, x) => (m.dark(x, y) ? '#' : '.')).join(''));
+  check('the encoder draws the decoder-checked symbol, module for module',
+    got.length === py4821.length && got.every((row, i) => row === py4821[i]),
+    got.join('/'));
+  check('a version is the smallest that holds the text',
+    encodeQr('x'.repeat(180)).version === 9 && encodeQr('x'.repeat(181)).version === 10);
+  let threw = false;
+  try {
+    encodeQr('x'.repeat(2332));
+  } catch {
+    threw = true;
+  }
+  check('…and text too long for version 40 throws rather than drawing a bad symbol', threw);
+
+  /* Format bits: level M (00), the chosen mask, both copies agreeing and
+     BCH-valid — the structure a reader checks before anything else. */
+  const play = encodeQr(PLAY_STORE_URL);
+  const at = (x: number, y: number) => play.dark(x, y);
+  let first = 0;
+  for (let i = 0; i <= 5; i++) if (at(8, i)) first |= 1 << i;
+  if (at(8, 7)) first |= 1 << 6;
+  if (at(8, 8)) first |= 1 << 7;
+  if (at(7, 8)) first |= 1 << 8;
+  for (let i = 9; i < 15; i++) if (at(14 - i, 8)) first |= 1 << i;
+  let second = 0;
+  for (let i = 0; i < 8; i++) if (at(play.size - 1 - i, 8)) second |= 1 << i;
+  for (let i = 8; i < 15; i++) if (at(8, play.size - 15 + i)) second |= 1 << i;
+  const raw = first ^ 0x5412;
+  const data = raw >> 10;
+  let rem = data;
+  for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >> 9) * 0x537);
+  check('the Google Play symbol says level M and its mask, twice, BCH-valid',
+    second === first && data >> 3 === 0 && (data & 7) === play.mask && (raw & 0x3ff) === (rem & 0x3ff),
+    `v${play.version} mask ${play.mask}`);
+  check('the Google Play link is the package the app ships as',
+    PLAY_STORE_URL === 'https://play.google.com/store/apps/details?id=com.paylez.paylez');
+  check('the App Store link is either unset or an apps.apple.com URL',
+    APP_STORE_URL === null || /^https:\/\/apps\.apple\.com\//.test(APP_STORE_URL));
 }
 
 console.log(

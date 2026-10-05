@@ -2671,6 +2671,20 @@ export const uz: Dictionary = {
     stats: ['Vaucherga yetadi', "Hamkor do‘konlar", 'Faol shaharlar'],
   },
 
+  getApp: {
+    button: 'Ilovani yuklab olish',
+    title: 'paylez ilovasini yuklab oling',
+    lede: 'Kodni telefon kamerasi bilan skanerlang yoki telefonning o‘zida tugmani bosing.',
+    android: 'Android',
+    iphone: 'iPhone',
+    play: 'Google Play’dan yuklab olish',
+    appStore: 'App Store’dan yuklab olish',
+    soon: 'Tez orada',
+    soonNote: 'iPhone ilovasi tayyorlanmoqda.',
+    qrLabel: '{store} ga olib boradigan QR kod',
+    close: 'Yopish',
+  },
+
   proof: "Ballaringizni yetakchi hamkor do‘konlarda ishlating",
 
   guide: {

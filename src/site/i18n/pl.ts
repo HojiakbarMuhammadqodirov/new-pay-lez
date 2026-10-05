@@ -2672,6 +2672,20 @@ export const pl: Dictionary = {
     stats: ['Wystarczy na voucher', 'Sklepów partnerskich', 'Miast dostępnych'],
   },
 
+  getApp: {
+    button: 'Pobierz aplikację',
+    title: 'Pobierz aplikację paylez',
+    lede: 'Zeskanuj kod aparatem telefonu albo dotknij przycisku na samym telefonie.',
+    android: 'Android',
+    iphone: 'iPhone',
+    play: 'Pobierz z Google Play',
+    appStore: 'Pobierz z App Store',
+    soon: 'Wkrótce',
+    soonNote: 'Aplikacja na iPhone’a jest w drodze.',
+    qrLabel: 'Kod QR prowadzący do {store}',
+    close: 'Zamknij',
+  },
+
   proof: 'Wymieniaj punkty w czołowych sklepach partnerskich',
 
   guide: {

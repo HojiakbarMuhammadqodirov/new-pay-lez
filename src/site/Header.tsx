@@ -29,6 +29,7 @@ import { PATHS, type Route } from './router';
 import { useTheme } from './theme/context';
 import { useAuth } from './auth/context';
 import { Face } from './auth/Avatar';
+import { GetAppButton } from './GetApp';
 
 /**
  * One nav item: a glass pane that fractures around the pointer.
@@ -630,6 +631,10 @@ export function Header({ route }: { route: Route }) {
                 {copy.signIn}
               </a>
             )}
+            {/* The store popup, here too: on a phone the landing hero is not the
+                only page a visitor arrives on, and this sheet is their way
+                through the site. */}
+            <GetAppButton className="btn btn-ghost btn-lg nav-sheet-cta" />
             {/* On narrow viewports the language and theme controls live in the
                 sheet rather than inline in the header. */}
             <div className="nav-sheet-controls">

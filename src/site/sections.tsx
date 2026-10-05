@@ -30,6 +30,7 @@ import { PATHS } from './router';
 import { useSpotlight } from './pointer';
 import { usePalette } from './theme/context';
 import { lineCap } from './heroLines';
+import { GetAppButton } from './GetApp';
 
 /* ────────────────────────────────────────────────────────────────── hero ── */
 
@@ -84,6 +85,9 @@ export function Hero() {
             <a href="#features" className="btn btn-ghost btn-lg">
               {copy.hero.secondary}
             </a>
+            {/* The store popup — `GetApp.tsx`. A ghost button, so the solid
+                "Play & Earn" stays the one primary action on the hero. */}
+            <GetAppButton />
           </div>
           <div className="hero-meta" data-reveal>
             {HERO_STATS.map((stat, i) => (
@@ -858,6 +862,7 @@ export function FinalCta() {
             <a href={PATHS.relocate} className="btn btn-ghost btn-lg">
               {copy.cta.secondary}
             </a>
+            <GetAppButton />
           </div>
         </div>
       </div>

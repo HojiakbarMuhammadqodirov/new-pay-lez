@@ -2663,6 +2663,20 @@ export const ru: Dictionary = {
     stats: ['Хватит на ваучер', 'Магазинов-партнёров', 'Городов доступно'],
   },
 
+  getApp: {
+    button: 'Скачать приложение',
+    title: 'Скачайте приложение paylez',
+    lede: 'Отсканируйте код камерой телефона или нажмите кнопку прямо на телефоне.',
+    android: 'Android',
+    iphone: 'iPhone',
+    play: 'Скачать в Google Play',
+    appStore: 'Загрузить в App Store',
+    soon: 'Скоро',
+    soonNote: 'Приложение для iPhone уже в пути.',
+    qrLabel: 'QR-код со ссылкой на {store}',
+    close: 'Закрыть',
+  },
+
   proof: 'Обменивайте баллы в ведущих магазинах-партнёрах',
 
   guide: {
