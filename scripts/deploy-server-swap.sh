@@ -21,9 +21,9 @@ ssh "$HOST" "set -e
   systemctl reset-failed paylez 2>/dev/null || true
   systemctl start paylez"
 
-echo "== 4. waiting for the new server (up to 3 minutes; a first boot may re-import)"
+echo "== 4. waiting for the new server (up to 10 minutes; a boot that re-imports takes ~3)"
 healthy=no
-for i in $(seq 1 36); do
+for i in $(seq 1 120); do
   sleep 5
   if curl -sf -m 5 https://api.pay-lez.com/v1/health >/dev/null; then healthy=yes; break; fi
   restarts=$(ssh "$HOST" "systemctl show -p NRestarts --value paylez")
