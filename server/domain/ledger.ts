@@ -120,6 +120,49 @@ export async function balance(db: Db, userId: string): Promise<number> {
   return row?.total ?? 0;
 }
 
+/**
+ * Where a customer's points came from, lifetime, for the wallet's "from playing
+ * / from visiting" bar. Earned points only: a spend is not attributable to a
+ * source, so this answers "how did I earn" rather than splitting the balance.
+ *
+ * It used to be worked out on the phone as `game_win` entries in whatever page
+ * of history had loaded, with *everything else in the balance* called
+ * visiting — the welcome gift, check-ins, missions and referrals included
+ * (2026-10-05). The groups are named here, once.
+ */
+export const EARNED_GROUPS: Record<EarnReason, 'playing' | 'visiting' | 'bonuses'> = {
+  game_win: 'playing',
+  scan_earn: 'visiting',
+  spend_bonus: 'visiting',
+  venue_bonus: 'visiting',
+  stamp_complete: 'visiting',
+  review: 'visiting',
+  referral: 'bonuses',
+  welcome_bonus: 'bonuses',
+  profile_bonus: 'bonuses',
+  check_in: 'bonuses',
+  streak_milestone: 'bonuses',
+  occasion: 'bonuses',
+  stipend: 'bonuses',
+  mission: 'bonuses',
+  adjustment: 'bonuses',
+};
+
+export async function earnedBySource(
+  db: Db,
+  userId: string,
+): Promise<{ playing: number; visiting: number; bonuses: number }> {
+  const rows = await db.all<{ reason: EarnReason; total: number }>(
+    `SELECT reason, SUM(delta) AS total FROM points_ledger
+      WHERE user_id = $u AND status = 'committed' AND delta > 0
+      GROUP BY reason`,
+    { u: userId },
+  );
+  const out = { playing: 0, visiting: 0, bonuses: 0 };
+  for (const row of rows) out[EARNED_GROUPS[row.reason] ?? 'bonuses'] += Number(row.total);
+  return out;
+}
+
 /** The fast read. Equal to `balance()` or the database is broken — see `reconcile`. */
 export async function cachedBalance(db: Db, userId: string): Promise<number> {
   return (await db.get<{ points_cache: number }>(`SELECT points_cache FROM users WHERE id = $u`, {

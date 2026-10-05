@@ -45,7 +45,9 @@ export interface BootOptions {
   quiet?: boolean;
 }
 
-export async function boot(options: BootOptions = {}): Promise<{ db: Db; routes: Route[] }> {
+export async function boot(
+  options: BootOptions = {},
+): Promise<{ db: Db; routes: Route[]; reimported: boolean }> {
   const file = options.file ?? CONFIG.server.database;
 
   /*
@@ -199,10 +201,10 @@ export async function boot(options: BootOptions = {}): Promise<{ db: Db; routes:
       })`,
     ))?.n ?? 0) > 0;
 
-  if (
+  const reimported =
     options.reimport || venues === 0 || missing.length > 0 || short.length > 0 ||
-    starved.length > 0 || untranslated || untiled
-  ) {
+    starved.length > 0 || untranslated || untiled;
+  if (reimported) {
     if (!options.quiet && untiled) {
       console.log(`re-importing: the word bank predates ${WORD_BANK_CSV}`);
     }
@@ -257,7 +259,7 @@ export async function boot(options: BootOptions = {}): Promise<{ db: Db; routes:
    * an audit trail; this one left rows nobody could tell from customer data.
    */
 
-  return { db, routes: allRoutes };
+  return { db, routes: allRoutes, reimported };
 }
 
 /** The index endpoint, added last so it can list everything that came before. */

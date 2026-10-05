@@ -762,7 +762,7 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
         { i: `mov_legacy_${budgetId}`, b: budgetId, a: consumed, t: at },
       );
     }
-    bump('budgets');
+    if (!liveBudget) bump('budgets');
 
     const avgCheck = Math.round(num(row, 'avg_check_amount') * 100);
     if (avgCheck > 0) {
@@ -1431,6 +1431,29 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
       u: user,
     });
     bump('opening_balances');
+  }
+
+  /*
+   * **A question the source itself cannot complete.** `boot` re-imports while
+   * any quiz row has fewer than `quizOptions - 1` wrong answers, because a row
+   * an old generator wrote short is repaired by writing it again. A row whose
+   * *source* is short — the export gives it two wrong answers — comes back
+   * short on every import, so that gate re-ran the whole import on every boot,
+   * forever (2026-10-05: one Uzbek brain question, "Ingliz tilida eng ko'p
+   * ishlatiladigan so'z qaysi?", and ~3 minutes of 502s per production start).
+   * After a fresh import a short row can only be that kind, and a two-button
+   * question is not one this game asks, so it is removed — with the same test
+   * `boot` applies (`server/main.ts`, `short`), so the two cannot disagree.
+   */
+  const unaskable = await db.all<{ id: string; bank: string; language: string; prompt: string }>(
+    `SELECT id, bank, language, prompt FROM quiz_items
+      WHERE LENGTH(distractors) - LENGTH(REPLACE(distractors, ',', '')) < $commas`,
+    { commas: CONFIG.games.quizOptions - 2 },
+  );
+  for (const row of unaskable) {
+    await db.run(`DELETE FROM quiz_items WHERE id = $i`, { i: row.id });
+    notes.push(`quiz: dropped ${row.bank}/${row.language} "${row.prompt}" — the source gives it too few options`);
+    bump('quiz_items_dropped');
   }
 
   return { counts, notes };

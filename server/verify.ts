@@ -376,6 +376,20 @@ async function ledgerRules(): Promise<void> {
 
   await ledger.spend(db, { userId: customerId, points: 120, reason: 'voucher_redeem' });
   eq('spending moves the balance', await ledger.balance(db, customerId), 30);
+  /* The wallet's bar: earned by source, lifetime. A spend is not attributed,
+     and a bonus is neither playing nor visiting (2026-10-05 — the phone used to
+     call everything that was not a game "visiting"). */
+  const splitBefore = await ledger.earnedBySource(db, customerId);
+  eq('earned by source: a round is playing, a scan is visiting, a spend takes from neither',
+    [splitBefore.playing, splitBefore.visiting, splitBefore.bonuses], [100, 50, 0]);
+  {
+    const other = await person(w, 'split-bonus', plusDays(now(), -10));
+    await ledger.earn(db, { userId: other, points: 5, reason: 'check_in' });
+    await ledger.earn(db, { userId: other, points: 20, reason: 'mission', sourceKind: 'mission', sourceRef: 'm:split' });
+    await ledger.earn(db, { userId: other, points: 12, reason: 'stamp_complete' });
+    const s = await ledger.earnedBySource(db, other);
+    eq('…a check-in and a mission are bonuses, a stamp card is visiting', [s.playing, s.visiting, s.bonuses], [0, 12, 25]);
+  }
 
   /* FIFO: the 100-point lot is fully consumed and the 50 is partly. */
   /* Ordered exactly as `spend` orders — `earned_at`, then `ledger_id`. It was
@@ -8442,6 +8456,32 @@ async function bootOrdering(): Promise<void> {
   check('and the word bank with them', (await count(`SELECT COUNT(*) AS n FROM word_bank`)) > 0);
 
   await db.close();
+
+  /* **A second boot on the same database does not re-import.** Every gate in
+     `boot` that triggers the import has to be one the import can satisfy, or
+     the import runs on every start — on production, minutes of 502s each time
+     (2026-10-05: one brain question whose source has two wrong answers kept
+     `short` true forever). */
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'paylez-boot-'));
+  try {
+    const file = join(dir, 'twice.db');
+    const first = await boot({ file, quiet: true });
+    check('the first boot on an empty database imports', first.reimported);
+    eq('…and leaves no question short of options', (await first.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM quiz_items
+        WHERE LENGTH(distractors) - LENGTH(REPLACE(distractors, ',', '')) < $c`,
+      { c: CONFIG.games.quizOptions - 2 },
+    ))?.n, 0);
+    await first.db.close();
+    const second = await boot({ file, quiet: true });
+    eq('a second boot on the same database does not re-import', second.reimported, false);
+    await second.db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════ the run ══ */

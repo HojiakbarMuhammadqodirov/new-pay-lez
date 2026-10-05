@@ -319,6 +319,9 @@ export const consumerRoutes: Route[] = [
       const { user } = actor(ctx);
       return {
         points: await ledger.balance(ctx.db, user.id),
+        /* Lifetime earned points by source, for the "from playing / from
+           visiting" bar — `ledger.earnedBySource`. The phone used to guess it. */
+        earned: await ledger.earnedBySource(ctx.db, user.id),
         /* There is no `expiringSoon` any more, and it is *removed* rather than
            returned empty: points do not expire on any plan now, so the field
            would be an array that is always `[]` — a promise the wallet keeps
