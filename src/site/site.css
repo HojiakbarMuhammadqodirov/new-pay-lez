@@ -33201,3 +33201,45 @@ p.lst-soft {
   justify-content: flex-end;
   white-space: normal;
 }
+
+/* ══ the email code, after sign-up ══ */
+
+/* The welcome flow's own step frame — title, lede, actions — with the field kit
+   for the box. A column like the other steps, so `.onb-actions` sits under it. */
+.onb-verify {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+}
+
+.onb-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+/* A code is read digit by digit, so it is set wide and spaced rather than at
+   body size, and capped so the box does not stretch a six-character answer
+   across the card. */
+.onb-code input {
+  max-width: 14rem;
+  font-size: 1.4rem;
+  letter-spacing: 0.35em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══ forgot password ══ */
+
+/* Right-aligned under the password, small: an exit for the person who needs it,
+   not a second call to action beside "Sign in". */
+.auth-forgot {
+  align-self: flex-end;
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+}

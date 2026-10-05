@@ -1,14 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ACCOUNT_TYPES, INVITE_POINTS } from './content';
 import { Icon } from './icons';
-import { useCopy } from './i18n/context';
+import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
 import { PATHS } from './router';
 import { useAuth } from './auth/context';
 import { clearSignUpIntent, peekSignUpIntent } from './auth/signupIntent';
 import { GoogleButton } from './auth/GoogleButton';
 import { normalizeReferral, storedReferral } from './auth/referral';
-import { checkReferralCode } from './api/consumer';
+import { checkReferralCode, completePasswordReset, requestPasswordReset } from './api/consumer';
 import { ApiError } from './api/client';
 import { PasswordInput } from './PasswordInput';
 import {
@@ -71,7 +71,7 @@ function normalizeEmail(value: string): string {
 
 /* ─────────────────────────────────────────────────────────── credentials ── */
 
-function Credentials({ onSwap }: { onSwap: () => void }) {
+function Credentials({ onSwap, onForgot }: { onSwap: () => void; onForgot: () => void }) {
   const copy = useCopy();
   const { signIn } = useAuth();
   const [email, setEmail] = useState('');
@@ -136,6 +136,11 @@ function Credentials({ onSwap }: { onSwap: () => void }) {
           }}
           invalid={error === 'password' || error === 'empty' ? true : undefined}
         />
+        {/* Under the field it is about, where somebody who has just been told
+            "that password does not match" is already looking. */}
+        <button type="button" className="link-btn auth-forgot" onClick={onForgot}>
+          {copy.auth.reset.link}
+        </button>
       </label>
 
       {/* `role="alert"` rather than a bare paragraph: the message appears after
@@ -172,6 +177,201 @@ function Credentials({ onSwap }: { onSwap: () => void }) {
         system where credentials mean something. The argument that justified it
         was "these are readable anyway", and that argument has expired.
       */}
+    </form>
+  );
+}
+
+/* ────────────────────────────────────────────────────── forgot password ── */
+
+/**
+ * "Forgot password?" — an address, then a code and the new password.
+ *
+ * Two steps on one card rather than two routes: nothing about this is worth a
+ * URL, and a reload mid-way should land on the plain sign-in form rather than
+ * on half a reset with the address gone.
+ *
+ * **It never says whether the address has an account.** The server answers
+ * `{ ok: true }` either way and refuses every bad code with the same sentence,
+ * so that this form cannot be used to test which addresses are customers. The
+ * copy follows it: "if an account uses …", and one message for a wrong, expired
+ * or unknown code.
+ *
+ * On success the server has dropped every session, so the form signs in with
+ * the new password rather than trusting any token this browser held — and
+ * signing in is what moves the page on, through `resolveRoute`, exactly as the
+ * ordinary sign-in form does.
+ */
+function ResetPassword({ onBack }: { onBack: () => void }) {
+  const copy = useCopy();
+  const [language] = useLanguage();
+  const { signIn } = useAuth();
+  const [step, setStep] = useState<'email' | 'code'>('email');
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resent, setResent] = useState(false);
+
+  const describe = (cause: unknown): string =>
+    cause instanceof ApiError && cause.status === 0 ? copy.auth.verify.offline : copy.auth.verify.failed;
+
+  const send = (event?: FormEvent) => {
+    event?.preventDefault();
+    const e = normalizeEmail(email);
+    if (!e.includes('@')) {
+      setError(copy.auth.signUpErrors.email);
+      return;
+    }
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    requestPasswordReset(e, language)
+      .then(() => {
+        if (step === 'code') setResent(true);
+        setStep('code');
+      })
+      .catch((cause: unknown) => setError(describe(cause)))
+      .finally(() => setBusy(false));
+  };
+
+  const save = (event: FormEvent) => {
+    event.preventDefault();
+    const digits = code.replace(/\D/g, '');
+    if (digits.length !== 6) {
+      setError(copy.auth.reset.wrongCode);
+      return;
+    }
+    if (password.length < MIN_PASSWORD) {
+      setError(fill(copy.auth.signUpErrors.password, { n: String(MIN_PASSWORD) }));
+      return;
+    }
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const e = normalizeEmail(email);
+    completePasswordReset(e, digits, password)
+      .then(() => signIn(e, password))
+      .then((result) => {
+        if (!result.ok) setError(copy.auth.errors[result.error]);
+      })
+      .catch((cause: unknown) => {
+        if (cause instanceof ApiError && cause.detail.field === 'password') {
+          setError(fill(copy.auth.signUpErrors.password, { n: String(MIN_PASSWORD) }));
+        } else if (cause instanceof ApiError && cause.status === 400) {
+          setError(copy.auth.reset.wrongCode);
+        } else {
+          setError(describe(cause));
+        }
+      })
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <form className="auth-card" onSubmit={step === 'email' ? send : save} noValidate>
+      <span className="eyebrow">{copy.auth.reset.eyebrow}</span>
+      <h1>{copy.auth.reset.title}</h1>
+
+      {step === 'email' ? (
+        <>
+          <p className="auth-lede">{copy.auth.reset.lede}</p>
+          <label className="field">
+            <span className="field-label">{copy.auth.email}</span>
+            <input
+              type="email"
+              autoComplete="username"
+              placeholder={copy.auth.emailPlaceholder}
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setError(null);
+              }}
+              aria-invalid={error ? true : undefined}
+            />
+          </label>
+        </>
+      ) : (
+        <>
+          <p className="auth-lede">{fill(copy.auth.reset.sentLede, { email: normalizeEmail(email) })}</p>
+          <label className="field">
+            <span className="field-label">{copy.auth.verify.codeLabel}</span>
+            <input
+              /* Same three attributes as the confirmation panel, for the same
+                 reasons: no spinners, no lost leading zero, and the keyboard's
+                 one-time-code suggestion. */
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={8}
+              placeholder={copy.auth.verify.codePlaceholder}
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value);
+                setError(null);
+              }}
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">{copy.auth.reset.newPassword}</span>
+            <PasswordInput
+              autoComplete="new-password"
+              placeholder={fill(copy.auth.newPasswordPlaceholder, { n: String(MIN_PASSWORD) })}
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setError(null);
+              }}
+            />
+          </label>
+          {resent && !error && (
+            <p className="field-help" role="status">
+              {copy.auth.verify.onItsWay}
+            </p>
+          )}
+        </>
+      )}
+
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      <button type="submit" className="btn btn-solid btn-lg auth-submit" disabled={busy}>
+        {step === 'email'
+          ? busy
+            ? copy.auth.reset.sending
+            : copy.auth.reset.send
+          : busy
+            ? copy.auth.reset.working
+            : copy.auth.reset.submit}
+      </button>
+
+      <p className="auth-swap">
+        {step === 'code' && (
+          <>
+            <button type="button" className="link-btn" onClick={() => send()} disabled={busy}>
+              {copy.auth.reset.resend}
+            </button>
+            {' · '}
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => {
+                setStep('email');
+                setCode('');
+                setResent(false);
+                setError(null);
+              }}
+            >
+              {copy.auth.reset.otherEmail}
+            </button>
+            {' · '}
+          </>
+        )}
+        <button type="button" className="link-btn" onClick={onBack}>
+          {copy.auth.reset.back}
+        </button>
+      </p>
     </form>
   );
 }
@@ -562,7 +762,7 @@ export function SignInPage() {
      for why those are two calls rather than one. A partner sign-up opens on the
      sign-up form with the account type already chosen. */
   const [preset] = useState(peekSignUpIntent);
-  const [mode, setMode] = useState<'in' | 'up'>(() => (preset || storedReferral() ? 'up' : 'in'));
+  const [mode, setMode] = useState<'in' | 'up' | 'reset'>(() => (preset || storedReferral() ? 'up' : 'in'));
   /* Spent now that it has been read into state, so a reload or a later,
      ordinary visit to this page gets the plain form with the question on it. */
   useEffect(() => clearSignUpIntent(), []);
@@ -574,7 +774,9 @@ export function SignInPage() {
           {account ? (
             <ChooseType name={account.name} />
           ) : mode === 'in' ? (
-            <Credentials onSwap={() => setMode('up')} />
+            <Credentials onSwap={() => setMode('up')} onForgot={() => setMode('reset')} />
+          ) : mode === 'reset' ? (
+            <ResetPassword onBack={() => setMode('in')} />
           ) : (
             <SignUp onSwap={() => setMode('in')} preset={preset} />
           )}

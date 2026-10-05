@@ -244,6 +244,22 @@ export interface CodeConfirmed {
 export const confirmCode = (code: string) =>
   call<CodeConfirmed>('/v1/auth/email/verify', { method: 'POST', body: { code } });
 
+/**
+ * "Forgot password?", step one. Always `{ ok: true }`, whether or not the
+ * address has an account — the server says nothing that would let this form
+ * be used to find out which addresses do, so the screen must not either.
+ */
+export const requestPasswordReset = (email: string, language?: string) =>
+  call<{ ok: true }>('/v1/auth/password/reset-code', { method: 'POST', body: { email }, language });
+
+/**
+ * Step two: the code and the new password together. Every open session is
+ * dropped on success, so the caller signs in with the new password rather than
+ * trusting whatever token this browser held.
+ */
+export const completePasswordReset = (email: string, code: string, password: string) =>
+  call<{ reset: true }>('/v1/auth/password/reset', { method: 'POST', body: { email, code, password } });
+
 export const patchLanguage = (language: string) =>
   call<Me>('/v1/me', { method: 'PATCH', body: { language } });
 

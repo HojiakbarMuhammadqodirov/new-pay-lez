@@ -228,6 +228,26 @@ export const en = {
       wrongWithTries: 'That code is not right. {n} more tries before it expires.',
       offline: 'We could not reach the server. Try again in a moment.',
       failed: 'That did not work. Try again in a moment.',
+      /* The step after sign-up, before the welcome round. */
+      title: 'Check your inbox',
+      later: 'I will do it later',
+    },
+    /* "Forgot password?" — two steps on the sign-in card. */
+    reset: {
+      link: 'Forgot password?',
+      eyebrow: 'Forgot password',
+      title: 'Set a new password',
+      lede: 'Enter the email you signed up with and we will send you a six-digit code.',
+      send: 'Send me a code',
+      sending: 'Sending…',
+      sentLede: 'If an account uses {email}, a six-digit code is on its way. Check your spam folder too.',
+      newPassword: 'New password',
+      submit: 'Save and sign in',
+      working: 'Saving…',
+      wrongCode: 'That code is not right, or it has expired. Check it, or send a new one.',
+      resend: 'Send a new code',
+      otherEmail: 'Use a different email',
+      back: 'Back to sign in',
     },
     signUpErrors: {
       terms: 'Please accept the Terms & Conditions and the Privacy Policy.',
