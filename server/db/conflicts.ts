@@ -6,7 +6,7 @@
  * Postgres. Generated from `schema.sql` so a primary key cannot change without
  * this changing with it.
  *
- * 0 of 95 tables have no primary key and are absent: an upsert
+ * 0 of 99 tables have no primary key and are absent: an upsert
  * naming one throws rather than guessing a unique index to overwrite on.
  *
  * **7 upsert targets carry a second unique constraint** and are marked inline
@@ -115,4 +115,8 @@ export const CONFLICT_TARGETS: Record<string, readonly string[] | undefined> = {
   web_events: ['id'],
   auth_attempts: ['id'],
   contact_messages: ['id'],
+  subscription_passes: ['id'],
+  pass_subscriptions: ['id'],
+  pass_periods: ['id'], // also UNIQUE (subscription_id, starts_at)
+  pass_redemptions: ['id'],
 };

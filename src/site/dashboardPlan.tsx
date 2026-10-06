@@ -62,7 +62,7 @@ import {
   DEMO_VENUE_PLAN,
 } from './dashboardDemo';
 import { DEMO_MODE } from './demoMode';
-import { Icon } from './icons';
+import { Button, DxIcon, Eyebrow, Modal, Pill, Table } from './dashboardKit';
 import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 
@@ -115,195 +115,174 @@ function Cell({ kind, value }: { kind: 'number' | 'flag'; value: number | boolea
 
   if (value === undefined || value === false || value === 0) {
     return (
-      <span className="pd-fine" aria-label={copy.notIncluded}>
+      <span className="dx-fine" aria-label={copy.notIncluded}>
         —
       </span>
     );
   }
   if (kind === 'flag' || value === true) {
-    return <Icon name="check" size={14} strokeWidth={2.4} />;
+    return <DxIcon name="check" size={15} strokeWidth={2.5} />;
   }
   return <b>{value}</b>;
 }
 
-/** What the venue has, against what it is using. */
+
+/** What the venue has, against what it is using — the "3 of 5" pairing. */
 function Mine({ mine, used }: { mine: VenuePlan; used: Record<string, number | undefined> }) {
   const copy = useCopy().dashboard.planPanel;
-  const dashboard = useCopy().dashboard;
 
   return (
-    <div className="pd-panel pd-glass">
-      <div className="pd-panel-head">
-        <div>
-          <span className="pd-kicker">{copy.mineKicker}</span>
-          <h3>{mine.plan.name}</h3>
-        </div>
-        {/*
-          * The state, and where it came from.
-          *
-          * `source` matters to an owner who did not expect the plan they are
-          * on: `manual` is a tier an operator granted and every other value is
-          * a processor's. A miss falls through to the raw value rather than to
-          * a blank — the lookup-that-misses rule.
-          */}
-        <span className="pd-state-pill" data-state={mine.subscription ? 'live' : 'draft'}>
-          {mine.subscription
-            ? ((copy.sources as Record<string, string | undefined>)[mine.subscription.source] ??
-              mine.subscription.source)
-            : copy.noSubscription}
-        </span>
-      </div>
-
-      {/* Capacity against use, which is the pairing the panel exists for. Only
-          the counted rows: a yes/no entitlement has nothing to be "3 of" and a
-          bar under it would be inventing a quantity. */}
-      <ul className="pd-plan-use">
-        {PARTNER_PLAN_ROWS.slice(0, PARTNER_PLAN_HERO).map((row, index) => {
-          const allowed = valueOf(mine.entitlements[row.key]);
-          const now = used[row.key];
-          return (
-            <li key={row.key}>
-              <span>{copy.rows[index]}</span>
-              {typeof allowed === 'number' && typeof now === 'number' ? (
-                <b>{fill(copy.usage, { used: String(now), total: String(allowed) })}</b>
-              ) : (
-                <Cell kind={row.kind} value={allowed} />
-              )}
-            </li>
-          );
-        })}
-      </ul>
-
-      {/* A renewal date only when there is one. A tier an operator granted
-          carries none on purpose — see `assignPlan` on the server — so an em
-          dash here would be claiming a figure rather than reporting its
-          absence. */}
+    <div className="dx-plan-mine">
+      {/*
+        * The state, and where it came from: `manual` is a tier an operator
+        * granted and every other value is a processor's. A miss falls through
+        * to the raw value rather than to a blank.
+        */}
+      <Pill tone={mine.subscription ? 'live' : 'neutral'}>
+        {mine.subscription
+          ? ((copy.sources as Record<string, string | undefined>)[mine.subscription.source] ??
+            mine.subscription.source)
+          : copy.noSubscription}
+      </Pill>
+      {/* Only the counted rows: a yes/no entitlement has nothing to be "3 of". */}
+      {PARTNER_PLAN_ROWS.slice(0, PARTNER_PLAN_HERO).map((row, index) => {
+        const allowed = valueOf(mine.entitlements[row.key]);
+        const now = used[row.key];
+        if (typeof allowed !== 'number' || typeof now !== 'number') return null;
+        return (
+          <span key={row.key}>
+            {copy.rows[index]}: <b>{fill(copy.usage, { used: String(now), total: String(allowed) })}</b>
+          </span>
+        );
+      })}
+      {/* A renewal date only when there is one — a granted tier carries none. */}
       {mine.subscription?.renews_at && (
-        <p className="pd-fine">
-          {fill(copy.renews, { date: mine.subscription.renews_at.slice(0, 10) })}
-        </p>
+        <span>{fill(copy.renews, { date: mine.subscription.renews_at.slice(0, 10) })}</span>
       )}
       {mine.subscription?.cancel_at && (
-        <p className="pd-fine">
-          {fill(copy.until, { date: mine.subscription.cancel_at.slice(0, 10) })}
-        </p>
+        <span>{fill(copy.until, { date: mine.subscription.cancel_at.slice(0, 10) })}</span>
       )}
-      {mine.subscription === null && <p className="pd-fine">{dashboard.planPanel.freeNote}</p>}
+      {mine.subscription === null && <span>{copy.freeNote}</span>}
     </div>
   );
 }
 
-/** The three tiers, middle one highlighted. */
-function Compare({ plans, mineCode }: { plans: PlanRow[]; mineCode: string }) {
+/**
+ * One tier, as v3's card: name, price, what it includes, and a press.
+ *
+ * The features are the server's `plan_entitlements` rows the plan actually
+ * grants, in `PARTNER_PLAN_ROWS` order — a count with its number, a flag by its
+ * name — so the card can never list something the tier does not carry. The
+ * press is v3's "Upgrade" / "Downgrade" made honest: moving between partner
+ * tiers is arranged with sales (see the header), so it is a `mailto:` that says
+ * so, not a checkout.
+ */
+function Tier({ plan, current }: { plan: PlanRow; current: boolean }) {
   const copy = useCopy().dashboard.planPanel;
   const money = useMoney();
 
-  /* Ordered by the server's own rank, so the ladder reads in the order it was
-     designed in rather than in whatever order the rows came back. */
-  const ladder = useMemo(() => [...plans].sort((a, b) => a.rank - b.rank), [plans]);
+  const features = PARTNER_PLAN_ROWS.flatMap((row, index) => {
+    const value = valueOf(plan.entitlements.find((entry) => entry.key === row.key)?.value);
+    if (value === undefined || value === false || value === 0) return [];
+    return [typeof value === 'number' ? `${copy.rows[index]}: ${value}` : copy.rows[index]];
+  });
 
-  /*
-   * The highlight is the **middle column**, by position.
-   *
-   * Not `code === 'growth'`: a rule that switches on a plan code makes adding
-   * or retiring a tier a change to which one this panel recommends, and the
-   * server's own note on retired plans says nothing in the product may read a
-   * code to decide what something is worth. With three tiers this is Growth;
-   * with four it is the second, which is still the one a ladder is built
-   * around.
-   */
-  const featured = Math.floor((ladder.length - 1) / 2);
+  return (
+    <article className="dx-plan-tier" data-current={current ? 'true' : undefined}>
+      {current && <Eyebrow>{copy.current}</Eyebrow>}
+      <h3>{plan.name}</h3>
+      <div className="dx-plan-price">
+        {/* The reader's currency through `useMoney`, off the server's minor
+            units — never the raw `price_minor` digits. */}
+        <b>
+          {plan.price_minor === 0
+            ? copy.freePrice
+            : fill(copy.perMonth, { amount: money(plan.price_minor / 100, 'price') })}
+        </b>
+      </div>
+      <div className="dx-plan-rule" />
+      <ul className="dx-plan-feats">
+        {features.map((feature) => (
+          <li key={feature}>
+            <DxIcon name="check" size={16} strokeWidth={2.5} />
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+      {current ? (
+        <Button variant="secondary" disabled block>
+          {copy.current}
+        </Button>
+      ) : (
+        <a
+          className="dx-btn"
+          data-variant="secondary"
+          data-block="true"
+          href={`mailto:${SALES_EMAIL}?subject=${encodeURIComponent(plan.name)}`}
+        >
+          {copy.talk}
+        </a>
+      )}
+    </article>
+  );
+}
 
+/** The full comparison, behind v3's "Compare all features" disclosure. */
+function Compare({ plans, mineCode }: { plans: PlanRow[]; mineCode: string }) {
+  const copy = useCopy().dashboard.planPanel;
   const valueFor = (plan: PlanRow, key: string) =>
     valueOf(plan.entitlements.find((row) => row.key === key)?.value);
 
   return (
-    <div className="pd-panel pd-glass" data-solid="true">
-      <div className="pd-panel-head">
-        <div>
-          <span className="pd-kicker">{copy.compareKicker}</span>
-          <h3>{copy.compareTitle}</h3>
-        </div>
-      </div>
-
-      <div className="pd-table-wrap">
-        <table className="pd-table pd-plan-table">
-          <thead>
-            <tr>
-              <th>{copy.whatYouGet}</th>
-              {ladder.map((plan, index) => (
-                <th key={plan.id} data-align="right" data-on={index === featured ? 'true' : undefined}>
-                  <b>{plan.name}</b>
-                  {/* The price in the reader's currency through `useMoney`, off
-                      the server's minor units — never the `price_minor` digits,
-                      which are złoty on a page an English owner may be reading. */}
-                  <em>
-                    {plan.price_minor === 0
-                      ? copy.freePrice
-                      : fill(copy.perMonth, {
-                          amount: money(plan.price_minor / 100, 'price'),
-                        })}
-                  </em>
-                  {plan.code === mineCode && <span className="pd-tag">{copy.yours}</span>}
-                </th>
+    <div className="dx-compare">
+      <Table label={copy.compareTitle}>
+        <thead>
+          <tr>
+            <th>{copy.whatYouGet}</th>
+            {plans.map((plan) => (
+              <th key={plan.id} data-align="right" data-on={plan.code === mineCode ? 'true' : undefined}>
+                {plan.name}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {PARTNER_PLAN_ROWS.map((row, index) => (
+            <tr key={row.key}>
+              <td>{copy.rows[index]}</td>
+              {plans.map((plan) => (
+                <td key={plan.id} data-align="right" data-on={plan.code === mineCode ? 'true' : undefined}>
+                  <Cell kind={row.kind} value={valueFor(plan, row.key)} />
+                </td>
               ))}
             </tr>
-          </thead>
-          <tbody>
-            {PARTNER_PLAN_ROWS.map((row, index) => (
-              <tr key={row.key}>
-                <td>{copy.rows[index]}</td>
-                {ladder.map((plan, column) => (
-                  <td
-                    key={plan.id}
-                    data-align="right"
-                    data-on={column === featured ? 'true' : undefined}
-                  >
-                    <Cell kind={row.kind} value={valueFor(plan, row.key)} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* How to move, in words rather than as a button. See the header for why
-          `SubscribeButton` cannot be pointed at a partner code. */}
-      <p className="pd-fine">
-        {fill(copy.howToMove, { email: SALES_EMAIL })}{' '}
-        <a href={`mailto:${SALES_EMAIL}`}>{SALES_EMAIL}</a>
-      </p>
+          ))}
+        </tbody>
+      </Table>
     </div>
   );
 }
 
+/**
+ * v3's plan modal (§5.5), opened from the rail's plan card. Kept from v3: the
+ * 920px modal, the cards with the current one ringed and eyebrowed, the
+ * "Compare all features" disclosure. Not drawn, because nothing real is behind
+ * it: the Monthly/Annual switch (a partner plan has one interval on the
+ * server) and any checkout button.
+ */
 export function PlanSheet({ venueId, onClose }: { venueId: string | null; onClose: () => void }) {
   const copy = useCopy().dashboard;
   const panel = copy.planPanel;
   const [plans, setPlans] = useState<PlanRow[] | null>(null);
   const [mine, setMine] = useState<VenuePlan | null>(null);
   const [failed, setFailed] = useState(false);
+  const [details, setDetails] = useState(false);
 
-  /*
-   * What the venue is already using, from the two reads the rail has made
-   * anyway — so the "3 of 5" pairing costs no extra request. `useApi` keys on
-   * the path, so these are the rail's own requests answering twice.
-   *
-   * `readyOr` and not a bare `status === 'ready'`, which is the same
-   * arrangement the rail makes one file over: a browser with no partner session
-   * still draws the panel under `?demo=1`, and without the stand-in the one
-   * pairing this panel exists for is the one thing on it that cannot be seen.
-   *
-   * `undefined` on a real failure, and the row then shows the **allowance
-   * alone** rather than "0 of 5" — a usage nobody could read is not a zero,
-   * which is the rule every figure on this dashboard follows.
-   */
+  /* What the venue is already using, from reads the rail has made anyway.
+     `undefined` on a real failure, so the row shows nothing rather than
+     "0 of 5" — a usage nobody could read is not a zero. */
   const deals = readyOr(usePartnerDeals(venueId).state, DEMO_MODE ? DEMO_DEALS : null);
-  const campaigns = readyOr(
-    usePartnerCampaigns(venueId).state,
-    DEMO_MODE ? DEMO_CAMPAIGNS : null,
-  );
+  const campaigns = readyOr(usePartnerCampaigns(venueId).state, DEMO_MODE ? DEMO_CAMPAIGNS : null);
   const used: Record<string, number | undefined> = {
     live_deals: deals?.filter((deal) => deal.status === 'live').length,
     active_campaigns: campaigns?.filter((row) => row.status === 'active').length,
@@ -311,14 +290,8 @@ export function PlanSheet({ venueId, onClose }: { venueId: string | null; onClos
 
   useEffect(() => {
     let live = true;
-    /*
-     * Both reads, and a failure of *either* is the same panel.
-     *
-     * The comparison without the current plan cannot mark "yours", and the
-     * current plan without the comparison is the figure the rail already
-     * showed — so half of this panel is not worth drawing. `Promise.all` says
-     * that rather than two independent states saying it twice.
-     */
+    /* Both reads, and a failure of either is the same panel: the comparison
+       without the current plan cannot mark "yours". */
     Promise.all([
       call<PlanRow[]>('/v1/plans?audience=partner'),
       venueId === null
@@ -332,17 +305,8 @@ export function PlanSheet({ venueId, onClose }: { venueId: string | null; onClos
       })
       .catch(() => {
         if (!live) return;
-        /*
-         * The demo fallback, under the same three conditions
-         * `dashboardDemo.ts` states for every other panel: the real call is
-         * made and **allowed to fail first**, and `?demo=1` has to have been
-         * passed. A venue with a session never reaches it.
-         *
-         * It is here rather than left as the error panel because without it
-         * this is the one panel on the dashboard that cannot be looked at —
-         * the rest reach theirs through `Screen`, and this is a sheet rather
-         * than a screen.
-         */
+        /* The demo fallback, under `dashboardDemo.ts`'s conditions: the real
+           call failed first, and `?demo=1` was passed. */
         if (DEMO_MODE) {
           setPlans(DEMO_PARTNER_PLANS);
           setMine(DEMO_VENUE_PLAN);
@@ -355,42 +319,44 @@ export function PlanSheet({ venueId, onClose }: { venueId: string | null; onClos
     };
   }, [venueId]);
 
+  /* The server's own rank, so the ladder reads in the order it was designed. */
+  const ladder = useMemo(() => (plans ? [...plans].sort((a, b) => a.rank - b.rank) : null), [plans]);
+  const mineCode = mine?.plan.code ?? '';
+
   return (
-    <div className="pd-sheet" role="dialog" aria-modal="true" aria-label={panel.title}>
-      <button type="button" className="pd-scrim" aria-label={copy.drawer.close} onClick={onClose} />
-      <section className="pd-drawer-panel" tabIndex={-1}>
-        <header>
-          <div>
-            <span className="console-label">{panel.kicker}</span>
-            <h2>{panel.title}</h2>
-            <p className="pd-fine">{panel.lede}</p>
+    <Modal kicker={panel.kicker} title={panel.title} lede={panel.lede} onClose={onClose}>
+      {failed ? (
+        <p className="dx-fine">{copy.unmeasured.serverSilent}</p>
+      ) : ladder === null ? (
+        <p className="dx-fine">{copy.unmeasured.asking}</p>
+      ) : (
+        <>
+          {mine && <Mine mine={mine} used={used} />}
+          <div className="dx-plans">
+            {ladder.map((plan) => (
+              <Tier key={plan.id} plan={plan} current={plan.code === mineCode} />
+            ))}
           </div>
+
           <button
             type="button"
-            className="pd-icon"
-            aria-label={copy.drawer.close}
-            onClick={onClose}
+            className="dx-disclose"
+            aria-expanded={details}
+            onClick={() => setDetails((open) => !open)}
           >
-            <Icon name="close" size={15} strokeWidth={2} />
+            <DxIcon name={details ? 'chevronDown' : 'chevronRight'} size={15} />
+            <span>{panel.compareAll}</span>
           </button>
-        </header>
+          {details && <Compare plans={ladder} mineCode={mineCode} />}
 
-        <div className="pd-drawer-body">
-          {failed ? (
-            <p className="pd-fine">{copy.unmeasured.serverSilent}</p>
-          ) : plans === null ? (
-            <p className="pd-fine">{copy.unmeasured.asking}</p>
-          ) : (
-            <div className="pd-stack">
-              {/* No session, no venue, no plan of one's own — the comparison
-                  still reads, because what the three tiers are is not a fact
-                  about this account. */}
-              {mine && <Mine mine={mine} used={used} />}
-              <Compare plans={plans} mineCode={mine?.plan.code ?? ''} />
-            </div>
-          )}
-        </div>
-      </section>
-    </div>
+          <p className="dx-fine" style={{ marginTop: 20 }}>
+            {fill(panel.howToMove, { email: SALES_EMAIL })}{' '}
+            <a className="dx-link" href={`mailto:${SALES_EMAIL}`}>
+              {SALES_EMAIL}
+            </a>
+          </p>
+        </>
+      )}
+    </Modal>
   );
 }

@@ -1,0 +1,475 @@
+/* ═══════════════════════════════════════ loyalty campaigns (v3 §3.3) ══
+ *
+ * `dashboardLoyalty.tsx`. Tokens only, scoped under `dx-camp-*`, winning by specificity
+ * because this sheet lands before `site.css`.
+ * ═════════════════════════════════════════════════════════════════════ */
+
+/* ── the rebalance banner ── */
+
+.dx-app .dx-camp-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+  border-radius: var(--dx-r-card);
+  border: 1px solid rgba(var(--dx-caution-rgb), 0.35);
+  background: rgba(var(--dx-caution-rgb), 0.09);
+}
+.dx-app .dx-camp-banner > svg {
+  margin-top: 1px;
+  color: var(--dx-caution);
+}
+.dx-app .dx-camp-banner p {
+  flex: 1 1 320px;
+  min-width: 250px;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+/* ── the gap ── */
+
+.dx-app .dx-camp-gap-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 30px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.dx-app .dx-camp-gap-copy {
+  flex: 1 1 320px;
+  min-width: 260px;
+}
+.dx-app .dx-camp-gap-copy h2 {
+  margin: 0 0 6px;
+}
+.dx-app .dx-camp-gap-copy p {
+  max-width: 540px;
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+  text-wrap: pretty;
+}
+.dx-app .dx-camp-tiles {
+  display: flex;
+  gap: 1px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--dx-line);
+}
+.dx-app .dx-camp-tiles > div {
+  min-width: 118px;
+  padding: 15px 20px;
+  background: var(--dx-card);
+}
+.dx-app .dx-camp-tiles span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  color: var(--dx-muted);
+}
+.dx-app .dx-camp-tiles b {
+  display: block;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.dx-app .dx-camp-tiles b[data-down='true'] {
+  color: var(--dx-down);
+}
+.dx-app .dx-camp-remind {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 18px;
+  border-radius: 13px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+}
+.dx-app .dx-camp-remind > .dx-btn {
+  border-radius: 11px;
+}
+.dx-app .dx-camp-remind > .dx-btn[data-variant='primary'] {
+  padding: 12px 18px;
+}
+.dx-app .dx-camp-remind-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+.dx-app .dx-camp-remind-copy b {
+  font-size: 13px;
+  font-weight: 600;
+}
+.dx-app .dx-camp-remind-copy span {
+  font-size: 12.5px;
+  color: var(--dx-muted);
+}
+.dx-app .dx-camp-near {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 14px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.dx-app .dx-camp-near svg {
+  color: var(--dx-deep);
+}
+
+/* ── the pool ── */
+
+.dx-app .dx-camp-budget {
+  padding: 22px 24px;
+}
+.dx-app .dx-camp-budget-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.dx-app .dx-camp-budget-head > div:first-child {
+  flex: 1 1 300px;
+}
+.dx-app .dx-camp-budget-head h2 {
+  margin: 0 0 5px;
+  font-size: 15px;
+}
+.dx-app .dx-camp-budget-head p {
+  max-width: 440px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+.dx-app .dx-camp-alloc {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+}
+.dx-app .dx-camp-alloc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dx-app .dx-camp-alloc-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--dx-line);
+  border-radius: 11px;
+  background: var(--dx-control-bg);
+  cursor: text;
+}
+.dx-app .dx-camp-alloc-field:focus-within {
+  border-color: var(--dx-deep);
+}
+.dx-app .dx-camp-alloc-field input {
+  width: 96px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--dx-ink);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dx-app .dx-camp-alloc-field span {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dx-faint);
+}
+.dx-app .dx-camp-alloc-note {
+  max-width: 230px;
+  margin-top: 7px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--dx-faint);
+  text-align: right;
+}
+.dx-app .dx-camp-budget .dx-progress {
+  margin-bottom: 16px;
+}
+.dx-app .dx-camp-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 18px;
+  margin-bottom: 16px;
+}
+.dx-app .dx-camp-pool-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dx-muted);
+}
+.dx-app .dx-camp-pool-label i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--dx-line);
+}
+.dx-app .dx-camp-pool-label i[data-part='spent'] {
+  background: var(--dx-fill);
+}
+.dx-app .dx-camp-pool-label i[data-part='aside'] {
+  background: var(--dx-hatch);
+}
+.dx-app .dx-camp-pool b {
+  display: block;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.dx-app .dx-camp-pool b[data-down='true'] {
+  color: var(--dx-down);
+}
+.dx-app .dx-camp-pool .dx-camp-withheld {
+  font-weight: 400;
+  color: var(--dx-faint);
+  cursor: help;
+}
+.dx-app .dx-camp-pool p {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--dx-faint);
+}
+.dx-app .dx-camp-forecast {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dx-warn);
+  background: rgba(var(--dx-caution-rgb), 0.14);
+}
+.dx-app .dx-camp-forecast[data-ok='true'] {
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.2);
+}
+.dx-app .dx-camp-out {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--dx-down-rgb), 0.3);
+  background: rgba(var(--dx-down-rgb), 0.08);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.dx-app .dx-camp-out svg {
+  margin-top: 1px;
+  color: var(--dx-down);
+}
+
+/* ── the cards ── */
+
+.dx-app .dx-camp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(348px, 100%), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.dx-app .dx-camp-card {
+  padding: 22px 24px;
+}
+.dx-app .dx-camp-card:has(> .dx-camp-card-in[data-widening='true']) {
+  border-color: rgba(var(--dx-caution-rgb), 0.4);
+}
+.dx-app .dx-camp-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.dx-app .dx-camp-card-head > div {
+  min-width: 0;
+}
+.dx-app .dx-camp-card-head h3 {
+  margin: 0 0 7px;
+  font-size: 16.5px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.dx-app .dx-camp-rule {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.dx-app .dx-camp-rule em {
+  padding: 3px 8px;
+  border-radius: var(--dx-r-chip);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--dx-muted);
+  background: var(--dx-bone);
+}
+.dx-app .dx-camp-counts {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.dx-app .dx-camp-counts span {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dx-muted);
+}
+.dx-app .dx-camp-counts span + b + span {
+  margin-left: 6px;
+}
+.dx-app .dx-camp-counts b {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.dx-app .dx-camp-card .dx-progress {
+  margin-bottom: 10px;
+}
+.dx-app .dx-camp-chips {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.dx-app .dx-camp-gapchip {
+  padding: 4px 9px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dx-muted);
+  background: var(--dx-soft);
+}
+.dx-app [data-widening='true'] .dx-camp-gapchip {
+  color: var(--dx-warn);
+  background: rgba(var(--dx-caution-rgb), 0.14);
+}
+.dx-app .dx-camp-rate {
+  font-size: 12.5px;
+  color: var(--dx-muted);
+  font-variant-numeric: tabular-nums;
+}
+.dx-app .dx-camp-young {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--dx-faint);
+}
+.dx-app .dx-camp-cols {
+  display: flex;
+  gap: 1px;
+  margin-bottom: 14px;
+  overflow: hidden;
+  border-radius: 11px;
+  background: var(--dx-line);
+}
+.dx-app .dx-camp-cols > div {
+  flex: 1;
+  padding: 11px 13px;
+  background: var(--dx-card);
+}
+.dx-app .dx-camp-cols span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11.5px;
+  color: var(--dx-muted);
+}
+.dx-app .dx-camp-cols b {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.dx-app .dx-camp-rules {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--dx-faint);
+}
+.dx-app .dx-camp-paused {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 11px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  background: rgba(var(--dx-caution-rgb), 0.1);
+}
+.dx-app .dx-camp-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--dx-soft);
+  font-size: 12px;
+  color: var(--dx-muted);
+}
+.dx-app .dx-camp-foot > i {
+  width: 1px;
+  height: 12px;
+  background: var(--dx-line);
+}
+.dx-app .dx-camp-foot-gap {
+  flex: 1;
+}
+.dx-app .dx-camp-foot .dx-btn {
+  padding: 8px 13px;
+}
+.dx-app .dx-camp-foot .dx-btn + .dx-btn {
+  color: var(--dx-muted);
+}
+.dx-app .dx-camp-foot .dx-btn + .dx-btn:hover:not(:disabled) {
+  color: var(--dx-deep);
+}
+
+@media (max-width: 46rem) {
+  .dx-app .dx-camp-tiles {
+    width: 100%;
+  }
+  .dx-app .dx-camp-tiles > div {
+    flex: 1;
+    min-width: 0;
+    padding: 13px 14px;
+  }
+  .dx-app .dx-camp-alloc {
+    align-items: flex-start;
+  }
+  .dx-app .dx-camp-alloc-note {
+    text-align: left;
+  }
+}

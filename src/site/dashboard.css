@@ -1,0 +1,2193 @@
+/* ══════════════════════════════════════════════ partner dashboard (v3) ══
+ *
+ * The partner dashboard's own sheet, for the v3 redesign
+ * (`b2b/dashboard-design/Paylez Partner Dashboard v3.dc.html`). Imported by
+ * `dashboard.tsx`.
+ *
+ * **It lands *before* `site.css` in the bundle**, not after: `Site.tsx`
+ * imports the dashboard module above its own `import './site.css'`, and CSS
+ * is emitted in module order. So nothing here may win by source order —
+ * every rule wins by specificity instead. That is why the frame is
+ * `.pd-app.dx-app` (two classes against `site.css`'s one), why headings are
+ * re-fonted through `.dx-app :is(h1…)` rather than `h1`, and why the panels'
+ * focus rule is `:focus-visible` on the class rather than a bare `outline`.
+ * A screen sheet (`dashboard-<screen>.css`) is in the same position: scope
+ * every rule under a `dx-` class and it cannot lose to a global one.
+ *
+ * ## Why this screen has its own palette
+ *
+ * The rest of the site is two colours — one accent on one ground — and the
+ * dashboard is the one surface the owner asked to be **a match for the v3 file**
+ * in light mode, palette included: its ink, its deep green, its bone ground,
+ * its warm red, its amber, and the blue and purple it spends on two states.
+ * That is approved for `.pd-app` and nowhere else. What is kept from the
+ * site's convention is its *mechanics*: every colour is a custom property
+ * declared in the two token blocks directly below, and **no rule after them
+ * names a colour**. If you are typing a hex or an `rgb(` literal into a rule
+ * further down, stop and add a token.
+ *
+ * ## Two themes, one markup
+ *
+ * v3 has no dark mode. Dark keeps today's dark dashboard — the glass sheets,
+ * the aurora behind them, the mint on near-black — so the dark block maps each
+ * v3 *role* to the closest value the old dark dashboard used (the site's
+ * `--bg`, `--text`, `--border`, `--surface`, plus `--dx-glass` and the
+ * aurora below). Light is v3 exactly: solid white cards on bone, no aurora,
+ * no blur.
+ *
+ * ## Conventions for screen builders
+ *
+ * - Classes here are `dx-*`; a screen's own classes are `dx-<screen>-*` in its
+ *   own `dashboard-<screen>.css`, imported by its module, reading only
+ *   `--dx-*` tokens. `site.css` has no scoping, so grep before naming.
+ * - Nothing in `site.css` styles the dashboard any more (the old `.pd-*`
+ *   family is gone); `.pd-app` survives only as the frame's second class.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/*
+ * Plus Jakarta Sans, v3's face. `site.css` already declares latin and
+ * cyrillic-ext at 400–800; Polish (ą ę ł ś ź ż) and Uzbek's ‘ need latin-ext,
+ * which it did not. The family ships **no basic Cyrillic** (U+0400–045F) —
+ * cyrillic-ext is the historic and minority-language block — so Russian and
+ * Ukrainian fall back to `system-ui` for their letters. That is the family's
+ * limit, not a missing import. Font faces only download when a glyph needs
+ * them, so declaring the subset costs a Polish reader one file and nobody else
+ * anything.
+ */
+@import '@fontsource/plus-jakarta-sans/latin-ext-400.css';
+@import '@fontsource/plus-jakarta-sans/latin-ext-500.css';
+@import '@fontsource/plus-jakarta-sans/latin-ext-600.css';
+@import '@fontsource/plus-jakarta-sans/latin-ext-700.css';
+@import '@fontsource/plus-jakarta-sans/latin-ext-800.css';
+
+/* ── tokens: dark (the default, today's dark dashboard) ─────────────────── */
+
+.pd-app.dx-app {
+  /* What a dark glass sheet lets through, and how much it blurs. Set by the
+     worst frame — body copy over the brightest part of the aurora — not by how
+     a card looks over an empty corner. Light does not read them: its card is
+     v3's solid white. */
+  --dx-glass: 0.5;
+  --dx-glass-blur: 16px;
+  /* v3's named roles. */
+  --dx-ink: var(--text);
+  --dx-ink-rgb: 230, 246, 243;
+  --dx-ink2: var(--text);
+  --dx-mint: #58e9d4;
+  --dx-mint-rgb: 88, 233, 212;
+  --dx-deep: #58e9d4;
+  --dx-deep-rgb: 88, 233, 212;
+  --dx-bone: var(--surface-2);
+  --dx-card: rgba(var(--panel-rgb), var(--dx-glass));
+  --dx-muted: var(--text-mut);
+  --dx-faint: var(--text-fnt);
+  --dx-line: var(--border);
+  --dx-soft: rgba(88, 233, 212, 0.08);
+  --dx-rule: rgba(88, 233, 212, 0.26);
+  --dx-down: #d9483b;
+  --dx-down-rgb: 217, 72, 59;
+  --dx-warn: rgb(226, 170, 90);
+  --dx-warn-rgb: 226, 170, 90;
+  --dx-amber: rgb(226, 170, 90);
+  --dx-amber-rgb: 226, 170, 90;
+  --dx-caution: rgb(226, 170, 90);
+  --dx-caution-rgb: 226, 170, 90;
+  --dx-gold-rgb: 226, 170, 90;
+  --dx-purple: #b292e6;
+  --dx-purple-rgb: 178, 146, 230;
+  /* A pass's accent (`PassAccent`, a key from the server) — the art header's
+     gradient start; it runs to `--dx-pass-end`. On black the two darkest are
+     lifted a step so the card still separates from the page. */
+  --dx-pass-teal: #0b7f63;
+  --dx-pass-deep-green: #1f4a3f;
+  --dx-pass-purple: #6a45a0;
+  --dx-pass-terracotta: #9c4a37;
+  --dx-pass-ink: #1b2a25;
+  --dx-pass-end: #05100d;
+  --dx-pass-live-fg: #05201c;
+  --dx-blue: #8dbbdb;
+  --dx-blue-ink: #a9cde6;
+  --dx-blue-rgb: 141, 187, 219;
+  --dx-white-rgb: 255, 255, 255;
+  --dx-on-mint: #05201c;
+  /* Text on a DEEP fill (the Team screen's manager pill and avatar): white on
+     v3's deep green, ink on black, where "deep" is the bright mint. */
+  --dx-on-deep: #05201c;
+  /* v3's team empty-state dashed border (#CBD3CF). */
+  --dx-dash: rgba(88, 233, 212, 0.3);
+  --dx-wordmark: #58e9d4;
+  --dx-link-hover: #8ef1e2;
+  --dx-disabled-bg: var(--surface-2);
+  --dx-disabled-fg: var(--text-fnt);
+
+  /* Surfaces. */
+  --dx-page: var(--bg);
+  --dx-rail-bg: rgba(var(--panel-rgb), 0.62);
+  --dx-bar-bg: rgba(var(--panel-rgb), 0.7);
+  --dx-chrome-blur: blur(18px) saturate(1.2);
+  --dx-card-blur: blur(var(--dx-glass-blur)) saturate(1.3);
+  --dx-card-shadow: 0 1px 0 rgba(88, 233, 212, 0.06) inset, 0 10px 30px var(--shadow);
+  --dx-control-bg: var(--surface);
+  --dx-overlay-bg: var(--bg-2);
+  --dx-hover-row: var(--surface);
+
+  /* The dark "ink" card — v3's hero slabs. On black they are already dark, so
+     they are the glass card with the mint as their accent. */
+  --dx-ink-card: rgba(var(--panel-rgb), var(--dx-glass));
+  --dx-ink-card-fg: var(--text);
+  --dx-ink-card-rgb: 230, 246, 243;
+  --dx-ink-tile: var(--surface-2);
+  --dx-ink-accent: #58e9d4;
+
+  /* The press. Mint with near-black ink, as `.btn-solid` is on black. */
+  --dx-press-bg: #58e9d4;
+  --dx-press-fg: #05201c;
+  --dx-press-hover: #8ef1e2;
+  --dx-nav-on-bg: var(--surface-2);
+  --dx-nav-on-fg: #58e9d4;
+  --dx-nav-hover-bg: var(--surface);
+
+  /* Overlays. A scrim is a dim, not a tint. */
+  --dx-scrim: rgba(0, 0, 0, 0.45);
+  --dx-scrim-strong: rgba(0, 0, 0, 0.55);
+  --dx-toast-bg: var(--text);
+  --dx-toast-fg: var(--bg);
+  --dx-shadow-menu: 0 4px 16px var(--shadow);
+  --dx-shadow-drawer: -24px 0 60px var(--shadow);
+  --dx-shadow-modal: 0 30px 70px var(--shadow);
+  --dx-shadow-toast: 0 18px 40px var(--shadow);
+  --dx-shadow-knob: 0 1px 3px rgba(0, 0, 0, 0.4);
+  /* The deal drawer's two pictures of a customer's phone (the lock screen and
+     the deal card's cover): v3's green-black gradient, dark in both themes. */
+  --dx-lock-bg: linear-gradient(160deg, rgba(88, 233, 212, 0.16), rgba(0, 0, 0, 0.55));
+  --dx-shadow-phone: 0 20px 44px var(--shadow);
+
+  /* The "set aside" hatch, mint on black. */
+  --dx-hatch: repeating-linear-gradient(
+    135deg,
+    rgba(88, 233, 212, 0.44) 0 5px,
+    rgba(88, 233, 212, 0.14) 5px 10px
+  );
+  --dx-fill: linear-gradient(90deg, var(--dx-mint), rgba(88, 233, 212, 0.55));
+  --dx-fill-v: linear-gradient(180deg, var(--dx-mint), rgba(88, 233, 212, 0.55));
+  /* The hatch and the two warnings *on an ink card* (the Vouchers budget
+     slab). On black the slab is the glass card, so they are the page's own. */
+  --dx-hatch-ink: var(--dx-hatch);
+  --dx-ink-warn: rgb(226, 170, 90);
+  --dx-ink-down: #ff9c7a;
+
+  /* The assistant's chat (`dashboard-assistant.css`). v3 spends a teal on the
+     owner's bubble and the typing dots, Tailwind's amber on a draft's header
+     and a grey on body copy; dark answers each with the glass dashboard's own
+     values — a mint-tinted bubble rather than a solid slab of colour. */
+  --dx-chat-text: var(--text);
+  --dx-chat-user-bg: rgba(88, 233, 212, 0.16);
+  --dx-chat-user-fg: var(--text);
+  --dx-chat-dot: #58e9d4;
+  --dx-chat-bot-fg: #05201c;
+  --dx-chat-well: rgba(88, 233, 212, 0.26);
+  --dx-chat-draft-bg: rgba(226, 170, 90, 0.14);
+  --dx-chat-draft-line: rgba(226, 170, 90, 0.3);
+  --dx-chat-draft-fg: rgb(226, 170, 90);
+  --dx-shadow-bubble: none;
+
+  /* Geometry — v3's, theme-independent. */
+  --dx-font: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --dx-mono: ui-monospace, monospace;
+  --dx-r-card: 16px;
+  --dx-r-hero: 18px;
+  --dx-r-panel: 14px;
+  --dx-r-btn: 10px;
+  --dx-r-input: 10px;
+  --dx-r-chip: 6px;
+  --dx-r-pill: 999px;
+  --dx-rail-w: 240px;
+  --dx-rail-w-closed: 74px;
+  --dx-gap: 22px;
+  --dx-maxw: 1400px;
+  --dx-ease: ease;
+}
+
+/* ── tokens: light (v3, exactly) ─────────────────────────────────────────── */
+
+:root[data-theme='light'] .pd-app.dx-app {
+  --dx-ink: #0b1512;
+  --dx-ink-rgb: 11, 21, 18;
+  --dx-ink2: #16302a;
+  --dx-mint: #5fe9c4;
+  --dx-mint-rgb: 95, 233, 196;
+  --dx-deep: #0b7f63;
+  --dx-deep-rgb: 11, 127, 99;
+  --dx-bone: #f6f8f7;
+  --dx-card: #ffffff;
+  --dx-muted: #6b7772;
+  --dx-faint: #9aa5a0;
+  --dx-line: #e6e9e8;
+  --dx-soft: #eef1f0;
+  --dx-rule: #c6cfcb;
+  --dx-down: #b4553f;
+  --dx-down-rgb: 180, 85, 63;
+  --dx-warn: #8a6d2f;
+  --dx-warn-rgb: 138, 109, 47;
+  --dx-amber: #d6a05a;
+  --dx-amber-rgb: 214, 160, 90;
+  --dx-caution: #c68a3f;
+  --dx-caution-rgb: 198, 138, 63;
+  --dx-gold-rgb: 214, 178, 88;
+  --dx-purple: #7a4fb5;
+  --dx-purple-rgb: 122, 79, 181;
+  --dx-pass-teal: #0b7f63;
+  --dx-pass-deep-green: #16302a;
+  --dx-pass-purple: #7a4fb5;
+  --dx-pass-terracotta: #b4553f;
+  --dx-pass-ink: #0b1512;
+  --dx-pass-end: #0b1512;
+  --dx-pass-live-fg: #0b7f63;
+  --dx-blue: #3f6b8a;
+  --dx-blue-ink: #2c5570;
+  --dx-blue-rgb: 63, 107, 138;
+  --dx-white-rgb: 255, 255, 255;
+  --dx-on-mint: #04120d;
+  --dx-on-deep: #ffffff;
+  --dx-dash: #cbd3cf;
+  --dx-wordmark: #0b9e7a;
+  --dx-link-hover: #096b54;
+  --dx-disabled-bg: #eef1f0;
+  --dx-disabled-fg: #b9c2be;
+
+  --dx-page: #f6f8f7;
+  --dx-rail-bg: #ffffff;
+  --dx-bar-bg: rgba(255, 255, 255, 0.88);
+  --dx-chrome-blur: blur(12px);
+  --dx-card-blur: none;
+  --dx-card-shadow: none;
+  --dx-control-bg: #ffffff;
+  --dx-overlay-bg: #ffffff;
+  --dx-hover-row: #f6f8f7;
+
+  --dx-ink-card: #0b1512;
+  --dx-ink-card-fg: #ffffff;
+  --dx-ink-card-rgb: 255, 255, 255;
+  --dx-ink-tile: #122019;
+  --dx-ink-accent: #5fe9c4;
+
+  --dx-press-bg: #0b1512;
+  --dx-press-fg: #5fe9c4;
+  --dx-press-hover: #16302a;
+  --dx-nav-on-bg: #0b1512;
+  --dx-nav-on-fg: #5fe9c4;
+  /* v3 draws no hover on a rail item; the bone is the lightest mark that still
+     says "this is pressable" without competing with the ink pill. */
+  --dx-nav-hover-bg: #f6f8f7;
+
+  --dx-scrim: rgba(11, 21, 18, 0.42);
+  --dx-scrim-strong: rgba(11, 21, 18, 0.5);
+  --dx-toast-bg: #0b1512;
+  --dx-toast-fg: #ffffff;
+  --dx-shadow-menu: 0 4px 16px rgba(11, 21, 18, 0.12);
+  --dx-shadow-drawer: -24px 0 60px rgba(11, 21, 18, 0.18);
+  --dx-shadow-modal: 0 30px 70px rgba(11, 21, 18, 0.3);
+  --dx-shadow-toast: 0 18px 40px rgba(11, 21, 18, 0.28);
+  --dx-shadow-knob: 0 1px 3px rgba(11, 21, 18, 0.25);
+  --dx-lock-bg: linear-gradient(160deg, #1b3129, #0b1512);
+  --dx-shadow-phone: 0 20px 44px rgba(11, 21, 18, 0.22);
+
+  --dx-hatch: repeating-linear-gradient(
+    135deg,
+    rgba(11, 127, 99, 0.42) 0 5px,
+    rgba(11, 127, 99, 0.13) 5px 10px
+  );
+  --dx-fill: linear-gradient(90deg, #5fe9c4, #0b7f63);
+  --dx-fill-v: linear-gradient(180deg, #5fe9c4, #0b7f63);
+  /* v3's dark-slab variants: the mint hatch, #FFD9A8 forecast text and the
+     #FF9C7A "available" figure once the pool is gone. */
+  --dx-hatch-ink: repeating-linear-gradient(
+    135deg,
+    rgba(95, 233, 196, 0.44) 0 5px,
+    rgba(95, 233, 196, 0.14) 5px 10px
+  );
+  --dx-ink-warn: #ffd9a8;
+  --dx-ink-down: #ff9c7a;
+
+  --dx-chat-text: #374151;
+  --dx-chat-user-bg: #0d9488;
+  --dx-chat-user-fg: #ffffff;
+  --dx-chat-dot: #0d9488;
+  --dx-chat-bot-fg: #ffffff;
+  --dx-chat-well: #c9d2ce;
+  --dx-chat-draft-bg: #fef3c7;
+  --dx-chat-draft-line: #fde68a;
+  --dx-chat-draft-fg: #92400e;
+  --dx-shadow-bubble: 0 1px 3px rgba(11, 21, 18, 0.04);
+}
+
+/* ═══════════════════════════════════════════════════════════════ frame ══ */
+
+/* v3 is a flex row: the rail, then the page. */
+.pd-app.dx-app {
+  display: flex;
+  align-items: stretch;
+  min-height: 100dvh;
+  background: var(--dx-page);
+  color: var(--dx-ink);
+  font-family: var(--dx-font);
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The field the dark glass refracts: two radial washes of the accent at alpha,
+   fixed so it does not travel with the scroll (a wash moving under a sticky
+   rail reads as a second page). `isolation` keeps it behind the frame's
+   content and in front of its ground. */
+.pd-app.dx-app {
+  position: relative;
+  isolation: isolate;
+}
+
+.pd-app.dx-app::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(58rem 40rem at 78% -6%, rgba(var(--glow-rgb), calc(0.16 * var(--glow-k))), transparent 62%),
+    radial-gradient(46rem 34rem at 4% 104%, rgba(var(--glow-rgb), calc(0.11 * var(--glow-k))), transparent 60%),
+    var(--bg);
+}
+
+/* The aurora is dark's: light is v3's flat bone. */
+:root[data-theme='light'] .pd-app.dx-app::before {
+  content: none;
+}
+
+.dx-app :is(h1, h2, h3, h4, h5) {
+  font-family: var(--dx-font);
+}
+
+.dx-app ::selection {
+  background: var(--dx-mint);
+  color: var(--dx-on-mint);
+}
+
+.dx-app :is(input, select, textarea, button) {
+  font-family: inherit;
+}
+
+/* ── rail ── */
+
+.dx-rail {
+  position: sticky;
+  top: 0;
+  flex: 0 0 var(--dx-rail-w);
+  width: var(--dx-rail-w);
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--dx-rail-bg);
+  border-right: 1px solid var(--dx-line);
+  backdrop-filter: var(--dx-chrome-blur);
+  -webkit-backdrop-filter: var(--dx-chrome-blur);
+  transition:
+    flex-basis 0.2s,
+    width 0.2s;
+  z-index: 31;
+}
+
+.dx-rail[data-collapsed='true'] {
+  flex-basis: var(--dx-rail-w-closed);
+  width: var(--dx-rail-w-closed);
+}
+
+.dx-rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 20px 18px;
+  border-bottom: 1px solid var(--dx-soft);
+}
+
+/* The wordmark is `.brand`'s face (Onest 900, the product's one brand
+   declaration) at v3's 22px and v3's green. */
+.dx-rail-word {
+  font-family: var(--font-brand);
+  font-weight: 900;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--dx-wordmark);
+}
+
+.dx-rail-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.18);
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+
+.dx-rail-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 16px 12px;
+  overflow-y: auto;
+}
+
+.dx-rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dx-rail-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dx-faint);
+  padding: 0 10px 8px;
+}
+
+.dx-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--dx-muted);
+  background: transparent;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.dx-nav:hover {
+  background: var(--dx-nav-hover-bg);
+}
+
+.dx-nav[aria-current='page'] {
+  background: var(--dx-nav-on-bg);
+  color: var(--dx-nav-on-fg);
+}
+
+.dx-nav-in {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.dx-nav-in > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dx-nav-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.2);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+
+.dx-rail[data-collapsed='true'] :is(.dx-rail-brand, .dx-rail-label, .dx-nav-in > span, .dx-nav-badge, .dx-plan) {
+  display: none;
+}
+
+.dx-rail[data-collapsed='true'] .dx-nav {
+  justify-content: center;
+}
+
+.dx-rail-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-top: 1px solid var(--dx-soft);
+}
+
+/* The plan card. A real button, because it opens the plan modal. */
+.dx-plan {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--dx-bone);
+  border: 1px solid var(--dx-line);
+  text-align: left;
+  color: var(--dx-ink);
+  transition: border-color 0.15s;
+}
+
+.dx-plan:hover {
+  border-color: var(--dx-deep);
+}
+
+.dx-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dx-plan-state {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.2);
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+
+.dx-plan-cap {
+  margin: 0 0 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--dx-muted);
+}
+
+.dx-plan .dx-progress {
+  margin-bottom: 8px;
+}
+
+.dx-plan-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dx-muted);
+}
+
+/* ── the content column and the bar ── */
+
+.dx-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dx-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  min-height: 64px;
+  padding: 0 24px;
+  background: var(--dx-bar-bg);
+  backdrop-filter: var(--dx-chrome-blur);
+  -webkit-backdrop-filter: var(--dx-chrome-blur);
+  border-bottom: 1px solid var(--dx-line);
+}
+
+.dx-crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 0;
+  font-size: 13px;
+  color: var(--dx-muted);
+}
+
+.dx-crumb > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dx-crumb-sep {
+  color: var(--dx-rule);
+}
+
+.dx-crumb b {
+  color: var(--dx-ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dx-bar-spacer {
+  flex: 1;
+}
+
+.dx-bar-acts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 0;
+}
+
+/* A bordered box with an icon and a native select — v3's branch, range and
+   language controls. The select is the whole control's target: the box is a
+   `<label>`, so a press on the icon or the padding opens it too. */
+.dx-select-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--dx-line);
+  border-radius: 10px;
+  background: var(--dx-control-bg);
+  color: var(--dx-muted);
+  cursor: pointer;
+}
+
+.dx-select-box:focus-within {
+  border-color: var(--dx-deep);
+}
+
+.dx-select-box[data-tone='deep'] {
+  color: var(--dx-deep);
+}
+
+.dx-select-box select {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dx-ink);
+  outline: none;
+  cursor: pointer;
+  max-width: 170px;
+}
+
+.dx-select-box[data-tone='deep'] select {
+  font-weight: 700;
+}
+
+/* v3's currency select draws its own chevron, so the native one is removed —
+   the other selects keep the platform's, as v3 does. */
+.dx-select-box[data-caret='own'] {
+  padding-right: 10px;
+}
+
+.dx-select-box[data-caret='own'] select {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* The dropdown's own list is drawn by the OS; on black it needs to be told. */
+.dx-select-box option {
+  background: var(--dx-overlay-bg);
+  color: var(--dx-ink);
+}
+
+.dx-icon-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 10px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-control-bg);
+  color: var(--dx-ink);
+  transition: border-color 0.15s;
+}
+
+.dx-icon-btn:hover {
+  border-color: var(--dx-deep);
+}
+
+.dx-icon-btn[data-size='sm'] {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+  border-radius: 9px;
+}
+
+.dx-dot {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dx-deep);
+  border: 1.5px solid var(--dx-control-bg);
+}
+
+.dx-user {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 12px 5px 5px;
+  border: 1px solid var(--dx-line);
+  border-radius: 999px;
+  background: var(--dx-control-bg);
+  color: var(--dx-ink);
+  transition: border-color 0.15s;
+}
+
+.dx-user:hover {
+  border-color: var(--dx-deep);
+}
+
+.dx-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(var(--dx-mint-rgb), 0.25);
+  color: var(--dx-deep);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dx-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dx-user-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── menus hung off the bar (the bell, the user) ── */
+
+.dx-pop {
+  position: relative;
+}
+
+.dx-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-overlay-bg);
+  box-shadow: var(--dx-shadow-menu);
+  animation: dxFade 0.2s ease;
+}
+
+.dx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dx-ink);
+  text-align: left;
+}
+
+.dx-menu-item:hover {
+  background: var(--dx-bone);
+}
+
+.dx-menu-item svg {
+  color: var(--dx-muted);
+}
+
+.dx-inbox {
+  width: min(360px, calc(100vw - 32px));
+  padding: 0;
+}
+
+.dx-inbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--dx-soft);
+  font-size: 13px;
+}
+
+.dx-inbox-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.dx-inbox-list li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--dx-soft);
+}
+
+.dx-inbox-list li[data-unread='true'] {
+  background: rgba(var(--dx-mint-rgb), 0.08);
+}
+
+.dx-inbox-list b {
+  display: block;
+  font-size: 13px;
+}
+
+.dx-inbox-list p {
+  margin: 2px 0 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dx-muted);
+}
+
+.dx-inbox-list time,
+.dx-inbox-note {
+  font-size: 11.5px;
+  color: var(--dx-faint);
+}
+
+.dx-inbox-note {
+  padding: 12px 14px;
+  margin: 0;
+  line-height: 1.55;
+}
+
+.dx-link {
+  color: var(--dx-deep);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.dx-link:hover {
+  color: var(--dx-link-hover);
+}
+
+/* ── the page ── */
+
+.dx-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dx-gap);
+  width: 100%;
+  max-width: var(--dx-maxw);
+  padding: 26px 24px 48px;
+}
+
+/* v3 fades every screen in on arrival. */
+.dx-screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dx-gap);
+  min-width: 0;
+  animation: dxFade 0.3s ease;
+}
+
+.dx-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.dx-head h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.dx-head p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--dx-muted);
+  text-wrap: pretty;
+}
+
+.dx-head-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ═════════════════════════════════════════════════════════════════ kit ══ */
+
+/* ── card ── */
+
+.dx-card {
+  position: relative;
+  min-width: 0;
+  padding: 24px;
+  border-radius: var(--dx-r-card);
+  border: 1px solid var(--dx-line);
+  background: var(--dx-card);
+  backdrop-filter: var(--dx-card-blur);
+  -webkit-backdrop-filter: var(--dx-card-blur);
+  box-shadow: var(--dx-card-shadow);
+}
+
+.dx-card[data-pad='none'] {
+  padding: 0;
+  overflow: hidden;
+}
+
+.dx-card[data-pad='sm'] {
+  padding: 18px 20px;
+}
+
+.dx-card[data-tone='ink'] {
+  background: var(--dx-ink-card);
+  color: var(--dx-ink-card-fg);
+  border-color: transparent;
+  border-radius: var(--dx-r-hero);
+  padding: 32px 34px;
+}
+
+:root:not([data-theme='light']) .dx-card[data-tone='ink'] {
+  border-color: var(--dx-line);
+}
+
+.dx-card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+.dx-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.dx-card-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--dx-muted);
+}
+
+/* ── eyebrow ── */
+
+.dx-eyebrow {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dx-deep);
+}
+
+.dx-eyebrow[data-tone='mint'] {
+  color: var(--dx-ink-accent);
+}
+
+.dx-eyebrow[data-tone='faint'] {
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  color: var(--dx-faint);
+}
+
+/* ── metric ── */
+
+.dx-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+  gap: 14px;
+}
+
+/* Two classes: `Metric` is a `pad="none"` card, and `.dx-card[data-pad='none']`
+   would otherwise zero this padding by specificity. */
+.dx-card.dx-metric {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px;
+}
+
+.dx-metric-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dx-muted);
+}
+
+.dx-metric-value {
+  margin: 6px 0 8px;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.dx-metric-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--dx-faint);
+}
+
+.dx-delta {
+  font-size: 11.5px;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 3px 7px;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.22);
+}
+
+.dx-delta[data-dir='down'] {
+  color: var(--dx-down);
+  background: rgba(var(--dx-down-rgb), 0.1);
+}
+
+/* ── pill ── */
+
+.dx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: var(--dx-r-pill);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--dx-muted);
+  background: var(--dx-soft);
+}
+
+.dx-pill[data-size='sm'] {
+  padding: 3px 8px;
+  font-size: 10.5px;
+}
+
+.dx-pill:is([data-tone='live'], [data-tone='active']) {
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.22);
+}
+
+.dx-pill[data-tone='scheduled'] {
+  color: var(--dx-blue);
+  background: rgba(var(--dx-blue-rgb), 0.12);
+}
+
+.dx-pill:is([data-tone='paused'], [data-tone='invited'], [data-tone='warn']) {
+  color: var(--dx-warn);
+  background: rgba(var(--dx-gold-rgb), 0.22);
+}
+
+.dx-pill:is([data-tone='stopped'], [data-tone='down']) {
+  color: var(--dx-down);
+  background: rgba(var(--dx-down-rgb), 0.12);
+}
+
+.dx-pill[data-tone='purple'] {
+  color: var(--dx-purple);
+  background: rgba(var(--dx-purple-rgb), 0.12);
+}
+
+.dx-pill[data-tone='ink'] {
+  color: var(--dx-press-fg);
+  background: var(--dx-press-bg);
+}
+
+.dx-pill[data-tone='mint'] {
+  color: var(--dx-on-mint);
+  background: var(--dx-mint);
+}
+
+/* ── button ── */
+
+.dx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: var(--dx-r-btn);
+  border: 1px solid transparent;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.dx-btn[data-variant='primary'] {
+  background: var(--dx-press-bg);
+  color: var(--dx-press-fg);
+}
+
+.dx-btn[data-variant='primary']:hover:not(:disabled) {
+  background: var(--dx-press-hover);
+}
+
+/* The in-card mint press v3 puts on dark slabs ("Create a pass"). */
+.dx-btn[data-variant='mint'] {
+  background: var(--dx-mint);
+  color: var(--dx-on-mint);
+}
+
+.dx-btn:is([data-variant='secondary'], [data-variant='small']) {
+  padding: 11px 16px;
+  background: var(--dx-control-bg);
+  border-color: var(--dx-line);
+  color: var(--dx-ink);
+  font-weight: 600;
+}
+
+.dx-btn[data-variant='small'] {
+  padding: 7px 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+}
+
+.dx-btn:is([data-variant='secondary'], [data-variant='small']):hover:not(:disabled) {
+  border-color: var(--dx-deep);
+  color: var(--dx-deep);
+}
+
+.dx-btn[data-variant='danger'] {
+  background: var(--dx-down);
+  color: var(--dx-card);
+}
+
+:root:not([data-theme='light']) .dx-btn[data-variant='danger'] {
+  color: var(--bg);
+}
+
+/* v3's "Current plan": a secondary that cannot be pressed keeps its box and
+   goes quiet, rather than turning into the primary's grey slab. */
+.dx-btn[data-variant='secondary']:disabled {
+  background: var(--dx-bone);
+  border-color: var(--dx-line);
+  color: var(--dx-muted);
+  cursor: default;
+}
+
+.dx-btn:not([data-variant='secondary']):disabled {
+  background: var(--dx-disabled-bg);
+  border-color: transparent;
+  color: var(--dx-disabled-fg);
+  cursor: not-allowed;
+}
+
+.dx-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  transition-duration: 40ms;
+}
+
+.dx-btn[data-block='true'] {
+  width: 100%;
+}
+
+/* ── segmented ── */
+
+.dx-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+}
+
+.dx-seg button {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dx-muted);
+  background: transparent;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.dx-seg button[aria-pressed='true'] {
+  background: var(--dx-press-bg);
+  color: var(--dx-press-fg);
+}
+
+/* ── table ── */
+
+.dx-table-wrap {
+  overflow-x: auto;
+}
+
+.dx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.dx-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--dx-muted);
+  background: var(--dx-bone);
+}
+
+.dx-table :is(th, td)[data-align='right'] {
+  text-align: right;
+}
+
+.dx-table td {
+  padding: 14px 16px;
+  border-top: 1px solid var(--dx-soft);
+  vertical-align: middle;
+}
+
+.dx-table tbody tr {
+  transition: background 0.15s;
+}
+
+.dx-table tbody tr:hover {
+  background: var(--dx-hover-row);
+}
+
+/* ── progress (spent · set aside · free) ── */
+
+.dx-progress {
+  display: flex;
+  height: var(--dx-progress-h, 6px);
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--dx-line);
+}
+
+.dx-progress[data-track='soft'] {
+  background: var(--dx-soft);
+}
+
+.dx-progress > i {
+  display: block;
+  height: 100%;
+  background: var(--dx-fill);
+  transition: width 0.3s ease;
+}
+
+.dx-progress > i[data-part='aside'] {
+  background: var(--dx-hatch);
+}
+
+.dx-progress[data-tone='amber'] > i[data-part='spent'] {
+  background: var(--dx-amber);
+}
+
+.dx-progress[data-tone='down'] > i[data-part='spent'] {
+  background: var(--dx-down);
+}
+
+/* ── toggle ── */
+
+.dx-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.dx-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.dx-toggle-track {
+  position: relative;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 26px;
+  padding: 3px;
+  border-radius: 99px;
+  background: var(--dx-rule);
+  transition: background 0.18s;
+}
+
+.dx-toggle-track::after {
+  content: '';
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--dx-card);
+  box-shadow: var(--dx-shadow-knob);
+  transition: transform 0.18s;
+}
+
+:root:not([data-theme='light']) .dx-toggle-track::after {
+  background: var(--text);
+}
+
+.dx-toggle input:checked + .dx-toggle-track {
+  background: var(--dx-deep);
+}
+
+.dx-toggle input:checked + .dx-toggle-track::after {
+  transform: translateX(20px);
+}
+
+.dx-toggle input:focus-visible + .dx-toggle-track {
+  outline: 2px solid var(--dx-deep);
+  outline-offset: 2px;
+}
+
+.dx-toggle input:disabled + .dx-toggle-track {
+  opacity: 0.5;
+}
+
+/* ── fields ── */
+
+.dx-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.dx-field-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dx-muted);
+}
+
+.dx-field-help {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dx-faint);
+}
+
+.dx-field-error {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--dx-down);
+}
+
+.dx-input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--dx-line);
+  border-radius: var(--dx-r-input);
+  background: var(--dx-control-bg);
+  color: var(--dx-ink);
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.dx-input:focus,
+.dx-input:focus-within {
+  border-color: var(--dx-deep);
+}
+
+.dx-input[aria-invalid='true'] {
+  border-color: var(--dx-down);
+}
+
+textarea.dx-input {
+  resize: vertical;
+  min-height: 84px;
+  line-height: 1.55;
+}
+
+/* A number with its unit, as one bordered row: the `<label>` is the well, so a
+   press anywhere on it — the unit included — puts the caret in. */
+.dx-unit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: text;
+}
+
+.dx-unit input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.dx-unit > span {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dx-faint);
+}
+
+@media (pointer: coarse) {
+  /* Under 16px iOS zooms the page on focus. */
+  .dx-input,
+  .dx-select-box select {
+    font-size: 1rem;
+  }
+}
+
+/* ── overlays: drawer, modal, toast ── */
+
+.dx-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dx-overlay[data-kind='modal'] {
+  z-index: 90;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.dx-overlay[data-kind='confirm'] {
+  z-index: 95;
+}
+
+.dx-scrim {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: var(--dx-scrim);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.dx-overlay[data-kind='modal'] .dx-scrim,
+.dx-overlay[data-kind='confirm'] .dx-scrim {
+  background: var(--dx-scrim-strong);
+}
+
+.dx-drawer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 620px;
+  max-width: 100%;
+  height: 100%;
+  background: var(--dx-overlay-bg);
+  color: var(--dx-ink);
+  border-left: 1px solid var(--dx-line);
+  box-shadow: var(--dx-shadow-drawer);
+  animation: dxSlide 0.26s ease;
+  outline: none;
+}
+
+/* The panels take focus so the keyboard starts inside them; that focus is a
+   starting point, not a selection, and a ring round the whole sheet says the
+   opposite. Controls inside keep the site's ring. */
+.dx-drawer:focus-visible,
+.dx-modal:focus-visible,
+.dx-confirm:focus-visible {
+  outline: none;
+}
+
+.dx-drawer-head,
+.dx-modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 22px 26px;
+  border-bottom: 1px solid var(--dx-soft);
+}
+
+.dx-drawer-head > div,
+.dx-modal-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.dx-drawer-head .dx-eyebrow,
+.dx-modal-head .dx-eyebrow {
+  font-size: 10.5px;
+  margin-bottom: 7px;
+}
+
+.dx-drawer-head h2 {
+  margin: 0 0 5px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.dx-drawer-head p,
+.dx-modal-head p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--dx-muted);
+}
+
+.dx-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 26px;
+}
+
+.dx-drawer-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 26px;
+  border-top: 1px solid var(--dx-soft);
+}
+
+.dx-drawer-acts {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dx-invalid {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--dx-down);
+  background: rgba(var(--dx-down-rgb), 0.09);
+}
+
+/* Sections inside a drawer body: 26px apart, a hairline between. */
+.dx-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.dx-sections > * + * {
+  padding-top: 26px;
+  border-top: 1px solid var(--dx-soft);
+}
+
+.dx-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: var(--dx-modal-w, 920px);
+  max-width: 100%;
+  max-height: 90vh;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--dx-overlay-bg);
+  color: var(--dx-ink);
+  box-shadow: var(--dx-shadow-modal);
+  animation: dxFade 0.2s ease;
+  outline: none;
+}
+
+.dx-modal-head {
+  padding: 28px 28px 0;
+  border-bottom: none;
+}
+
+.dx-modal-head h2 {
+  margin: 0 0 5px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.dx-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 28px 28px;
+}
+
+.dx-confirm {
+  position: relative;
+  width: 440px;
+  max-width: 100%;
+  padding: 26px;
+  border-radius: 18px;
+  background: var(--dx-overlay-bg);
+  color: var(--dx-ink);
+  box-shadow: var(--dx-shadow-modal);
+  animation: dxFade 0.2s ease;
+}
+
+.dx-confirm-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: var(--dx-down);
+  background: rgba(var(--dx-down-rgb), 0.12);
+}
+
+.dx-confirm[data-tone='regen'] .dx-confirm-ico {
+  color: var(--dx-warn);
+  background: rgba(var(--dx-gold-rgb), 0.16);
+}
+
+.dx-confirm h3 {
+  margin: 16px 0 8px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.dx-confirm p {
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+  text-wrap: pretty;
+}
+
+.dx-confirm-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dx-toast {
+  position: fixed;
+  bottom: 26px;
+  left: 50%;
+  z-index: 96;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 14px 20px;
+  border-radius: 12px;
+  background: var(--dx-toast-bg);
+  color: var(--dx-toast-fg);
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: var(--dx-shadow-toast);
+  transform: translateX(-50%);
+  animation: dxToast 0.2s ease;
+}
+
+.dx-toast i {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--dx-mint);
+  color: var(--dx-on-mint);
+}
+
+/* ── empty state, callouts, sparkline ── */
+
+.dx-empty {
+  max-width: 620px;
+  padding: 34px 34px 30px;
+}
+
+.dx-empty-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(var(--dx-mint-rgb), 0.2);
+  color: var(--dx-deep);
+  margin-bottom: 18px;
+}
+
+.dx-empty h2 {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.dx-empty p {
+  margin: 0;
+  max-width: 520px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--dx-muted);
+  text-wrap: pretty;
+}
+
+.dx-empty-suggest {
+  margin-top: 20px;
+  padding: 16px 18px;
+  border-radius: 13px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+}
+
+.dx-empty-suggest b {
+  display: block;
+  margin: 6px 0 4px;
+  font-size: 15px;
+}
+
+.dx-empty-suggest span {
+  font-size: 12.5px;
+  color: var(--dx-muted);
+}
+
+.dx-empty .dx-btn {
+  margin-top: 22px;
+  padding: 13px 20px;
+  border-radius: 11px;
+  font-size: 14px;
+}
+
+.dx-callout {
+  padding: 14px 16px;
+  border-radius: 13px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.dx-callout[data-tone='mint'] {
+  background: rgba(var(--dx-mint-rgb), 0.13);
+  border-color: rgba(var(--dx-deep-rgb), 0.18);
+}
+
+.dx-callout[data-tone='amber'] {
+  background: rgba(var(--dx-caution-rgb), 0.09);
+  border-color: rgba(var(--dx-caution-rgb), 0.35);
+}
+
+.dx-callout[data-tone='down'] {
+  background: rgba(var(--dx-down-rgb), 0.08);
+  border-color: rgba(var(--dx-down-rgb), 0.3);
+}
+
+.dx-spark {
+  display: block;
+  flex: 0 0 auto;
+  color: var(--dx-deep);
+}
+
+.dx-spark[data-tone='ink'] {
+  color: var(--dx-ink);
+}
+
+/* ── the plan modal ── */
+
+.dx-plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.dx-plan-tier {
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-card);
+}
+
+.dx-plan-tier[data-current='true'] {
+  border: 2px solid var(--dx-deep);
+}
+
+.dx-plan-tier h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.dx-plan-tier .dx-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+}
+
+.dx-plan-price {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.dx-plan-price b {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.dx-plan-price span {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dx-muted);
+}
+
+.dx-plan-rule {
+  height: 1px;
+  margin: 16px 0 18px;
+  background: var(--dx-soft);
+}
+
+.dx-plan-feats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.dx-plan-feats li {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+
+.dx-plan-feats svg {
+  flex: 0 0 16px;
+  margin-top: 1px;
+  color: var(--dx-deep);
+}
+
+.dx-plan-tier > .dx-btn {
+  width: 100%;
+  margin-top: auto;
+}
+
+.dx-plan-mine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 20px;
+  font-size: 12.5px;
+  color: var(--dx-muted);
+}
+
+.dx-disclose {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 28px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dx-ink);
+}
+
+.dx-disclose:hover {
+  color: var(--dx-deep);
+}
+
+.dx-compare {
+  margin-top: 16px;
+  border: 1px solid var(--dx-line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.dx-compare .dx-table th {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12.5px;
+}
+
+.dx-compare .dx-table td {
+  padding: 11px 18px;
+  font-size: 12.5px;
+}
+
+.dx-compare [data-on='true'] {
+  color: var(--dx-deep);
+  font-weight: 600;
+}
+
+.dx-fine {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+
+/* `Figure`'s em dash for a suppressed metric: faint and un-bolded so it reads
+   as an absence, never as a figure; `cursor: help` because it carries a title. */
+.dx-app .dx-withheld {
+  font-weight: 400;
+  color: var(--dx-faint);
+  cursor: help;
+}
+
+/* ── the listing preview (a phone, ground black in both themes) ── */
+
+.dx-phone {
+  width: 290px;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 14px;
+  border-radius: 30px;
+  background: var(--dx-press-bg);
+  box-shadow: var(--dx-shadow-toast);
+}
+
+:root:not([data-theme='light']) .dx-phone {
+  background: var(--dx-ink-tile);
+  border: 1px solid var(--dx-line);
+}
+
+.dx-phone-screen {
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--dx-ink-tile);
+  color: var(--dx-ink-card-fg);
+}
+
+.dx-phone-cover {
+  height: 106px;
+  background: var(--dx-hatch);
+}
+
+.dx-phone-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px 18px;
+  font-size: 12.5px;
+}
+
+.dx-phone-body em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: rgba(var(--dx-ink-card-rgb), 0.6);
+}
+
+.dx-phone-body b {
+  font-size: 15.5px;
+  font-weight: 800;
+}
+
+.dx-phone-body p {
+  margin: 0;
+  color: rgba(var(--dx-ink-card-rgb), 0.72);
+}
+
+.dx-phone-body span {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-weight: 700;
+  color: var(--dx-on-mint);
+  background: var(--dx-mint);
+}
+
+/* ═════════════════════════════════════════════════════ motion & narrow ══ */
+
+@keyframes dxFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dxSlide {
+  from {
+    transform: translateX(24px);
+    opacity: 0.4;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes dxToast {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-screen,
+  .dx-menu,
+  .dx-drawer,
+  .dx-modal,
+  .dx-confirm,
+  .dx-toast {
+    animation: none;
+  }
+
+  .dx-rail,
+  .dx-progress > i,
+  .dx-toggle-track,
+  .dx-toggle-track::after {
+    transition: none;
+  }
+}
+
+/* Glass is dark's, and it is the first thing to go when someone has asked for
+   less: the sheet goes opaque and the blur goes. */
+@media (prefers-reduced-transparency: reduce), (prefers-reduced-motion: reduce) {
+  :root:not([data-theme='light']) .pd-app.dx-app {
+    --dx-card: color-mix(in srgb, var(--bg-2) 88%, var(--bg));
+    --dx-card-blur: none;
+    --dx-chrome-blur: none;
+    --dx-rail-bg: var(--bg-2);
+    --dx-bar-bg: var(--bg-2);
+  }
+}
+
+/*
+ * v3 has no breakpoints — it wraps. The frame needs two, because a 240px rail
+ * is a third of a tablet and the whole of a phone. Measured, not liked: at
+ * 1160px the rail starts costing the page its second column, and below 46rem
+ * there is no room beside the page for a rail at all.
+ */
+@media (max-width: 1160px) {
+  .dx-rail,
+  .dx-rail[data-collapsed='true'] {
+    flex-basis: var(--dx-rail-w-closed);
+    width: var(--dx-rail-w-closed);
+  }
+
+  .dx-rail :is(.dx-rail-brand, .dx-rail-label, .dx-nav-in > span, .dx-nav-badge, .dx-plan, .dx-rail-collapse) {
+    display: none;
+  }
+
+  .dx-rail .dx-nav {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 46rem) {
+  .pd-app.dx-app {
+    flex-direction: column;
+  }
+
+  /* The rail becomes a bar along the bottom, scrolling rather than wrapping
+     (a nav that grows a second row moves the page under the thumb). */
+  .dx-rail,
+  .dx-rail[data-collapsed='true'] {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 32;
+    width: auto;
+    height: auto;
+    flex-direction: row;
+    border-right: 0;
+    border-top: 1px solid var(--dx-line);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .dx-rail-nav {
+    flex-direction: row;
+    gap: 2px;
+    padding: 6px 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .dx-rail-group {
+    flex-direction: row;
+  }
+
+  .dx-rail-foot {
+    display: none;
+  }
+
+  .dx-rail .dx-nav {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .dx-main {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+
+  /* Three rows of controls on a phone; pinned, they would hold a fifth of
+     the screen over every page. */
+  .dx-bar {
+    position: static;
+    padding: 0 16px;
+    gap: 8px;
+  }
+
+  .dx-page {
+    padding: 20px 16px 40px;
+  }
+
+  .dx-card[data-tone='ink'] {
+    padding: 24px 20px;
+  }
+
+  .site-app .assistant-fab {
+    bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+}
+
+/* The site's assistant button floats over the bottom-left corner, which is
+   exactly where a drawer's footer puts Cancel and a modal its actions. While
+   any dashboard overlay is open (every one draws a `.dx-scrim`) the button is
+   behind a scrim anyway, so it goes rather than sitting on the footer. */
+.site-app:has(.pd-app .dx-scrim) .assistant-fab {
+  display: none;
+}

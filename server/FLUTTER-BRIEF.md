@@ -1360,6 +1360,8 @@ lists only transactions that can still be confirmed.
 | --- | --- |
 | `GET …/venues/{id}/today` | `period` is the **venue-local day** `YYYY-MM-DD` — it was the month, which was a bug — and counts from the venue's midnight, not UTC's. `timezone` added. `pendingConfirmations` leaves out scans that can no longer be confirmed |
 | `GET …/budget`, `GET …/overview` | each `tiers[]` rung gains `issuedCount`, `redeemedCount`, `activeCount`, `spentMinor`, `active`; a rung switched off while its vouchers are out appears with `active: false`, `available: false` |
+| `GET …/budget`, `GET …/overview` | `returnedMinor`: what expired vouchers released back into this month's voucher pool (minor units of the budget's currency); `averageCheck` also carries `source` (`computed` / `category`) and `samples`, as it always did on the wire |
+| `GET …/vouchers` | gains `currency` (the venue's); `totals` gains `activeReservedMinor`, `redeemedSpentMinor`, `expiredReleasedMinor` |
 | `GET …/overview?period=` | `findings` now follow the month asked for; a `period` that is not `YYYY-MM` is a 400 (it was a 500) — also on `/analytics`, `/reach`, `/export` |
 | `GET …/campaigns` | rows gain `near`, `available`, `expired`, `reserved_minor` |
 | `GET …/push-quota` | gains `funnel: { sent, delivered, opened, cameIn }` |
@@ -2027,3 +2029,34 @@ after either of them.
       `409 no_energy`.
 - [ ] Any assertion that a fourth Word Builder hint or a sixth assistant ask
       succeeds. Both are 403s now.
+
+### 32. Subscription passes — new, and in-app subscribing is switched off
+
+A venue can now sell a monthly pass ("a coffee a day", "ten coffees a month",
+"15% off and perks"). Everything is additive; nothing existing changed. The table
+and rules are in `server/API.md` §14 and the shapes in `openapi.json` (`passes`).
+
+What the app can use today:
+
+- **A venue's passes**: `GET /v1/venues/{id}/passes` → `{passes, subscribeAvailable}`.
+  Live passes only. Each carries `subscribable` and `unavailableReason`
+  (`payments_unavailable` | `sold_out` | null) and, signed in, `mine`.
+- **My passes**: `GET /v1/me/passes` → `{subscriptions}`, each with `code`
+  (`PS-XXXXXX`, what the customer shows the counter), `status`
+  (`trialing` | `active` | `cancelled` | `expired`), `periodEnd`, `terms` and an
+  `allowance` (`used`, `remaining`, `resetsAt`).
+- **Cancel**: `POST /v1/me/passes/{subscriptionId}/cancel`. The pass stays usable
+  to `periodEnd`.
+- **The partner companion's counter**: `POST /v1/partner/venues/{id}/passes/lookup
+  {code}` (needs `scan`) and `POST /v1/partner/venues/{id}/passes/redeem
+  {code, quantity?, billMinor?, memberId?}` (needs `redeem`, idempotent — send an
+  `Idempotency-Key`). Refusals: `cap_reached` (used up for this window),
+  `conflict` + `reason: wrong_day | outside_hours`, `expired`, `not_found`.
+
+What the app must **not** do: offer a working "Subscribe" button.
+`POST /v1/passes/{passId}/subscribe` answers `409 not_available` with
+`reason: "payments_unavailable"` — there is no payment rail for venue-direct
+subscriptions yet. Draw the pass with a "coming soon" state when
+`subscribable` is false, and treat `not_available` as a sentence, not a crash.
+It is a new error code in the closed set; a client switching exhaustively on
+`error.code` needs a branch for it.

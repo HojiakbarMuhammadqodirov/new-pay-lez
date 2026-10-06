@@ -1,0 +1,566 @@
+/* ══════════════════════════ the create drawer's forms (v3 §5.2 and §5.3)
+ *
+ * `dashboardDrawer.tsx`, imported by it. Shared by both bodies — the deal's
+ * and the campaign's — because they are one kit: a section label, option
+ * cards, toggle chips, unit fields, a stepper, an ink summary. The drawer's
+ * shell (head, scroll, footer, validation strip) is the kit's, in
+ * `dashboard.css`. Tokens only; every rule under `.dx-dform`.
+ * ═════════════════════════════════════════════════════════════════════ */
+
+.dx-dform .dx-dform-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dx-dform .dx-dform-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--dx-faint);
+}
+.dx-dform .dx-field-label {
+  font-size: 12.5px;
+  color: var(--dx-ink);
+}
+.dx-dform textarea.dx-input {
+  resize: vertical;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.dx-dform .dx-dform-hint,
+.dx-dform .dx-dform-lede {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dx-faint);
+}
+.dx-dform .dx-dform-lede {
+  max-width: 520px;
+  font-size: 13px;
+  color: var(--dx-muted);
+}
+.dx-dform .dx-seg {
+  align-self: flex-start;
+}
+.dx-dform .dx-dform-badge {
+  max-width: 240px;
+}
+.dx-dform .dx-dform-badge .dx-input {
+  font-weight: 700;
+}
+.dx-dform .dx-dform-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.dx-dform .dx-dform-window {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--dx-muted);
+  background: var(--dx-bone);
+}
+.dx-dform .dx-dform-window[data-bad='true'] {
+  font-weight: 600;
+  color: var(--dx-down);
+  background: rgba(var(--dx-down-rgb), 0.09);
+}
+
+/* ── toggle chips: the days, and the five priorities ── */
+
+.dx-dform .dx-dform-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.dx-dform .dx-dform-chips button {
+  padding: 9px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-control-bg);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dx-muted);
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+.dx-dform .dx-dform-chips[data-size='lg'] {
+  gap: 8px;
+}
+.dx-dform .dx-dform-chips[data-size='lg'] button {
+  padding: 10px 15px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.dx-dform .dx-dform-chips button[aria-pressed='true'] {
+  border-color: var(--dx-press-bg);
+  background: var(--dx-press-bg);
+  color: var(--dx-press-fg);
+}
+.dx-dform .dx-dform-hours {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dx-dform .dx-dform-hours .dx-field {
+  width: 140px;
+}
+.dx-dform .dx-dform-hours p {
+  flex: 1;
+  min-width: 180px;
+  margin: 0;
+  padding-bottom: 11px;
+  font-size: 12.5px;
+  color: var(--dx-muted);
+}
+
+/* ── option cards: the audience and the stop rule ── */
+
+.dx-dform .dx-dform-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.dx-dform .dx-dform-picks button,
+.dx-dform .dx-dform-radios button {
+  text-align: left;
+  border-radius: 12px;
+  border: 1.5px solid var(--dx-line);
+  background: var(--dx-control-bg);
+  color: var(--dx-ink);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.dx-dform .dx-dform-picks button {
+  flex: 1 1 210px;
+  padding: 14px 15px;
+}
+.dx-dform .dx-dform-picks button[aria-pressed='true'],
+.dx-dform .dx-dform-radios button[aria-pressed='true'] {
+  border-color: var(--dx-ink);
+  background: var(--dx-bone);
+}
+.dx-dform .dx-dform-picks b,
+.dx-dform .dx-dform-radios b {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.dx-dform .dx-dform-picks span,
+.dx-dform .dx-dform-radios em {
+  display: block;
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dx-muted);
+}
+.dx-dform .dx-dform-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.dx-dform .dx-dform-radios button {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 13px 15px;
+}
+.dx-dform .dx-dform-radios b {
+  margin-bottom: 3px;
+}
+.dx-dform .dx-dform-radios i {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--dx-rule);
+  background: var(--dx-control-bg);
+}
+.dx-dform .dx-dform-radios button[aria-pressed='true'] i {
+  border: 5px solid var(--dx-deep);
+}
+.dx-dform .dx-dform-strip {
+  margin: 0;
+  padding: 11px 13px;
+  border-radius: 11px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+  background: var(--dx-bone);
+}
+.dx-dform .dx-dform-short {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 220px;
+}
+.dx-dform .dx-unit input {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the notification ── */
+
+.dx-dform .dx-dform-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--dx-line);
+  border-radius: 12px;
+  background: var(--dx-bone);
+}
+.dx-dform .dx-dform-switch b {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 13px;
+}
+.dx-dform .dx-dform-switch span {
+  font-size: 12px;
+  color: var(--dx-muted);
+}
+.dx-dform .dx-dform-switch .dx-toggle {
+  flex: 0 0 auto;
+}
+.dx-dform .dx-dform-out {
+  padding: 15px 17px;
+  border: 1px solid var(--dx-line);
+  border-radius: 12px;
+  background: var(--dx-bone);
+}
+.dx-dform .dx-dform-out b {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.dx-dform .dx-dform-out p {
+  margin: 0 0 13px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+.dx-dform .dx-dform-out a {
+  text-decoration: none;
+}
+.dx-dform .dx-dform-notify {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.dx-dform .dx-dform-notify > .dx-field-label:not(:first-child) {
+  margin-top: 12px;
+}
+.dx-dform .dx-dform-when {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dx-dform .dx-dform-when .dx-input {
+  width: auto;
+  padding: 10px 13px;
+}
+.dx-dform .dx-dform-who {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 13px 15px;
+  border: 1px solid var(--dx-line);
+  border-radius: 11px;
+  background: var(--dx-control-bg);
+}
+.dx-dform .dx-dform-who b {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 13px;
+}
+.dx-dform .dx-dform-who span {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dx-muted);
+}
+.dx-dform .dx-dform-who em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--dx-faint);
+}
+.dx-dform .dx-dform-thin {
+  margin: 2px 0 0;
+  padding: 11px 13px;
+  border-radius: 11px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  background: rgba(var(--dx-caution-rgb), 0.12);
+}
+
+/*
+ * The lock screen: a picture of the customer phone, which is dark whichever
+ * theme the owner reads in. So it is drawn in the ink-card family (white at
+ * three alphas over the lock gradient) rather than in the page tokens.
+ */
+.dx-dform .dx-dform-lock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 6px;
+  padding: 22px 16px 26px;
+  border-radius: 18px;
+  background: var(--dx-lock-bg);
+  color: var(--dx-ink-card-fg);
+}
+.dx-dform .dx-dform-lock-day {
+  margin-bottom: 3px;
+  font-size: 11.5px;
+  color: rgba(var(--dx-ink-card-rgb), 0.55);
+}
+.dx-dform .dx-dform-lock-time {
+  margin-bottom: 18px;
+  font-size: 30px;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.dx-dform .dx-dform-lock-card {
+  align-self: stretch;
+  padding: 13px 14px;
+  border-radius: 14px;
+  background: rgba(var(--dx-ink-card-rgb), 0.14);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.dx-dform .dx-dform-lock-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 11px;
+}
+.dx-dform .dx-dform-lock-head i {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  font-style: normal;
+  font-family: var(--font-brand);
+  font-weight: 900;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--dx-mint);
+  background: var(--dx-on-mint);
+}
+.dx-dform .dx-dform-lock-head span {
+  flex: 1;
+  font-weight: 600;
+  color: rgba(var(--dx-ink-card-rgb), 0.7);
+}
+.dx-dform .dx-dform-lock-head em {
+  font-style: normal;
+  color: rgba(var(--dx-ink-card-rgb), 0.5);
+}
+.dx-dform .dx-dform-lock-card b {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 13px;
+}
+.dx-dform .dx-dform-lock-card p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(var(--dx-ink-card-rgb), 0.78);
+}
+
+/* ── the deal, as the app draws it ── */
+
+.dx-dform .dx-dform-phone {
+  align-self: center;
+  width: 290px;
+  max-width: 100%;
+  padding: 12px;
+  border-radius: 30px;
+  background: var(--dx-ink-card);
+  box-shadow: var(--dx-shadow-phone);
+}
+.dx-dform .dx-dform-phone-notch {
+  display: block;
+  width: 56px;
+  height: 4px;
+  margin: 0 auto 10px;
+  border-radius: 99px;
+  background: rgba(var(--dx-ink-card-rgb), 0.18);
+}
+.dx-dform .dx-dform-phone-screen {
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--dx-ink-tile);
+  color: var(--dx-ink-card-fg);
+}
+.dx-dform .dx-dform-phone-cover {
+  display: flex;
+  align-items: flex-end;
+  height: 106px;
+  padding: 12px;
+  background: var(--dx-lock-bg);
+}
+.dx-dform .dx-dform-phone-cover span {
+  padding: 7px 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--dx-on-mint);
+  background: var(--dx-mint);
+}
+.dx-dform .dx-dform-phone-body {
+  padding: 15px;
+}
+.dx-dform .dx-dform-phone-body em {
+  display: block;
+  margin-bottom: 6px;
+  font-style: normal;
+  font-size: 11px;
+  color: rgba(var(--dx-ink-card-rgb), 0.45);
+}
+.dx-dform .dx-dform-phone-body b {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 15.5px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+}
+.dx-dform .dx-dform-phone-body p {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: rgba(var(--dx-ink-card-rgb), 0.62);
+}
+.dx-dform .dx-dform-phone-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(var(--dx-ink-card-rgb), 0.08);
+}
+.dx-dform .dx-dform-phone-foot span {
+  font-size: 11px;
+  color: rgba(var(--dx-ink-card-rgb), 0.45);
+}
+.dx-dform .dx-dform-phone-foot i {
+  padding: 6px 11px;
+  border-radius: 7px;
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--dx-on-mint);
+  background: var(--dx-mint);
+}
+.dx-dform .dx-dform-caption {
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: var(--dx-faint);
+  text-align: center;
+}
+
+/* ── the campaign: stepper, projection, the rules grid, the ink summary ── */
+
+.dx-dform .dx-dform-stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dx-dform .dx-dform-stepper > button {
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-control-bg);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--dx-ink);
+}
+.dx-dform .dx-dform-stepper > button:hover {
+  border-color: var(--dx-deep);
+  color: var(--dx-deep);
+}
+.dx-dform .dx-dform-stepper-field {
+  flex: 1;
+  max-width: 190px;
+}
+.dx-dform .dx-dform-project {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border: 1px solid var(--dx-line);
+  border-radius: 12px;
+  background: var(--dx-bone);
+}
+.dx-dform .dx-dform-project-field .dx-unit {
+  width: 150px;
+  padding: 7px 11px;
+  border-radius: 9px;
+}
+.dx-dform .dx-dform-project b {
+  flex: 1;
+  min-width: 180px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.dx-dform .dx-dform-rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+.dx-dform .dx-dform-rules > div {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.dx-dform .dx-dform-summary {
+  padding: 20px 22px;
+  border-top: none;
+  border-radius: 14px;
+  background: var(--dx-ink-card);
+  color: var(--dx-ink-card-fg);
+}
+.dx-dform .dx-dform-summary .dx-eyebrow {
+  margin-bottom: 12px;
+  letter-spacing: 0.1em;
+}
+.dx-dform .dx-dform-summary b {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.5;
+}
+.dx-dform .dx-dform-summary p {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: rgba(var(--dx-ink-card-rgb), 0.58);
+}
+
+@media (max-width: 30rem) {
+  .dx-dform .dx-dform-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

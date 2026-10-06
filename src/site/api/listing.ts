@@ -130,6 +130,10 @@ export interface ListingSource {
   description?: Record<string, string>;
   links?: ListingLink[];
   languages?: string[];
+  /* The week as the server holds it. Read by the dashboard's profile view, which
+     draws hours only when there are some — the setup form's three fixed lines
+     are a picture of a week, not this venue's. */
+  hours?: ListingResponse['hours'];
 }
 
 /*
@@ -161,6 +165,7 @@ export const sourceFromListing = (listing: ListingResponse): ListingSource => ({
   description: isTextMap(listing.description) ? listing.description : undefined,
   links: Array.isArray(listing.links) ? listing.links : undefined,
   languages: Array.isArray(listing.languages) ? listing.languages : undefined,
+  hours: Array.isArray(listing.hours) ? listing.hours : undefined,
 });
 
 export const sourceFromRow = (row: VenueRow): ListingSource => ({
@@ -568,7 +573,14 @@ export async function readOwnListing(venueId?: string): Promise<ListingRead> {
   }
 }
 
-const submitForReview = (venueId: string) =>
+/*
+ * Exported for the dashboard's Business profile: an *edit* is a `PATCH`, which
+ * never changes a venue's status, so a venue left in `draft` (its first review
+ * request failed, or it predates the request) would stay out of the app however
+ * often it was saved — while the screen's own status note promises that saving
+ * sends it. The profile asks for the review after a save that leaves it a draft.
+ */
+export const submitForReview = (venueId: string) =>
   call<{ id: string }>(`/v1/partner/venues/${encodeURIComponent(venueId)}/verification`, {
     method: 'POST',
     /* `manual`, because a person looks — the form collects neither of the two

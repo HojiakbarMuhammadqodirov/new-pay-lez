@@ -17,6 +17,7 @@ import { gateRoutes } from './gate.ts';
 import { guidanceRoutes } from './guidance.ts';
 import { missionRoutes } from './missions.ts';
 import { partnerRoutes } from './partner.ts';
+import { passRoutes } from './passes.ts';
 import { teamRoutes } from './team.ts';
 
 export const allRoutes: Route[] = [
@@ -30,4 +31,5 @@ export const allRoutes: Route[] = [
   ...guidanceRoutes,
   ...missionRoutes,
   ...teamRoutes,
+  ...passRoutes,
 ];

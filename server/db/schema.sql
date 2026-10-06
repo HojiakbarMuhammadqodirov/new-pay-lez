@@ -2052,3 +2052,156 @@ CREATE TABLE IF NOT EXISTS contact_messages (
 CREATE INDEX IF NOT EXISTS idx_contact_status ON contact_messages (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_contact_email ON contact_messages (email_norm, created_at);
 CREATE INDEX IF NOT EXISTS idx_contact_sender ON contact_messages (sender_day, created_at);
+
+-- ═══════════════════════════════════════════ subscription passes (venue-direct) ══
+--
+-- A venue sells a monthly subscription straight to its customers — "a coffee a
+-- day for 49 zł", "ten coffees a month", "15% off and perks" (dashboard v3
+-- §3.5, the pass drawer §5.4). `domain/passes.ts` owns all four tables.
+--
+-- **Not `redemption_passes`**, which is a different thing entirely: that table
+-- is the short-lived code a phone shows the gate for one voucher or reward. The
+-- names are kept apart on purpose — `subscription_passes` is the product a venue
+-- sells, `pass_subscriptions` is one customer holding it.
+--
+-- **There is no payment rail behind any of this.** A venue-direct subscription
+-- needs Stripe Connect (the venue is the merchant, Paylez never holds the money),
+-- and that is not built. So nothing here records money *moving*: a period row
+-- says what the period is priced at, and `charge_status` says it was not
+-- charged. See `ports/passPayments.ts`.
+
+-- The pass a venue defines. Every column is a field of the drawer.
+--
+-- `cap_kind` / `cap_count` is "Once a day / A set number each month /
+-- Unlimited", widened by `per_week` because the Weekend template is "two
+-- weekend coffees", a weekly allowance. `allowed_days` is Monday-zero like
+-- `hot_deals.target_weekdays` (NULL = any day). `max_value_minor` is "Most off
+-- one visit". `seats` is "Just them" (1) or "Friends and family" (3).
+-- `price_minor` is per **billing period**, in the venue's currency.
+-- `subscriber_cap` NULL is "no limit"; reaching it is "Sold out", which is
+-- derived and never stored, because it stops being true the moment somebody
+-- cancels.
+CREATE TABLE IF NOT EXISTS subscription_passes (
+  id                 TEXT PRIMARY KEY,
+  venue_id           TEXT NOT NULL REFERENCES venues (id) ON DELETE CASCADE,
+  template           TEXT NOT NULL DEFAULT 'custom'
+                     CHECK (template IN ('daily', 'bundle', 'vip', 'weekend', 'custom')),
+  name               TEXT NOT NULL DEFAULT '',
+  tagline            TEXT,
+  accent             TEXT NOT NULL DEFAULT 'teal'
+                     CHECK (accent IN ('teal', 'deep_green', 'purple', 'terracotta', 'ink')),
+  benefit_item       TEXT,
+  discount_pct       INTEGER CHECK (discount_pct IS NULL OR (discount_pct >= 1 AND discount_pct <= 100)),
+  perks              TEXT,
+  cap_kind           TEXT NOT NULL DEFAULT 'per_day'
+                     CHECK (cap_kind IN ('per_day', 'per_week', 'per_month', 'unlimited')),
+  cap_count          INTEGER NOT NULL DEFAULT 1 CHECK (cap_count >= 1),
+  unlimited_ok       INTEGER NOT NULL DEFAULT 0 CHECK (unlimited_ok IN (0, 1)),
+  allowed_days       TEXT,
+  from_min           INTEGER,
+  to_min             INTEGER,
+  max_value_minor    INTEGER,
+  seats              INTEGER NOT NULL DEFAULT 1 CHECK (seats >= 1 AND seats <= 3),
+  price_minor        INTEGER NOT NULL DEFAULT 0 CHECK (price_minor >= 0),
+  currency           TEXT NOT NULL,
+  billing_period     TEXT NOT NULL DEFAULT 'monthly'
+                     CHECK (billing_period IN ('monthly', 'quarterly', 'annual')),
+  intro              TEXT NOT NULL DEFAULT 'none' CHECK (intro IN ('none', 'trial_7', 'half_first')),
+  subscriber_cap     INTEGER,
+  cost_per_use_minor INTEGER,
+  status             TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'live', 'paused', 'closed')),
+  published_at       TEXT,
+  paused_at          TEXT,
+  closed_at          TEXT,
+  created_by         TEXT REFERENCES users (id) ON DELETE SET NULL,
+  created_at         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_spass_venue ON subscription_passes (venue_id, status);
+
+-- One customer holding one pass. `status` is the subscription's, not the
+-- pass's: `cancelled` still holds the pass until `current_period_end` (renewals
+-- stop, nothing is taken away mid-term) and `expired` is over. The current
+-- period's price and terms are on `pass_periods`; `price_minor` here is a copy
+-- of the current one, for the list queries.
+--
+-- `user_id` is `SET NULL`, not `CASCADE`: a redemption is the venue's record of
+-- what it gave away, and erasing a customer must not erase the venue's books.
+-- `code` is what the customer's phone shows the counter.
+CREATE TABLE IF NOT EXISTS pass_subscriptions (
+  id                   TEXT PRIMARY KEY,
+  pass_id              TEXT NOT NULL REFERENCES subscription_passes (id) ON DELETE CASCADE,
+  venue_id             TEXT NOT NULL REFERENCES venues (id) ON DELETE CASCADE,
+  user_id              TEXT REFERENCES users (id) ON DELETE SET NULL,
+  code                 TEXT NOT NULL UNIQUE,
+  status               TEXT NOT NULL DEFAULT 'active'
+                       CHECK (status IN ('trialing', 'active', 'cancelled', 'expired')),
+  source               TEXT NOT NULL DEFAULT 'app' CHECK (source IN ('app', 'manual')),
+  started_at           TEXT NOT NULL,
+  current_period_id    TEXT,
+  current_period_start TEXT NOT NULL,
+  current_period_end   TEXT NOT NULL,
+  price_minor          INTEGER NOT NULL,
+  currency             TEXT NOT NULL,
+  cancelled_at         TEXT,
+  ended_at             TEXT,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_psub_pass ON pass_subscriptions (pass_id, status);
+CREATE INDEX IF NOT EXISTS idx_psub_user ON pass_subscriptions (user_id, status);
+CREATE INDEX IF NOT EXISTS idx_psub_due ON pass_subscriptions (status, current_period_end);
+
+-- Every period a subscription has been in, with the price and the terms it was
+-- **locked at**. That is the drawer's "changing the price" rule made a row: a
+-- new price reaches a subscriber when their next period is written, never
+-- before. `terms` is the redemption rule as JSON for the same reason — a pass
+-- edited mid-term does not shrink an allowance somebody already paid for.
+-- `charge_status` is `not_charged` on every priced row until a payment rail
+-- exists, and `free` on a trial.
+CREATE TABLE IF NOT EXISTS pass_periods (
+  id              TEXT PRIMARY KEY,
+  subscription_id TEXT NOT NULL REFERENCES pass_subscriptions (id) ON DELETE CASCADE,
+  pass_id         TEXT NOT NULL REFERENCES subscription_passes (id) ON DELETE CASCADE,
+  starts_at       TEXT NOT NULL,
+  ends_at         TEXT NOT NULL,
+  kind            TEXT NOT NULL CHECK (kind IN ('trial', 'intro', 'full')),
+  price_minor     INTEGER NOT NULL,
+  currency        TEXT NOT NULL,
+  terms           TEXT NOT NULL,
+  charge_status   TEXT NOT NULL DEFAULT 'not_charged'
+                  CHECK (charge_status IN ('free', 'not_charged', 'charged', 'failed')),
+  created_at      TEXT NOT NULL,
+  UNIQUE (subscription_id, starts_at)
+);
+CREATE INDEX IF NOT EXISTS idx_pperiod_sub ON pass_periods (subscription_id, starts_at);
+
+-- A use of a pass at the counter. `window_key` is the allowance window it was
+-- counted in (a local day, an ISO week, or a month anchored on the period), and
+-- the allowance is `SUM(quantity)` over a key, enforced in `passes.redeem`
+-- under a row lock on the subscription. `bill_minor` is the whole bill on that
+-- visit when the till entered one, and `covered_minor` what the pass gave on it;
+-- the two are the only inputs the upsell estimate has.
+CREATE TABLE IF NOT EXISTS pass_redemptions (
+  id                  TEXT PRIMARY KEY,
+  subscription_id     TEXT NOT NULL REFERENCES pass_subscriptions (id) ON DELETE CASCADE,
+  period_id           TEXT REFERENCES pass_periods (id) ON DELETE SET NULL,
+  pass_id             TEXT NOT NULL REFERENCES subscription_passes (id) ON DELETE CASCADE,
+  venue_id            TEXT NOT NULL REFERENCES venues (id) ON DELETE CASCADE,
+  user_id             TEXT REFERENCES users (id) ON DELETE SET NULL,
+  window_key          TEXT NOT NULL,
+  quantity            INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 1),
+  bill_minor          INTEGER,
+  covered_minor       INTEGER,
+  transaction_id      TEXT REFERENCES transactions (id) ON DELETE SET NULL,
+  confirmed_by        TEXT REFERENCES users (id) ON DELETE SET NULL,
+  -- As `transactions.confirmed_member_id`: the team member it is recorded
+  -- against, NULL for the owner acting as themselves. No REFERENCES for the
+  -- same reason that column has none.
+  confirmed_member_id TEXT,
+  redeemed_at         TEXT NOT NULL,
+  created_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_predeem_window ON pass_redemptions (subscription_id, window_key);
+CREATE INDEX IF NOT EXISTS idx_predeem_venue ON pass_redemptions (venue_id, redeemed_at);
+CREATE INDEX IF NOT EXISTS idx_predeem_pass ON pass_redemptions (pass_id, redeemed_at);

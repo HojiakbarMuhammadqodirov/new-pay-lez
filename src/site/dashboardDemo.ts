@@ -72,7 +72,15 @@ import type {
   TodayResponse,
   VoucherRegister,
 } from './api/partner';
+import type {
+  PassCard,
+  PassDetailResponse,
+  PassListResponse,
+  PassMembersResponse,
+} from './api/passes';
 import type { ReachReport } from './api/reach';
+import type { TeamListResponse } from './api/team';
+import type { ListingSource } from './api/listing';
 
 /** Counted and unsuppressed, which is what a figure the venue owns looks like. */
 const counted = (value: number): Metric => ({
@@ -444,7 +452,10 @@ const BUDGET: BudgetBody = {
     { id: 'tier_10', discountPct: 10, pointsCost: 500, maxDiscountMinor: 25_00, estimateMinor: 13_60, estimatedRemaining: 49, available: true, issuedCount: 16, redeemedCount: 14, activeCount: 2, spentMinor: 133_00, active: true },
     { id: 'tier_15', discountPct: 15, pointsCost: 800, maxDiscountMinor: 40_00, estimateMinor: 20_40, estimatedRemaining: 0, available: false, issuedCount: 8, redeemedCount: 6, activeCount: 2, spentMinor: 85_00, active: false },
   ],
-  averageCheck: { minor: OVERVIEW.averageCheckMinor.value ?? 36_50, currency: CURRENCY },
+  averageCheck: { minor: OVERVIEW.averageCheckMinor.value ?? 36_50, currency: CURRENCY, source: 'computed', samples: 212 },
+  /* Two lapsed vouchers released back into this month's pool — the 15% one at
+     the foot of `DEMO_REGISTER` and one older than the page. */
+  returnedMinor: 27_20,
   rebalanceHint: { from: 'voucher', to: 'loyalty', suggested: 200_00 },
   tolerance: null,
 };
@@ -514,6 +525,7 @@ export const DEMO_PARTNER_PLANS = [
       { key: 'assistant', value: 'false' },
       { key: 'benchmarks', value: 'false' },
       { key: 'export_csv', value: 'false' },
+      { key: 'passes', value: 'false' },
     ],
   },
   {
@@ -535,6 +547,7 @@ export const DEMO_PARTNER_PLANS = [
       { key: 'assistant', value: 'true' },
       { key: 'benchmarks', value: 'true' },
       { key: 'export_csv', value: 'true' },
+      { key: 'passes', value: 'true' },
     ],
   },
   {
@@ -556,6 +569,7 @@ export const DEMO_PARTNER_PLANS = [
       { key: 'assistant', value: 'true' },
       { key: 'benchmarks', value: 'true' },
       { key: 'export_csv', value: 'true' },
+      { key: 'passes', value: 'true' },
     ],
   },
 ];
@@ -576,8 +590,21 @@ export const DEMO_VENUE_PLAN = {
 };
 
 export const DEMO_REGISTER: VoucherRegister = {
+  currency: CURRENCY,
   tiers: REGISTER_TIERS,
-  totals: { issued: 466, active: 15, redeemed: 401, expired: 50, lapsing: 4 },
+  /* The money beside the counts: fifteen live vouchers hold the pool's own
+     145.00 reserve — the same figure `BUDGET.voucher.reserved` draws on the
+     Vouchers screen — and the other two are lifetime sums. */
+  totals: {
+    issued: 466,
+    active: 15,
+    redeemed: 401,
+    expired: 50,
+    lapsing: 4,
+    activeReservedMinor: 145_00,
+    redeemedSpentMinor: 3_412_00,
+    expiredReleasedMinor: 512_40,
+  },
   vouchers: [
     {
       id: 'ivc_demo_1',
@@ -632,6 +659,110 @@ export const DEMO_REGISTER: VoucherRegister = {
       redeemedAt: null,
       holder: 'Anna L.',
     },
+    {
+      id: 'ivc_demo_5',
+      code: 'PZ-7HW2-19',
+      discountPct: 10,
+      pointsSpent: 500,
+      reservedMinor: 13_60,
+      spentMinor: 0,
+      status: 'active',
+      issuedAt: isoAt(3),
+      expiresAt: isoAt(-27),
+      redeemedAt: null,
+      holder: 'Oleksandr H.',
+    },
+    {
+      id: 'ivc_demo_6',
+      code: 'PZ-3QNA-82',
+      discountPct: 5,
+      pointsSpent: 300,
+      reservedMinor: 6_80,
+      spentMinor: 0,
+      status: 'active',
+      issuedAt: isoAt(4),
+      expiresAt: isoAt(-26),
+      redeemedAt: null,
+      holder: 'Nino K.',
+    },
+    {
+      id: 'ivc_demo_7',
+      code: 'PZ-8TLC-45',
+      discountPct: 15,
+      pointsSpent: 800,
+      reservedMinor: 20_40,
+      spentMinor: 0,
+      status: 'active',
+      issuedAt: isoAt(7),
+      expiresAt: isoAt(-23),
+      redeemedAt: null,
+      holder: 'Yulia S.',
+    },
+    {
+      id: 'ivc_demo_8',
+      code: 'PZ-5RVE-30',
+      discountPct: 10,
+      pointsSpent: 500,
+      reservedMinor: 13_60,
+      spentMinor: 12_40,
+      status: 'redeemed',
+      issuedAt: isoAt(8),
+      expiresAt: isoAt(-22),
+      redeemedAt: isoAt(7),
+      holder: 'Kateryna B.',
+    },
+    {
+      id: 'ivc_demo_9',
+      code: 'PZ-1GMZ-66',
+      discountPct: 5,
+      pointsSpent: 300,
+      reservedMinor: 6_80,
+      spentMinor: 4_60,
+      status: 'redeemed',
+      issuedAt: isoAt(10),
+      expiresAt: isoAt(-20),
+      redeemedAt: isoAt(9),
+      holder: null,
+    },
+    {
+      id: 'ivc_demo_10',
+      code: 'PZ-4DSK-07',
+      discountPct: 15,
+      pointsSpent: 800,
+      reservedMinor: 20_40,
+      spentMinor: 18_90,
+      status: 'redeemed',
+      issuedAt: isoAt(12),
+      expiresAt: isoAt(-18),
+      redeemedAt: isoAt(10),
+      holder: 'Andrii P.',
+    },
+    {
+      id: 'ivc_demo_11',
+      code: 'PZ-9CUB-23',
+      discountPct: 5,
+      pointsSpent: 300,
+      reservedMinor: 6_80,
+      spentMinor: 5_00,
+      status: 'redeemed',
+      issuedAt: isoAt(14),
+      expiresAt: isoAt(-16),
+      redeemedAt: isoAt(13),
+      holder: 'Mehmet A.',
+    },
+    {
+      id: 'ivc_demo_12',
+      code: 'PZ-2WFE-91',
+      discountPct: 10,
+      pointsSpent: 500,
+      reservedMinor: 13_60,
+      spentMinor: 0,
+      status: 'expired',
+      issuedAt: isoAt(44),
+      expiresAt: isoAt(14),
+      redeemedAt: null,
+      holder: 'Sofia M.',
+    },
   ],
 };
 
@@ -645,7 +776,9 @@ export const DEMO_OVERVIEW: OverviewResponse = {
   floors: { minCohort: 10, minVenues: 5 },
 };
 
-export const DEMO_BUDGET: BudgetBody = BUDGET;
+/* The Vouchers screen's own read, which carries the caps the Limits card edits —
+   the register's rungs, so the two screens show one ladder. */
+export const DEMO_BUDGET: BudgetBody = { ...BUDGET, tiers: REGISTER_TIERS };
 
 /* ── today, off the last day of the roll ─────────────────────────────────── */
 
@@ -661,17 +794,40 @@ export const DEMO_TODAY: TodayResponse = {
  * A 7 × 24 grid with a morning and an evening ridge, and a genuinely dead
  * Tuesday afternoon. Generated rather than typed out: 168 hand-written integers
  * is 168 chances to put a Sunday peak on a Wednesday.
+ *
+ * Apportioned to the overview's visits exactly: the assistant quotes this
+ * grid's total as the month's visits one screen away from the overview's
+ * headline, and two counts of one month is the demo contradicting itself. The
+ * quietest and busiest cells are read off it the way `analytics.heatmap` reads
+ * them (open hours only, first extreme wins) rather than typed beside it.
  */
-const GRID: number[][] = Array.from({ length: 7 }, (_, day) =>
-  Array.from({ length: 24 }, (_, hour) => {
-    if (hour < 7 || hour > 21) return 0;
-    const morning = Math.exp(-((hour - 9) ** 2) / 6) * 9;
-    const evening = Math.exp(-((hour - 18) ** 2) / 7) * 11;
-    const weekend = day >= 5 ? 1.25 : 1;
-    const tuesdayLull = day === 1 && hour >= 14 && hour <= 16 ? 0.2 : 1;
-    return Math.round((morning + evening) * weekend * tuesdayLull);
-  }),
-);
+const OPEN_FROM = 7;
+const OPEN_TO = 21;
+const GRID: number[][] = (() => {
+  const shape = Array.from({ length: 7 }, (_, day) =>
+    Array.from({ length: 24 }, (_, hour) => {
+      if (hour < OPEN_FROM || hour > OPEN_TO) return 0;
+      const morning = Math.exp(-((hour - 9) ** 2) / 6) * 9;
+      const evening = Math.exp(-((hour - 18) ** 2) / 7) * 11;
+      const weekend = day >= 5 ? 1.25 : 1;
+      const tuesdayLull = day === 1 && hour >= 15 && hour <= 16 ? 0.2 : 1;
+      return (morning + evening) * weekend * tuesdayLull;
+    }),
+  );
+  const flat = apportion(shape.flat(), RECENT_TOTALS.visits);
+  return shape.map((row, day) => row.map((_, hour) => flat[day * 24 + hour]));
+})();
+
+function gridExtreme(wins: (visits: number, best: number) => boolean) {
+  let best: { weekday: number; hour: number; visits: number } | null = null;
+  for (let weekday = 0; weekday < 7; weekday += 1) {
+    for (let hour = OPEN_FROM; hour <= OPEN_TO; hour += 1) {
+      const visits = GRID[weekday][hour];
+      if (best === null || wins(visits, best.visits)) best = { weekday, hour, visits };
+    }
+  }
+  return best;
+}
 
 export const DEMO_ANALYTICS: AnalyticsResponse = {
   overview: OVERVIEW,
@@ -679,8 +835,8 @@ export const DEMO_ANALYTICS: AnalyticsResponse = {
     period: THIS_MONTH,
     grid: GRID,
     total: GRID.flat().reduce((sum, n) => sum + n, 0),
-    quietest: { weekday: 1, hour: 15, visits: 1 },
-    busiest: { weekday: 5, hour: 18, visits: 14 },
+    quietest: gridExtreme((visits, best) => visits < best),
+    busiest: gridExtreme((visits, best) => visits > best),
   },
   languageMix: {
     suppressed: false,
@@ -713,9 +869,12 @@ export const DEMO_ANALYTICS: AnalyticsResponse = {
     },
   ],
   cohorts: [
-    { cohort: monthKey(TODAY, -2), size: 61, returned: counted(28) },
-    { cohort: monthKey(TODAY, -1), size: 78, returned: counted(41) },
-    { cohort: THIS_MONTH, size: RECENT_TOTALS.newCustomers, returned: counted(57) },
+    /* `returned` is a **share** of the cohort, as `analytics.cohorts` sends it
+       (returned ÷ first-timers) — it held a head count here once, which the
+       Customers screen would have printed as 2 800%. */
+    { cohort: monthKey(TODAY, -2), size: 61, returned: counted(28 / 61) },
+    { cohort: monthKey(TODAY, -1), size: 78, returned: counted(41 / 78) },
+    { cohort: THIS_MONTH, size: RECENT_TOTALS.newCustomers, returned: counted(57 / RECENT_TOTALS.newCustomers) },
   ],
   repeatMultiple: counted(2.4),
   roi: [
@@ -730,9 +889,11 @@ export const DEMO_ANALYTICS: AnalyticsResponse = {
    * flatters is a benchmark nobody checks twice.
    */
   benchmarks: [
-    { metric: 'repeat_multiple', value: 1.9, venue_count: 24 },
-    { metric: 'average_check_minor', value: 33_20, venue_count: 24 },
-    { metric: 'cost_per_new_customer_minor', value: 14_60, venue_count: 24 },
+    /* The three metrics `computeBenchmarks` actually writes, under its names:
+       two rates as shares and the cost in the venue's minor units. */
+    { metric: 'claim_rate', value: 0.19, venue_count: 24 },
+    { metric: 'second_visit_rate', value: 0.44, venue_count: 24 },
+    { metric: 'cost_per_new_customer', value: 14_60, venue_count: 24 },
   ],
 };
 
@@ -911,6 +1072,45 @@ export const DEMO_DEALS: DealResponse[] = [
       language: 'pl',
     },
     series: series(4, 6, 3, 5, 0, 0, 0),
+    push: null,
+  },
+  /* Published and not yet open — the `scheduled` state, which the v3 table
+     draws as "not started" rather than as a row of zeros. It has no events,
+     so it is absent from `DEMO_REACH` and changes none of its sums. */
+  {
+    id: 'del_demo_rainy',
+    venue_id: 'ven_demo',
+    discount_text: '2× stamps',
+    status: 'scheduled',
+    valid_from: isoDay(dayAt(-9)),
+    valid_to: isoDay(dayAt(-60)),
+    target_audience: 'all',
+    target_weekdays: null,
+    target_from_min: null,
+    target_to_min: null,
+    cap_claims: null,
+    spend_minor: 0,
+    seen_count: 0,
+    opened_count: 0,
+    claimed_count: 0,
+    funnel: {
+      seen: 0,
+      opened: 0,
+      claimed: 0,
+      openRate: 0,
+      claimRate: 0,
+      spendMinor: 0,
+      capClaims: null,
+      capSpendMinor: null,
+    },
+    translations: { languages: ['pl', 'uk', 'en', 'ru', 'uz'], filled: ['pl', 'en'], missing: ['uk', 'ru', 'uz'] },
+    copy: {
+      title: 'Rainy day double stamps',
+      description: 'Every visit counts twice on your stamp card.',
+      terms: 'Applies to the stamp card only.',
+      language: 'en',
+    },
+    series: series(0, 0, 0, 0, 0, 0, 0),
     push: null,
   },
   {
@@ -1336,10 +1536,23 @@ export const DEMO_INBOX: InboxResponse = {
  * sixteen named rows are the first page of those 96. The gap is the point: it is
  * why most rows in the scan log have no name.
  */
+/*
+ * Vouchers bought and spent, per row, off what the row already says: somebody
+ * with a tier has bought at least one, a regular buys roughly one per four
+ * visits, and the ones still held are the difference — so `used + held` is
+ * always `issued`, which is the server's own arithmetic over `issued_vouchers`.
+ */
+type DemoRow = CustomersResponse['rows'][number];
+const withVoucherCounts = (rows: DemoRow[]): DemoRow[] =>
+  rows.map((row) => {
+    const issued = row.tierPct === undefined ? row.vouchersHeld : Math.max(1, row.vouchersHeld, Math.ceil(row.visits / 4));
+    return { ...row, vouchersIssued: issued, vouchersUsed: issued - row.vouchersHeld };
+  });
+
 export const DEMO_CUSTOMERS: CustomersResponse = {
   totalCustomers: 412,
   sharedCustomers: 96,
-  rows: [
+  rows: withVoucherCounts([
     {
       userId: 'usr_demo_1', name: 'Marta W.', avatar: null, spendMinor: 486_00, visits: 13,
       firstSeenAt: '2026-06-12T08:20:00.000Z', lastSeenAt: '2026-09-08T08:10:00.000Z',
@@ -1441,7 +1654,7 @@ export const DEMO_CUSTOMERS: CustomersResponse = {
       daysSince: 2, status: 'new', stamps: 1, vouchersHeld: 0,
       spendTrend: 'up',
     },
-  ],
+  ]),
 };
 
 /** App languages for the demo roster's detail panel, by row. */
@@ -1482,6 +1695,10 @@ export function demoCustomerDetail(userId: string): CustomerDetailResponse | nul
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     status: row.status,
+    vouchersIssued: row.vouchersIssued,
+    vouchersUsed: row.vouchersUsed,
+    /* They turned sharing on at their first visit — the moment the app asks. */
+    sharingSince: row.firstSeenAt,
     trend: months.map((month, i) => ({ month, visits: visits[i], spend: spend[i] })).filter((m) => m.visits > 0),
     visitPattern: [
       { local_weekday: (index * 3) % 5, local_hour: 8 + ((index * 5) % 11), n: Math.ceil(row.visits / 2) },
@@ -1733,6 +1950,10 @@ function buildLog(): Array<{ day: string; row: ScanRowResponse }> {
             ? SCAN_POINTS + (first ? FIRST_VISIT_POINTS : 0) + (rewardEarned ? CARD_COMPLETE_POINTS : 0)
             : 0,
           receipt: receiptFor(index),
+          /* Who on `DEMO_TEAM` confirmed it — the shift lead and the cashier
+             take most of the till, and a third is the owner, which the server
+             reports as `null` rather than as a name. */
+          confirmedBy: index % 3 === 0 ? 'Olena Bondar' : index % 3 === 1 ? 'Andrii P.' : null,
           site: SCAN_SITES[(dayIndex + slot) % 3 === 2 ? 1 : 0],
           progress: qualifies
             ? { campaignId: card.id, campaign: card.name, done, need, rewardEarned }
@@ -1777,3 +1998,373 @@ export function demoScans(query: ScansQuery): ScansResponse {
     rows: shown.slice(query.offset, query.offset + query.limit),
   };
 }
+
+/* ═══════════════════════════════════════════════════════════════ team ══ */
+
+/** An ISO instant `hours` hours ago — the team's "last seen" runs in hours, not days. */
+const hoursAgo = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
+
+/**
+ * `GET …/team` for the demo venue: one of each role and each state the screen
+ * draws — a manager, a shift lead on shift, a cashier, a custom login, an
+ * invite whose code is still good and one whose code ran out. The owner is not
+ * here because the server never lists one (ownership is the venue row's).
+ */
+export const DEMO_TEAM: TeamListResponse = {
+  members: [
+    {
+      id: 'tmm_demo_piotr',
+      name: 'Piotr Zieliński',
+      role: 'manager',
+      perms: { earn: true, redeem: true, scan: true, running: true, count: true, pause: true },
+      status: 'active',
+      joinedAt: isoAt(64),
+      lastSeenAt: hoursAgo(2),
+      onShift: false,
+      codeExpiresAt: null,
+    },
+    {
+      id: 'tmm_demo_olena',
+      name: 'Olena Bondar',
+      role: 'shiftlead',
+      perms: { earn: true, redeem: true, scan: true, running: true, count: true, pause: true },
+      status: 'active',
+      joinedAt: isoAt(41),
+      lastSeenAt: hoursAgo(0.2),
+      onShift: true,
+      codeExpiresAt: null,
+    },
+    {
+      id: 'tmm_demo_andrii',
+      name: 'Andrii P.',
+      role: 'cashier',
+      perms: { earn: true, redeem: true, scan: true, running: true, count: false, pause: false },
+      status: 'active',
+      joinedAt: isoAt(23),
+      lastSeenAt: hoursAgo(21),
+      onShift: false,
+      codeExpiresAt: null,
+    },
+    {
+      id: 'tmm_demo_kasia',
+      name: 'Kasia W.',
+      role: 'custom',
+      perms: { earn: true, redeem: false, scan: true, running: false, count: false, pause: false },
+      status: 'active',
+      joinedAt: isoAt(9),
+      lastSeenAt: hoursAgo(50),
+      onShift: false,
+      codeExpiresAt: null,
+    },
+    {
+      id: 'tmm_demo_dilnoza',
+      name: 'Dilnoza Y.',
+      role: 'cashier',
+      perms: { earn: true, redeem: true, scan: true, running: true, count: false, pause: false },
+      status: 'invited',
+      joinedAt: null,
+      lastSeenAt: null,
+      onShift: false,
+      codeExpiresAt: isoAt(-5),
+    },
+    {
+      id: 'tmm_demo_marek',
+      name: 'Marek N.',
+      role: 'shiftlead',
+      perms: { earn: true, redeem: true, scan: true, running: true, count: true, pause: true },
+      status: 'invited',
+      joinedAt: null,
+      lastSeenAt: null,
+      onShift: false,
+      codeExpiresAt: isoAt(2),
+    },
+  ],
+};
+
+/* ══════════════════════════════════════════════════════════════ passes ══ */
+
+/**
+ * One pass card as `GET …/passes` lists it. Every field the server sends is
+ * spelled out at each call site below except the bookkeeping ones, which are
+ * the same for every demo pass and say nothing a screen draws.
+ */
+const passCard = (
+  pass: Pick<
+    PassCard,
+    | 'id'
+    | 'template'
+    | 'name'
+    | 'tagline'
+    | 'accent'
+    | 'benefitItem'
+    | 'discountPct'
+    | 'capKind'
+    | 'capCount'
+    | 'priceMinor'
+    | 'status'
+    | 'holders'
+    | 'missing'
+    | 'stats'
+  > &
+    Partial<PassCard>,
+): PassCard => ({
+  venueId: 'ven_demo',
+  perks: [],
+  unlimitedOk: pass.capKind === 'unlimited',
+  allowedDays: null,
+  fromMin: null,
+  toMin: null,
+  maxValueMinor: null,
+  seats: 1,
+  currency: CURRENCY,
+  billingPeriod: 'monthly',
+  intro: 'none',
+  subscriberCap: null,
+  costPerUseMinor: null,
+  soldOut: false,
+  publishedAt: pass.status === 'draft' ? null : isoAt(74),
+  pausedAt: null,
+  closedAt: null,
+  createdAt: isoAt(80),
+  updatedAt: isoAt(3),
+  ...pass,
+});
+
+/*
+ * Two live passes and a draft.
+ *
+ * The four headline figures are the cards summed rather than typed: 128 + 54
+ * subscribers, 128 × 49.00 + 54 × 35.00 a month, 2 104 + 612 uses — so the
+ * Overview's subscriptions panel and the Passes screen's own stat row cannot
+ * disagree with the cards under them. `recurringMinor` is what subscribers are
+ * *on*, not money collected (there is no payment rail), which is the server's
+ * own definition of the field.
+ *
+ * The upsell is an estimate standing on fewer uses than were redeemed —
+ * `measured` 1 210 of 2 716 — because the server only counts a use that had a
+ * bill recorded beside it.
+ */
+const DEMO_PASS_CARDS: PassCard[] = [
+  passCard({
+    id: 'pas_demo_daily',
+    template: 'daily',
+    name: 'Bratysławska Daily Brew',
+    tagline: 'A coffee a day, one flat price',
+    accent: 'teal',
+    benefitItem: 'Any filter coffee or flat white',
+    discountPct: null,
+    capKind: 'per_day',
+    capCount: 1,
+    priceMinor: 49_00,
+    status: 'live',
+    holders: 128,
+    missing: [],
+    maxValueMinor: 18_00,
+    costPerUseMinor: 9_00,
+    stats: { subscribers: 128, usedThisMonth: 2_104, recurringMinor: 128 * 49_00 },
+  }),
+  passCard({
+    id: 'pas_demo_vip',
+    template: 'vip',
+    name: 'Coffee Club VIP',
+    tagline: '15% off everything, plus first dibs',
+    accent: 'purple',
+    benefitItem: null,
+    discountPct: 15,
+    capKind: 'unlimited',
+    capCount: 1,
+    priceMinor: 35_00,
+    status: 'live',
+    holders: 54,
+    missing: [],
+    perks: ['early_access', 'member_deals', 'skip_line'],
+    maxValueMinor: 12_00,
+    stats: { subscribers: 54, usedThisMonth: 612, recurringMinor: 54 * 35_00 },
+  }),
+  passCard({
+    id: 'pas_demo_weekend',
+    template: 'weekend',
+    name: 'Weekend Warmer',
+    tagline: 'Two weekend coffees, all season',
+    accent: 'terracotta',
+    benefitItem: 'Any filter coffee or flat white',
+    discountPct: null,
+    capKind: 'per_week',
+    capCount: 2,
+    allowedDays: [5, 6],
+    priceMinor: 29_00,
+    status: 'draft',
+    holders: 0,
+    missing: [],
+    stats: { subscribers: 0, usedThisMonth: 0, recurringMinor: 0 },
+  }),
+];
+
+export const DEMO_PASSES: PassListResponse = {
+  month: THIS_MONTH,
+  currency: CURRENCY,
+  stats: {
+    activeSubscribers: DEMO_PASS_CARDS.reduce((sum, card) => sum + card.stats.subscribers, 0),
+    livePasses: DEMO_PASS_CARDS.filter((card) => card.status === 'live').length,
+    recurringMinor: DEMO_PASS_CARDS.reduce((sum, card) => sum + card.stats.recurringMinor, 0),
+    redemptionsThisMonth: DEMO_PASS_CARDS.reduce((sum, card) => sum + card.stats.usedThisMonth, 0),
+    upsell: { minor: 13_060_00, measured: 1_210, redemptions: 2_716, reason: null },
+  },
+  payouts: { connected: false, available: false },
+  subscribeAvailable: false,
+  passes: DEMO_PASS_CARDS,
+};
+
+/**
+ * Each demo pass as `GET …/passes/:passId` answers it. Built off the card so
+ * the detail's figures are the card's: the same subscribers, the same uses,
+ * the same contracted month. The two upsells sum to the list's 13 060 and
+ * their `measured` counts to its 1 210, for the same reason. The draft has no
+ * use to measure on, so its upsell is null with the server's reason — never 0.
+ */
+const passDetail = (
+  id: string,
+  extra: { newThisMonth: number; cancelledThisMonth: number; upsell: PassDetailResponse['stats']['upsell'] },
+): PassDetailResponse => {
+  const card = DEMO_PASS_CARDS.find((row) => row.id === id) ?? DEMO_PASS_CARDS[0];
+  const { stats, ...pass } = card;
+  return {
+    month: THIS_MONTH,
+    pass,
+    stats: {
+      subscribers: stats.subscribers,
+      newThisMonth: extra.newThisMonth,
+      cancelledThisMonth: extra.cancelledThisMonth,
+      recurringMinor: stats.recurringMinor,
+      redemptionsThisMonth: stats.usedThisMonth,
+      perActiveSubscriber: stats.subscribers ? Math.round((stats.usedThisMonth / stats.subscribers) * 10) / 10 : 0,
+      upsell: extra.upsell,
+    },
+  };
+};
+
+export const DEMO_PASS_DETAILS: Record<string, PassDetailResponse> = {
+  pas_demo_daily: passDetail('pas_demo_daily', {
+    newThisMonth: 22,
+    cancelledThisMonth: 6,
+    upsell: { minor: 8_940_00, measured: 860, redemptions: 2_104, reason: null },
+  }),
+  pas_demo_vip: passDetail('pas_demo_vip', {
+    newThisMonth: 9,
+    cancelledThisMonth: 2,
+    upsell: { minor: 4_120_00, measured: 350, redemptions: 612, reason: null },
+  }),
+  pas_demo_weekend: passDetail('pas_demo_weekend', {
+    newThisMonth: 0,
+    cancelledThisMonth: 0,
+    upsell: { minor: null, measured: 0, redemptions: 0, reason: 'no_redemptions' },
+  }),
+};
+
+/**
+ * The holders who share their name with the venue, and they are the Customers
+ * roster's own people (`usr_demo_N`): the subscriber chip there is a join on
+ * `userId`, and the Passes screen's lists are the same subscriptions read per
+ * pass, so the two screens tell one story. `total` is everybody holding the
+ * pass and `shared` the rows, so the screen can say "8 of 128" rather than imply
+ * the list is the whole membership. One daily holder has cancelled and keeps it
+ * to the end of the period.
+ */
+const member = (
+  userId: string,
+  passId: string,
+  daysAgo: number,
+  usedThisPeriod: number,
+  status: 'trialing' | 'active' | 'cancelled',
+) => {
+  const card = DEMO_PASS_CARDS.find((row) => row.id === passId) ?? DEMO_PASS_CARDS[0];
+  const person = DEMO_CUSTOMERS.rows.find((row) => row.userId === userId);
+  return {
+    subscriptionId: `psb_demo_${userId}_${passId}`,
+    passId,
+    passName: card.name,
+    accent: card.accent,
+    userId,
+    name: person?.name ?? 'Customer',
+    avatar: null,
+    since: isoAt(daysAgo),
+    usedThisPeriod,
+    status,
+  };
+};
+
+const DAILY_MEMBERS = [
+  member('usr_demo_1', 'pas_demo_daily', 170, 21, 'active'),
+  member('usr_demo_2', 'pas_demo_daily', 165, 19, 'active'),
+  member('usr_demo_3', 'pas_demo_daily', 140, 17, 'active'),
+  member('usr_demo_5', 'pas_demo_daily', 160, 20, 'active'),
+  member('usr_demo_8', 'pas_demo_daily', 110, 14, 'trialing'),
+  member('usr_demo_4', 'pas_demo_daily', 105, 11, 'active'),
+  member('usr_demo_10', 'pas_demo_daily', 80, 9, 'active'),
+  member('usr_demo_9', 'pas_demo_daily', 135, 4, 'cancelled'),
+];
+
+const VIP_MEMBERS = [
+  member('usr_demo_6', 'pas_demo_vip', 150, 14, 'active'),
+  member('usr_demo_7', 'pas_demo_vip', 96, 9, 'active'),
+  member('usr_demo_11', 'pas_demo_vip', 40, 6, 'trialing'),
+];
+
+export const DEMO_PASS_SUBSCRIBERS: Record<string, PassMembersResponse> = {
+  pas_demo_daily: { total: 128, shared: DAILY_MEMBERS.length, rows: DAILY_MEMBERS },
+  pas_demo_vip: { total: 54, shared: VIP_MEMBERS.length, rows: VIP_MEMBERS },
+  pas_demo_weekend: { total: 0, shared: 0, rows: [] },
+};
+
+/* `GET …/passes/members` — every sharing holder across the venue's passes, for
+   the Customers roster's subscriber chip: the per-pass lists above, together. */
+const ALL_MEMBERS = [...DAILY_MEMBERS, ...VIP_MEMBERS];
+
+export const DEMO_PASS_MEMBERS: PassMembersResponse = {
+  total: DEMO_PASS_CARDS.reduce((sum, card) => sum + card.holders, 0),
+  shared: ALL_MEMBERS.length,
+  rows: ALL_MEMBERS,
+};
+
+/* ════════════════════════════════════════════════════════════ the listing ══ */
+
+/**
+ * `GET …/:id/listing` for the demo venue, as the Business profile reads it.
+ *
+ * The same café the till roll is rung up in — Rajska 12, Kraków — waiting for
+ * review rather than live, because that is the state with the most on the
+ * screen to read (the status pill, the note, the meter) and the one every new
+ * venue starts in. The Google Maps link is deliberately missing, so the meter
+ * has one thing still needed. Opening hours are the server's own rows (0 is
+ * Monday), with Sunday closed.
+ */
+export const DEMO_LISTING: ListingSource = {
+  id: 'ven_demo',
+  name: 'Demo Café',
+  category: 'cafe',
+  subcategory: 'Specialty coffee',
+  city: 'Kraków',
+  countryCode: 'pl',
+  address: 'ul. Rajska 12',
+  priceRange: '18–45 zł',
+  phone: '+48 512 340 118',
+  email: 'hello@democafe.pl',
+  imageUrl: null,
+  status: 'pending_review',
+  verifiedAt: null,
+  verification: { status: 'pending', submittedAt: '2026-06-01T09:00:00.000Z', note: null },
+  description: {
+    en: 'A small neighbourhood café near Nowy Kleparz. Filter coffee, Polish bakes, and a quiet room to work in.',
+  },
+  links: [
+    { kind: 'website', value: 'https://democafe.pl' },
+    { kind: 'instagram', value: 'https://instagram.com/democafe' },
+  ],
+  languages: ['pl', 'en', 'uk'],
+  hours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+    weekday,
+    opensMin: weekday === 6 ? null : weekday === 5 ? 8 * 60 + 30 : 7 * 60 + 30,
+    closesMin: weekday === 6 ? null : weekday === 5 ? 18 * 60 : 19 * 60,
+    closed: weekday === 6,
+  })),
+};

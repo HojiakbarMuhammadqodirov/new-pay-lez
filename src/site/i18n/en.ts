@@ -1958,65 +1958,348 @@ export const en = {
   dashboard: {
     tag: 'Partner',
     groups: { grow: 'Grow', workspace: 'Workspace' },
-    /* Index-aligned with `DASH_SCREENS` in `content.ts`. */
-    screens: [
-      { name: 'Overview', lede: 'What Paylez did for you, and what it cost.' },
-      { name: 'Hot deals', lede: 'Time-bound offers shown in the Paylez app feed.' },
-      { name: 'Loyalty campaigns', lede: 'Recurring rewards your regulars earn by coming back.' },
-      { name: 'Vouchers', lede: 'How points turn into discounts, and what that costs you.' },
-      { name: 'Issued vouchers', lede: 'Every voucher your customers hold, and what happened to it.' },
-      { name: 'Customers', lede: 'Who comes in, when they come, and whether they come back.' },
-      {
+    /*
+     * Keyed by `DashScreenId` (`content.ts`), never by position — see the note
+     * on `DashScreenId` for why. `title` is the page head where it differs from
+     * the rail's word: v3 files the overview as "Overview" in the rail and
+     * heads the page "Partner analytics". Every other screen heads its page
+     * with its rail name.
+     */
+    screens: {
+      overview: {
+        name: 'Overview',
+        title: 'Partner analytics',
+        lede: 'What Paylez did for you, and what it cost.',
+      },
+      deals: { name: 'Hot deals', lede: 'Time-bound offers shown in the Paylez app feed.' },
+      campaigns: { name: 'Loyalty campaigns', lede: 'Recurring rewards your regulars earn by coming back.' },
+      vouchers: { name: 'Vouchers', lede: 'How points turn into discounts, and what that costs you.' },
+      passes: { name: 'Passes', lede: 'Subscriptions your customers buy from you, paid straight to you.' },
+      customers: { name: 'Customers', lede: 'Who comes in, when they come, and whether they come back.' },
+      assistant: {
         name: 'Assistant',
         lede: 'Say what you want to happen. I set it up, you decide whether it goes live.',
       },
-      { name: 'Scan activity', lede: 'Every QR scan at your counter, newest first.' },
-      { name: 'Business profile', lede: 'Your listing in the Paylez app, translated for every customer.' },
-    ],
+      scans: { name: 'Scan activity', lede: 'Every QR scan at your counter, newest first.' },
+      voucherActivity: {
+        name: 'Voucher activity',
+        lede: 'Every voucher your customers earned, used, or let expire.',
+      },
+      team: { name: 'Team', lede: 'Who works your counter, and what each person can do there.' },
+      profile: { name: 'Business profile', lede: 'Your listing in the Paylez app, translated for every customer.' },
+    },
     /* Every screen but the profile has nothing in it until a venue starts
-       trading, so each says what would fill it and what to do about it. */
-    empty: [
-      {
+       trading, so each says what would fill it and what to do about it. Keyed
+       like `screens`. */
+    empty: {
+      overview: {
         title: 'Nothing is running in your venue yet',
         body: 'Customers only see you in the Paylez app once something is live. A hot deal is the quickest start — an open offer with a start and end date, running in the hours you choose.',
         action: 'Create your first hot deal',
       },
-      {
+      deals: {
         title: 'Run an offer anyone can use',
         body: 'A hot deal appears in the app feed for the audience and hours you choose, and stops on the date you set. Nothing is charged until someone claims one.',
         action: 'Create hot deal',
       },
-      {
+      campaigns: {
         title: 'Reward your regulars for coming back',
         body: 'A campaign counts visits and hands out a reward when someone reaches the number you set. A good first one for a café: four visits, a free filter coffee.',
         action: 'Set up a campaign',
       },
-      {
+      vouchers: {
         title: 'Set a discount budget to start giving vouchers',
         body: 'A discount budget is the most you will give away in one month. Vouchers stop when it runs out, so you can never spend more than you planned.',
         action: 'Set a budget',
       },
-      {
+      passes: {
+        title: 'Turn regulars into subscribers',
+        body: 'A pass is a monthly subscription your customers buy from you — a coffee a day, a bundle, a members’ club. You keep all of it; Paylez takes no commission.',
+        action: 'Create a pass',
+      },
+      voucherActivity: {
         title: 'No vouchers have been taken yet',
         body: 'A voucher lands here the moment a customer spends points on one of your rungs. Set a discount budget and the ladder opens; everything after that appears with its code, its window and its status.',
         action: 'Set a budget',
       },
-      {
+      customers: {
         title: 'Put your QR code on the counter',
         body: 'Nothing on this page can fill in until customers start scanning. Print your code, stand it next to the till, and ask staff to point at it with the bill. The first numbers show up the same day.',
         action: 'Get your QR code',
       },
-      {
+      assistant: {
         title: 'Tell me what you want to happen',
         body: 'I read your quiet hours, your budgets and what works at venues like yours, then set the whole thing up for you to check. Nothing goes live until you press publish.',
         action: 'Start a conversation',
       },
-      {
+      scans: {
         title: 'No scans yet',
         body: 'Every scan at your counter lands here within seconds — who came in, what they spent, and how close they are to a reward.',
         action: 'Get your QR code',
       },
-    ],
+      team: {
+        title: 'It is just you so far',
+        body: 'Add your managers and counter staff so they can confirm scans and run the day — without you having to be at every till.',
+        action: 'Add your first team member',
+      },
+    },
+
+    /*
+     * The frame's own words — `dashboard.tsx` and `dashboardKit.tsx`.
+     *
+     * `managed` labels a venue in the switcher that this account runs as a
+     * manager rather than owns, because the two can do different things (a
+     * manager never touches billing or the team) and a list that drew them
+     * identically would hide which is which. `soon` is the panel a screen shows
+     * while it is being rebuilt; it says so rather than drawing a layout with
+     * nothing true in it. `ownerOnly` is the profile screen for a manager: the
+     * listing form writes to the owner's own account record, so it is not
+     * offered to somebody who is not the owner.
+     */
+    /*
+     * The Business profile screen — `dashboardProfile.tsx`. The field labels,
+     * the status words and the readiness meter are `listing.*`, shared with the
+     * setup form; this is only what the dashboard's view and edit add.
+     *
+     * The review dialogue is shown only when a save really sent the listing
+     * for review (a new venue, or a draft the save submitted). It promises no
+     * email and no turnaround time: nothing on the server sends one when a
+     * review is decided, and nobody has committed to a number of hours.
+     */
+    profile: {
+      editTitle: 'What customers see',
+      editIntro:
+        'Everything here goes straight into your listing in the Paylez app. Fields marked with a star are needed before the listing can go live.',
+      langs: 'Languages spoken',
+      logoSet: 'Uploaded',
+      logoNone: 'Not uploaded',
+      closed: 'Closed',
+      saved: 'Profile saved.',
+      submitted: 'Profile submitted for review.',
+      review: {
+        title: 'Profile submitted for review',
+        body: 'Our team will check your business details. Your listing goes live in the Paylez app once the review is complete.',
+        nextTitle: 'What happens next?',
+        next: [
+          'We check your business name, address and contact details',
+          'The status at the top of this page changes when the review is done',
+          'You can keep preparing deals and campaigns in the meantime',
+        ],
+        done: 'Got it',
+      },
+    },
+
+    frame: {
+      venue: 'Venue',
+      managed: '{venue} · manager',
+      soon: {
+        kicker: 'Being built',
+        title: 'This screen is on its way',
+        body: 'Its layout is being rebuilt to the new design. Nothing on it is live yet, so nothing here is a figure about your venue.',
+      },
+      ownerOnly:
+        'The listing for {venue} is kept by its owner. You manage this venue, so its deals, campaigns and figures are yours to run, but what customers read about it is theirs to change.',
+    },
+
+    /*
+     * The Team screen — `dashboardTeam.tsx`.
+     *
+     * The roles are the server's (`server/TEAM.md`), not v3's three: the owner
+     * is not a team row, and the four a row can hold are manager, shift lead,
+     * cashier and custom. A role is only where the six switches start; the
+     * owner may flip any of them and the role's name stays.
+     *
+     * `perms.*.body` is the plain-words half — what the switch lets somebody
+     * do *at the counter* — because "Confirm earning" is the server's name for
+     * it, and an owner deciding what a new cashier may touch should not need
+     * to know that. `perms.*.phrase` is the same permission as a verb phrase,
+     * for the "in one line" summary, joined by `Intl.ListFormat` in the
+     * reader's language rather than by a comma typed here.
+     *
+     * A join code is six digits, works once, and lasts seven days. Every
+     * sentence about one says all three, because the design this replaced
+     * promised a code that never expired and the server's do.
+     */
+    team: {
+      add: 'Add team member',
+      intro: {
+        title: 'Who runs your counters',
+        owner:
+          'Cashiers and shift leads run the counter, managers run the venue, you run the business. Everyone here works in the Paylez app on their own phone — you decide what each person can do, and they join with a code. Only you and your managers can see this page.',
+        manager:
+          'The counter staff you look after at {venue}. You can add cashiers, shift leads and custom logins and change what they can do. Managers are added and changed by the owner.',
+      },
+      roles: {
+        owner: 'Owner',
+        manager: 'Manager',
+        shiftlead: 'Shift lead',
+        cashier: 'Cashier',
+        custom: 'Custom',
+      },
+      legend: {
+        cashier:
+          'Runs the till. Confirms earning and redemptions, scans codes and sees what is running. Nothing they can break.',
+        shiftlead: 'Runs a shift. Everything a cashier does, plus today’s customer count and pausing a campaign.',
+        manager: 'Runs the venue day to day: deals, budgets and the counter staff. No billing, and no other managers.',
+        owner: 'Runs the business. Everything a manager can do, plus billing, the listing and the managers.',
+      },
+      columns: {
+        member: 'Member',
+        role: 'Role',
+        venue: 'Venue',
+        signIn: 'Sign-in',
+        status: 'Status',
+        last: 'Last active',
+        actions: 'Actions',
+      },
+      owner: {
+        /* The owner row as a manager sees it: the session is not the owner's,
+           and no endpoint names them, so the row says what they are. */
+        unnamed: 'The venue’s owner',
+        sub: 'Owns {venue}',
+        last: 'Active now',
+        tag: 'Account owner',
+      },
+      /* What a manager sees in place of the buttons on another manager's row —
+         the server would refuse every one of them. */
+      byOwner: 'Managed by the owner',
+      sub: {
+        all: 'Every counter permission',
+        some: '{n} of 6 counter permissions',
+        none: 'Nothing switched on yet',
+      },
+      signIn: {
+        app: 'Their Paylez app',
+        pending: 'Join code · expires {date}',
+        expired: 'Join code expired',
+        noCode: 'No live join code',
+      },
+      status: { active: 'Active', onShift: 'On shift', invited: 'Invited' },
+      last: {
+        now: 'Active now',
+        notJoined: 'Not joined yet',
+        joined: 'Joined {date}',
+      },
+      actions: {
+        edit: 'Edit',
+        reissue: 'Issue a new join code',
+        revoke: 'Revoke access',
+        cancelInvite: 'Cancel invite',
+      },
+      perms: {
+        earn: {
+          label: 'Confirm earning',
+          body: 'Type in the bill and confirm a visit, so the customer gets their points and stamps.',
+          phrase: 'confirm earning',
+        },
+        redeem: {
+          label: 'Confirm redemptions',
+          body: 'Accept a voucher, a reward or a subscription pass at the till.',
+          phrase: 'confirm redemptions',
+        },
+        scan: {
+          label: 'Scan and show codes',
+          body: 'Show the counter’s QR code, scan a customer’s, or type a code in by hand.',
+          phrase: 'scan codes',
+        },
+        running: {
+          label: 'See what’s running',
+          body: 'See the deals, stamp cards and vouchers live today, so they can answer “is there an offer?”.',
+          phrase: 'see what is running',
+        },
+        count: {
+          label: 'See customer count',
+          body: 'See how many customers came in today and the latest visits — names only for customers who share them with you.',
+          phrase: 'see today’s customer count',
+        },
+        pause: {
+          label: 'Pause and resume campaigns',
+          body: 'Pause a deal or a campaign from the counter — when something runs out, say — and switch it back on.',
+          phrase: 'pause campaigns',
+        },
+      },
+      drawer: {
+        addKicker: 'Add team member',
+        addTitle: 'Add a team member',
+        addSub: 'They work in the Paylez app on their own phone. You choose what they can do; they join with a code.',
+        editKicker: 'Edit team member',
+        editTitle: 'Edit team member',
+        editSub: 'A change reaches their phone on their next tap. Nothing about access is cached.',
+        name: 'Their name',
+        namePlaceholder: 'e.g. Andrii P.',
+        nameHelp: 'The name on every scan they confirm, so you can see who did what.',
+        role: 'Start from a role',
+        roleHelp: 'A role fills in the switches below. Change any of them — the role’s name stays.',
+        roleCards: {
+          cashier: 'Confirm earning and redemptions, scan codes, and see what is running.',
+          shiftlead: 'Everything a cashier can do, plus the customer count and pausing campaigns.',
+          manager:
+            'Runs the venue day to day: deals, budgets and the counter staff. No billing, payouts or changes to the venue itself.',
+          custom: 'Start with everything off and switch on only what they need.',
+        },
+        perms: 'What they can do at the counter',
+        permsHelp: 'Budgets, sales totals and analytics always stay with you and your managers.',
+        managerPerms:
+          'A manager can do everything at the counter, and runs the venue day to day. There is nothing to switch off.',
+        join: 'How they join',
+        joinTitle: 'A 6-digit code, shown once',
+        joinBody:
+          'When you save, you get a code to give them. On their own phone they open Paylez, go to their profile, tap Switch and choose “Join a venue with a code”. It works once, within 7 days — no email or phone number needed.',
+        state: 'Where they are',
+        pending: 'Not joined yet. Their code works until {date}, and it is only ever shown once — issue a new one if they lost it.',
+        expired: 'Not joined, and their code has run out. Issue a new one to give them another.',
+        joined: 'Joined {date}. On a new phone they need a new code — the old phone keeps working until they use it.',
+        oneLine: 'In one line',
+        someone: 'This person',
+        who: {
+          cashier: '{name} will be a cashier at {venue}.',
+          shiftlead: '{name} will be a shift lead at {venue}.',
+          custom: '{name} will have a custom login at {venue}.',
+          manager: '{name} will manage {venue}: deals, budgets, the counter staff and every counter permission.',
+        },
+        can: 'They can {list}.',
+        nothing: 'Nothing is switched on yet, so their counter will have no actions.',
+        create: 'Create join code',
+        save: 'Save changes',
+        saving: 'Saving…',
+        needName: 'Add their name to continue',
+      },
+      code: {
+        kicker: 'Join code',
+        title: '{name} is ready',
+        again: 'A new code for {name}',
+        body: 'Give them this code. They enter it once on their own phone, in Paylez: Profile → Switch → “Join a venue with a code”.',
+        expires: 'Works once, until {date}. It is not shown again — issue a new one if it runs out.',
+        copy: 'Copy code',
+        copyMessage: 'Copy a message',
+        done: 'Done',
+        message:
+          'Your Paylez counter code for {venue} is {code}. Open Paylez, go to your profile, tap Switch and choose “Join a venue with a code”. It works once, within 7 days.',
+        copied: 'Copied.',
+        copyFailed: 'This browser would not copy. Select the code and copy it by hand.',
+      },
+      confirm: {
+        revokeTitle: 'Revoke {name}’s access?',
+        revokeBody:
+          'Their counter disappears from their phone at once, mid-shift if they are on one. Everything they confirmed stays recorded. To bring them back, add them again for a new code.',
+        revoke: 'Revoke access',
+        cancelTitle: 'Cancel {name}’s invite?',
+        cancelBody: 'Their join code stops working right away. You can add them again later for a new one.',
+        cancel: 'Cancel invite',
+        reissueTitle: 'Issue a new join code?',
+        reissuePending: 'The code you gave {name} stops working at once. Give them the new one instead.',
+        reissueActive:
+          'For when {name} moves to a new phone. Their current phone keeps working until they type the new code on the new one.',
+        reissue: 'Issue new code',
+      },
+      toasts: {
+        created: 'Join code ready for {name}.',
+        saved: 'Saved changes to {name}.',
+        revoked: '{name} can no longer use your counter.',
+        cancelled: 'Invite cancelled. The code no longer works.',
+        reissued: 'New code for {name}. The old one stopped working.',
+      },
+    },
 
     /*
      * The voucher register — `dashboardVoucherList.tsx`.
@@ -2065,7 +2348,7 @@ export const en = {
         search: 'Search a code or a name',
         count: 'Showing {n} of {total}',
         empty: 'No voucher has been taken yet. One appears here the moment a customer spends points on a rung above — with its code, both ends of its window, and what happened to it.',
-        emptyFiltered: 'No voucher matches that. Clear the search or pick another status.',
+        emptyFiltered: 'No voucher in this list has that status.',
       },
       table: {
         code: 'Code',
@@ -2076,14 +2359,45 @@ export const en = {
         status: 'Status',
         redeemed: 'Spent',
         withheld: 'Withheld — this customer has not agreed to share their profile with your venue.',
-        notRedeemed: 'not yet',
       },
       status: {
         all: 'All',
-        active: 'Unused',
-        redeemed: 'Spent',
-        expired: 'Lapsed',
+        active: 'Active',
+        redeemed: 'Redeemed',
+        expired: 'Expired',
         cancelled: 'Cancelled',
+      },
+      /* v3's Voucher activity log. The three `…Note` sentences each carry one
+         money hole; `latest` is the line when the page is shorter than the
+         lifetime count, so a list of two hundred never claims to be all. */
+      log: {
+        active: 'Active now',
+        activeNote: 'up to {amount} set aside',
+        redeemed: 'Redeemed',
+        redeemedNote: '{amount} given away',
+        expired: 'Expired unused',
+        expiredNote: '{amount} returned to budget',
+        filter: 'Show vouchers',
+        count: '{n} vouchers',
+        latest: 'Latest {n} of {total}',
+        kind: 'Loyalty tier',
+        columns: {
+          voucher: 'Voucher',
+          customer: 'Customer',
+          reward: 'Reward',
+          status: 'Status',
+          value: 'Value',
+          closed: 'Issued · closed',
+        },
+        upTo: 'up to {amount}',
+        issued: 'Issued {date}',
+        expires: 'Expires {date}',
+        used: 'Used {date}',
+        expiredOn: 'Expired {date}',
+        cancelled: 'Cancelled',
+        notShared: 'Name not shared',
+        foot: 'Vouchers that expire unused return their set-aside money to your discount budget. Redeemed value is real money already off a bill.',
+        settings: 'Voucher settings',
       },
     },
 
@@ -2144,51 +2458,21 @@ export const en = {
       budgetTitle: 'Set your monthly budget',
       budgetLede:
         'One total for the month, split between loyalty rewards and voucher discounts. It cannot go below what you have already spent or set aside.',
-      budgetTotal: 'Total for this month',
       budgetShare: 'Share for loyalty',
-      shareUnit: '% to loyalty',
       budgetShareNote: '{loyalty} for loyalty rewards, {voucher} for voucher discounts.',
       budgetSaved: 'Your budget is saved.',
-      moveTitle: 'Move money between the two pools',
-      moveAmount: 'How much to move',
-      moveDo: 'Move it',
-      moveDir: '{from} → {to}',
-      moveNote:
-        'Only money that is still available moves. Anything set aside belongs to a customer who has already earned it.',
       moved: 'Moved.',
       hint: 'Your {to} pool is nearly out and {from} has room. About {amount} is worth moving.',
       pools: { loyalty: 'Loyalty', voucher: 'Vouchers' },
-
-      /* ── what points buy ── */
-      ladderEdit: 'Change what points buy',
-      ladderDone: 'Done',
       tierPct: 'Discount',
-      tierPoints: 'Points it costs',
-      tierCap: 'Most off one bill',
-      pctUnit: '% off',
-      tierAdd: 'Add a tier',
-      tierRetire: 'Retire',
       tierRetired: 'That tier is retired. Vouchers already given out at it still work.',
       tiersSaved: 'Your point tiers are saved.',
-      tierDuplicate:
-        'Two tiers cannot offer the same discount — the second would replace the first.',
-
-      /* ── the counter ── */
-      queueTitle: 'Waiting to be confirmed',
-      queueLede:
-        'A customer has scanned and nothing has been given yet. Confirm it and the points, stamps and discounts all happen at once.',
-      queueEmpty:
-        'Nothing is waiting. A scan appears here within seconds of a customer holding up their phone.',
       confirm: 'Confirm',
-      turnAway: 'Turn it away',
       confirmed: 'Confirmed. The customer has their points.',
-      turnedAway: 'Turned away. Nothing was given.',
       /* Not a figure and not a 0: at a venue where the cashier enters the
          bill this is the field, and where the customer does it this is what
          the row is waiting on. Neither is 'they bought nothing'. */
       billLabel: 'Bill total',
-      waitingCustomer: 'Waiting for the customer to enter the bill',
-      openedAt: 'Scanned at {at}',
       intents: {
         earn: 'Earning',
         voucher_redeem: 'Voucher',
@@ -2228,17 +2512,12 @@ export const en = {
       noSource: 'The server does not report this yet, so this panel has nothing to show.',
       /** A panel gated behind the venue’s plan rather than behind its data. */
       planLocked: 'Not included on this venue’s plan.',
-      /** The server reports by calendar month; the bar’s picker is a rolling day count. */
-      monthOnly:
-        'Figures are reported for a whole calendar month, which is the window the server counts in — the range picker above does not move them yet.',
       /** The server had nothing worth ranking this period. */
       noFindings: 'Nothing stood out this month.',
       /** A panel drawn from the reference design's figures rather than from
           measured ones, so the layout can be seen while the endpoint behind it
           does not exist. Never shown when `PD_SEED` is off. */
       sample: 'Sample figures',
-      /** Half of `vouchers.tierDetail` — the half we can stand behind. */
-      tierUnit: 'Each one takes {unit} off a bill.',
       /** The rail's plan card, with no budget to draw a bar from. */
       plan: 'No budget to report — this device is not signed in to the Paylez API.',
       /** The assistant, which will not compose around a figure it cannot read. */
@@ -2356,10 +2635,8 @@ export const en = {
         share: 'Shared by a customer',
         unknown: 'Somewhere else',
       },
-      reachFunnel: '{seen} saw you · {clicks} opened it · {claims} claimed something',
       reachEmpty: 'Nothing has been seen yet. Publishing an offer is what puts you in the app feed.',
       reachLive: 'Live figures, counted from your listing and your offers.',
-      reachSample: 'Sample figures — this device is not reading reach from the server.',
       budgetAlert:
         'Your loyalty budget is forecast to run out before the end of {month}. You have {amount} unused in vouchers — move some across?',
       budgetAction: 'Open loyalty budget',
@@ -2381,7 +2658,6 @@ export const en = {
 
       tiles: ['Visits', 'Deals claimed', 'Vouchers used', 'Rewards used'],
       since: 'vs previous period',
-      inMonth: 'in {month}',
       /* The two deltas that are not percentages. A count that went from nothing
          to something has no percentage change, and one that was nothing both
          times has no direction — each says so rather than printing "+100%" or
@@ -2408,8 +2684,6 @@ export const en = {
         'Every QR scan at the counter, against the vouchers customers actually spent',
       chartVisits: 'Visits',
       chartRedeemed: 'Vouchers redeemed',
-      /** The right-hand end of the chart's date axis. */
-      chartToday: 'today',
 
       holdingTitle: 'Money you are holding',
       holding:
@@ -2470,14 +2744,64 @@ export const en = {
       runningNote: 'Everything customers can see or earn in your venue today',
       quota: '{n} of {total} notifications left this month',
       quotaOut: 'No notifications left this month',
-      kinds: { deal: 'Hot deal', campaign: 'Campaign', vouchers: 'Vouchers' },
+      kinds: { deal: 'Hot deal', campaign: 'Campaign', vouchers: 'Vouchers', pass: 'Pass' },
       claims: 'claims',
       usedEarned: 'used / earned',
       givenAway: 'given away',
-      notifySent: 'Notification sent',
-      notifySet: 'Notification set',
       tierBundle: 'Three point tiers',
-      tierBundleRule: '5% · 10% · 15% off · one monthly budget',
+
+      /* ── the v3 rebuild (`dashboardOverview.tsx`) ──
+         Every figure is a hole. The ladder's rule names the venue's own rungs
+         (`{tiers}` is "5% · 10% · 15%" built from them) rather than the three
+         the prototype assumed; `tierBundle` is used only when there are three. */
+      tierLadder: 'Point tiers',
+      tierRule: '{tiers} off · one monthly budget',
+      quotaResets: 'resets {date}',
+      notifyAt: 'Notification set for {when}',
+      notifySentAt: 'Notification sent {when}',
+      ends: 'ends {date}',
+      subscribers: 'subscribers',
+      /* A pass's rule on its "Running right now" row: what it gives, how often,
+         and its price per billing period. */
+      passDiscount: '{pct}% off everything',
+      passCaps: { per_day: '{n} a day', per_week: '{n} a week', per_month: '{n} a month', unlimited: 'unlimited' },
+      passCapsOnce: { per_day: 'once a day', per_week: 'once a week', per_month: 'once a month' },
+      passPrice: { monthly: '{amount}/mo', quarterly: '{amount}/quarter', annual: '{amount}/yr' },
+      /* Two findings read off the venue's own passes. A draft is a pass that
+         exists and that nobody can see; the upsell is the server's estimate and
+         is only said when the server made one. */
+      passDraft: 'Your {name} pass is still a draft — customers cannot see it yet.',
+      passDraftDetail: 'It is saved. Finish the details and publish it to put it in the app.',
+      passDraftAction: 'Finish it',
+      passUpsell: 'Pass subscribers spend about {amount} beyond the pass.',
+      passUpsellDetail: 'An estimate from the bills recorded beside {measured} of this month’s {redemptions} pass uses.',
+      passUpsellAction: 'See passes',
+      subs: {
+        title: 'Your subscriptions',
+        included: 'Included in Growth',
+        framing: 'Your subscriptions earn {amount} a month, straight to you — Paylez takes no commission.',
+        manage: 'Manage passes',
+        active: 'Active subscribers',
+        activeNote: 'across your live passes',
+        recurring: 'Recurring / month',
+        recurringNote: 'straight to you, 0% commission',
+        redemptions: 'Redemptions',
+        redemptionsNote: 'passes used this month',
+        upsell: 'Est. upsell',
+        upsellNote: 'extra spend beyond the pass',
+        /* Why the upsell is a dash — the server's own reason, never a 0. */
+        upsellWhy: {
+          no_redemptions: 'no pass used yet this month',
+          no_bills_recorded: 'no bill recorded beside a pass use',
+          no_covered_value: 'nothing the pass covers to measure against',
+        },
+        kicker: 'Subscriptions',
+        promoTitle: 'Turn regulars into subscribers.',
+        promoBody:
+          'A monthly pass is recurring revenue you keep 100% of — Paylez takes no commission and never holds the money.',
+        create: 'Create a pass',
+        seeGrowth: 'See Growth',
+      },
     },
 
     deals: {
@@ -2595,10 +2919,6 @@ export const en = {
       dropNone: 'This deal has not started yet, so there is nothing to measure.',
 
       notifyTitle: 'What the notification did',
-      /* The same funnel for the whole venue, under the table. */
-      notifyVenueTitle: 'What your notifications did this month',
-      notifyVenueSent: 'From {n} notifications sent this month.',
-      notifyVenueNone: 'No notification has gone out this month, so there is nothing to measure yet.',
       notifySteps: ['Notified', 'Opened', 'Came in'],
       notifyStepNotes: [
         'people with notifications switched on',
@@ -2607,14 +2927,10 @@ export const en = {
       ],
       notifySplit:
         '{camein} of this deal’s {claims} claims came from the notification. The other {alone} found it in the app on their own.',
-      notifyBlocked:
-        'Sent to {n} people. {blocked} more matched but had recently received other notifications, so they did not get this one.',
       notifyScheduled:
         'A notification goes out at {at} to {n} people who have notifications switched on.',
       notifyNone:
         'No notification on this deal. {n} of the {total} people who match it have notifications switched on.',
-      notifyChange: 'Change the time',
-      notifyCancel: 'Cancel it',
       whoTitle: 'Who sees it, and when',
       /* The two fallbacks in the expanded row's targeting card. A deal
          with no window runs whenever it is live, and one with no audience
@@ -2626,7 +2942,6 @@ export const en = {
       /* The claim ceiling, from the two sides it can be seen from. Only the
          first deal has one, so both are written for that case. */
       limitForecast: 'At this pace, this deal hits its {limit}-claim limit around {date}.',
-      limitDates: ['22 August', '', '', '', '', ''],
       retro:
         'This ran for {weeks} weeks and got {claims} claims — about a third of what your 15% deals average. Try a deeper discount or a free item.',
 
@@ -2642,19 +2957,91 @@ export const en = {
         expired: 'Copy',
         archived: 'Copy',
       },
-      pointsNote: 'Points offer — costs you nothing at the till',
-      costEstimate: 'estimate',
-      costNone: 'no discount cost',
-      notifyChips: {
-        none: 'No notification',
-        scheduled: 'Notification set for {at}',
-        sent: 'Notification sent · {n} came in',
-      },
-      sortBy: 'Sort by {column}',
       clearFilters: 'Clear filters',
       emptyFiltered: 'Nothing matches that',
-      emptyFilteredBody:
-        'No deal in your list matches the search and filter you have set. Clear them to see all six again.',
+
+      /*
+       * The v3 table (`dashboardDeals.tsx`) and its drawer.
+       *
+       * `stateFilters` is keyed by the server's own status union plus `all`,
+       * so a filter cannot exist for a state no deal can be in — v3's
+       * "Stopped" is not one of them (a deal at its claim limit stays `live`
+       * on the server), and "Draft" and "Ended" are.
+       */
+      stateFilters: {
+        all: 'All',
+        live: 'Live',
+        scheduled: 'Scheduled',
+        paused: 'Paused',
+        draft: 'Draft',
+        expired: 'Expired',
+        archived: 'Ended',
+      },
+      quotaLine: '{n} of {total} notifications left this month · resets {date}',
+      quotaNone: 'No notifications left this month · resets {date}',
+      chipScheduled: 'Notification set for {at}',
+      chipSent: 'Notification sent · {n} came in',
+      audienceReturning: 'Returning customers',
+      notStartedCell: 'Not started',
+      emptyTitle: 'Run an offer anyone can use',
+      emptyBody:
+        'A hot deal is an open offer with a start and end date. Nobody has to earn it — it shows in the app to whoever you choose. A good first one for a café: 20% off filter coffee, Mon–Fri 07:00–10:00, to fill your quiet mornings.',
+      searchTitle: 'Nothing matches “{q}”',
+      searchBody: 'Check the spelling, or clear the search to see all {n} of your deals.',
+      filterTitle: 'Nothing under “{filter}” right now',
+      filterBody:
+        'Create a deal and it appears in the Paylez app the moment you publish it. Most cafés start with a morning discount.',
+      /* A scheduled notification with no audience count beside it — the
+         count is the audiences endpoint's, and it can be withheld. */
+      notifyScheduledBare: 'A notification goes out at {at}.',
+      notifyNoneBare: 'No notification on this deal.',
+      notifyJust: 'Sent {at} to {n} people. Results appear here within a day.',
+      notifyAdd: 'Schedule a notification',
+      limitReached: 'This deal has reached its {limit}-claim limit.',
+      ranFor: 'This ran for {weeks} weeks and got {claims} claims.',
+      endTitle: 'End “{name}”?',
+      endBody:
+        'It leaves the app for good. Its figures stay on this screen, but it cannot be started again — copy it to run it again.',
+      endConfirm: 'End the deal',
+      copied: 'Copied into a new deal. Check the dates and publish it.',
+      copy: 'Copy',
+
+      form: {
+        kicker: 'Hot deal',
+        title: 'Create hot deal',
+        editTitle: 'Edit hot deal',
+        sub: 'A deal with a start and end date. It shows in the Paylez app the moment you publish it.',
+        titleError: 'Give the deal a title so customers know what it is.',
+        windowDays: 'Customers will see this deal for {n} days, from {from} to {to}.',
+        windowBad: 'The end date is before the start date. Move the end date later.',
+        windowPick: 'Pick both dates to see the live window.',
+        quotaLeft: 'You have {n} notifications left this month. They reset on {date}.',
+        quotaNone: 'You have no notifications left this month. They reset on {date}.',
+        outTitle: 'All {total} of this month’s notifications are used',
+        outBody:
+          'This deal will still run in the app. You can attach a notification again from {date}, or move to a bigger plan for more of them.',
+        outPlan: 'See the plans',
+        reachLine: '{n} of the {total} people who match this deal have notifications switched on.',
+        reachThin:
+          'Only {pct}% of this audience has notifications switched on. A notification here reaches fewer people than the deal itself.',
+        /* There is no field for a notification's own words on the server: it
+           sends the deal's title and description. So the drawer shows that,
+           and says so, instead of an input that would be thrown away. */
+        notifySays: 'The notification carries your deal title and description, as the preview shows.',
+        lockApp: 'Paylez',
+        lockNow: 'now',
+        stopOptions: [
+          { label: 'No limit', note: 'Runs until the end date.' },
+          { label: 'Stop after a number of claims', note: 'Good when you know how many you can serve.' },
+          { label: 'Stop after an amount of money', note: 'Good when the cost matters more than the count.' },
+        ],
+        limitNone: 'No limit on claims',
+        previewBadge: 'DEAL',
+        publish: 'Publish deal',
+        save: 'Save changes',
+        invalidCopy: 'Add a title and discount text to continue',
+        invalidDates: 'Fix the dates to continue',
+      },
     },
 
     campaigns: {
@@ -2673,7 +3060,6 @@ export const en = {
         'Paused on 28 March',
       ],
       rule: '{visits} visits → {reward}',
-      visitRule: 'One visit counts per day. A reward expires 60 days after it is earned.',
       earned: 'Earned',
       used: 'Used',
       unused: '{n} earned but never used',
@@ -2698,7 +3084,6 @@ export const en = {
       cooldown: 'Scans count once every {n} hours',
       rebalance:
         'Your loyalty budget is forecast to run out on {date}. Vouchers have {amount} unused — move some across?',
-      rebalanceAction: 'Move budget across',
       budgetTitle: 'Loyalty budget',
       budgetLede:
         'What you have set aside this month for loyalty rewards. Hot deals do not come out of it.',
@@ -2709,14 +3094,80 @@ export const en = {
       forecast: 'At this rate the loyalty budget lasts until {date}.',
       forecastOut: 'The loyalty budget is spent. New rewards stop being handed out.',
       forecastSafe: 'At this rate the loyalty budget lasts the whole of {month}.',
-      pausedNote: 'Paused. Members keep what they have earned, and nothing new is counted.',
+
+      /* The v3 screen (`dashboardLoyalty.tsx`) and its drawer. */
+      board: {
+        totals: ['Earned', 'Used', 'Never used'],
+        gap: 'Right now “{name}” has the widest gap: {n} rewards earned and never used.',
+        remindNote: 'One push to everyone holding a reward they have not used.',
+        remindResult: 'Your last reminder, on {date}, brought {back} of {of} customers back.',
+        share: 'of your {total} discount budget. The rest, {vouchers}, is for vouchers.',
+        exhausted:
+          'No new rewards are being earned this month. Rewards customers already earned stay valid and will be honoured.',
+        rebalance: 'Your loyalty budget runs out around {date}. You have {amount} unused in vouchers — move some across?',
+        rebalanceOut: 'Your loyalty budget is used up. You have {amount} unused in vouchers — move some across?',
+        move: 'Move {amount} across',
+        moved: 'Moved {amount} from vouchers to loyalty campaigns.',
+        young: 'Too new to judge yet',
+        scanDay: '1 scan per customer per day',
+        minSpend: 'min. spend {amount}',
+        expiry: 'reward expires after {n} days',
+        paused: 'Paused. The {n} rewards already earned stay valid, so {amount} stays set aside until they are used or expire.',
+        since: 'Running since {date}',
+        started: 'Started {date}',
+        states: { active: 'Live', paused: 'Paused', draft: 'Draft', ended: 'Ended' },
+        endTitle: 'End “{name}”?',
+        endBody:
+          'Nobody can earn it from the next visit. Rewards customers already earned stay valid until they are used or expire.',
+        endConfirm: 'End the campaign',
+        emptyBody:
+          'A loyalty campaign counts a customer’s visits and gives them something free once they reach the number you choose. You say what the reward is and what it costs you, so you always know the price.',
+        suggestKicker: 'A good first campaign for a café',
+        suggestNote: 'Costs you about {amount} each time.',
+        suggestAction: 'Set up this campaign',
+        starter: 'Filled in with a starter campaign. Change anything you like.',
+      },
+      form: {
+        kicker: 'Loyalty campaign',
+        title: 'Create campaign',
+        editTitle: 'Edit campaign',
+        sub: 'A reward that repeats. Customers earn it by coming back.',
+        rewardKinds: ['Something free', 'Amount off'],
+        projection: 'If {n} customers reach this, it will cost you about {amount}.',
+        /* Higher wins on the server (`campaigns.ts`), so the top of the row is
+           5 and the chips say so — v3 drew it the other way round. */
+        top: '{n} — wins first',
+        bottom: '{n} — wins last',
+        priorityTopHelp: 'This campaign pays out before every other one you run.',
+        priorityHelp: 'Campaigns with priority {from} to 5 pay out before this one.',
+        summaryOne: 'Visit once and get {reward}.',
+        summary: 'Visit {n} times and get {reward}.',
+        summaryNote:
+          'The reward lands in the customer’s app straight away and is valid for {days} days. Only visits of {amount} or more count.',
+        summaryNoteBare: 'The reward lands in the customer’s app straight away and is valid for {days} days.',
+        invalid: 'Add a name, a reward and what it costs you to continue',
+        start: 'Start campaign',
+      },
     },
 
     vouchers: {
-      alertTitle: 'Your discount budget is running low',
+      alertTitle: 'Your budget runs out around {date}',
       alertBody:
-        'At the current rate it runs out on {date}, and vouchers stop being given out until next month.',
+        'That is before the end of the month. Once the pool is empty, no new vouchers are given out until you raise the budget or the month turns.',
       alertAction: 'Increase the budget',
+      outTitle: 'This month’s discount budget is used up',
+      outBody:
+        'No new vouchers are being given out. The ones customers already hold still work — their money was set aside when they got them.',
+      /* The sentence over the ink card's bar. Both holes are money. */
+      allocSplit:
+        'Of that, {voucher} is for vouchers — the bar below. The other {loyalty} is set aside for loyalty campaigns.',
+      avgCategory:
+        'A typical figure for venues like yours. It switches to your own once we have seen enough of your sales.',
+      savesOnBlur: 'Changes save when you leave the field',
+      pointsFor: 'Points needed for {tier}',
+      /* Where a rung sits on the ladder, by position rather than percentage. */
+      steps: { first: 'easiest to reach', middle: 'the middle step', last: 'your best customers' },
+      insightNone: 'Nothing has been given away yet. Once customers start reaching a tier, you will see the mix here.',
       budgetTitle: 'Vouchers budget',
       budgetLede:
         'One pool for all three tiers. This is real money leaving your till, and you set the total for both features here.',
@@ -2730,14 +3181,14 @@ export const en = {
         'Money held for vouchers customers have earned but have not used yet. If they expire, it comes back.',
       free: 'Available',
       freeNote: 'Free to spend on new vouchers right now.',
-      forecast: 'At this rate the budget lasts until {date}.',
-      forecastOut: 'The budget is spent. No new vouchers are being given out.',
+      forecast: 'At this pace, your budget runs out around {date}.',
+      forecastOut: 'Nothing left in the pool for this month.',
       forecastSafe: 'At this rate the budget lasts the whole of {month}.',
       buysTitle: 'What is left buys',
-      buys: 'about {n} more vouchers',
-      buysNote: 'At the mix of tiers your customers are reaching now.',
+      buys: 'About {n} more vouchers',
+      buysNote: 'An estimate, based on your average check of {amount}.',
       avgTitle: 'Average transaction',
-      avgNote: 'Taken from your own sales over the last 30 days. Change it if it looks wrong.',
+      avgNote: 'Calculated from your sales over the last 30 days.',
       maxTitle: 'Most off one voucher',
       maxNote:
         'No single voucher takes more than this off a bill, however large the order.',
@@ -2746,8 +3197,6 @@ export const en = {
         'Tiers do not hold money. Points decide who gets there, so raising a number sends less of the budget that way.',
       columns: ['Tier', 'Points needed', 'Given out', 'Used', 'Cost so far'],
       tier: '{n}% off',
-      /* Vouchers given out at a rung and not yet spent or expired. */
-      stillOut: '{n} still out',
       /* A rung the owner switched off that still has vouchers out this month.
          Its points are shown as a fact: saving them would switch it back on. */
       retired: 'Retired',
@@ -2760,12 +3209,6 @@ export const en = {
       /* Weighted rather than red: the palette has one accent, so an error is
          said in weight and wording (root `CLAUDE.md`, the forms block). */
       pointsOrder: 'A deeper discount cannot cost fewer points than a shallower one.',
-      /* The honest limit of the three fields above. They recompute this screen
-         and nothing else — there is no server to save a setting to, and the
-         thresholds decide who qualifies, which is a question about customers
-         that no counted figure here can answer. */
-      tryNote:
-        'Type over any of these to see what it would do to the pool. Nothing is saved, and the figures go back to your real ones when you reload.',
       points: '{n} pts',
       mixTitle: 'Where the money went',
       returnedTitle: 'Money returned',
@@ -2787,12 +3230,8 @@ export const en = {
         'Voucher discounts',
         'Hot deal discounts',
       ],
-      costFinding:
-        'Each new customer cost you {now} in {month}, down from {then} in June. Most of that fall came from your free-item deal.',
       costAction: 'See your deals',
       trendTitle: 'Last three months',
-      trendMonths: ['June', 'July', 'August'],
-      spendByMonth: 'Spend with you, by month',
       benchmark:
         'The average Kraków café on Paylez pays {amount} for each new customer. This is an estimate from venues like yours, not a promise.',
 
@@ -2800,10 +3239,6 @@ export const en = {
       rosterIntro:
         '{n} of your {total} customers turned on profile sharing, so you can see these ones by name. Everyone else stays in the grouped figures below.',
       rosterCount: '{n} sharing',
-      rosterColumns: ['Customer', 'Spent', 'Visits', 'Last seen', 'Status'],
-      /* Index-aligned with the five statuses below, after "Everyone". Every row
-         falls under exactly one, so the counts add up to the first chip. */
-      rosterFilters: ['Everyone', 'Regulars', 'High value', 'At risk', 'Lapsed', 'New'],
       withdrew:
         'Someone can turn sharing off at any time. When they do, they drop off this list and their history stops being visible to you.',
       /* The server's five words. `at_risk` is a valuable customer who has not
@@ -2819,7 +3254,6 @@ export const en = {
       daysAgo: '{n} days ago',
       dayAgo: '1 day ago',
       stamps: '{done} of {of} stamps',
-      tierProgress: '{n}% tier',
 
       /* The panel a roster row opens — one person, behind the same consent. */
       detail: {
@@ -2828,7 +3262,6 @@ export const en = {
         spent: 'Spent here',
         visits: 'Visits',
         firstSeen: 'First visit',
-        lastSeen: 'Last visit',
         language: 'App language',
         months: 'Visits by month',
         cards: 'Stamp cards',
@@ -2840,15 +3273,9 @@ export const en = {
       },
 
       whenTitle: 'When they come in',
-      whenLede: 'Every QR scan at the counter, in an average week. Darker means busier.',
       days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-      heatCell: 'about {n} visits in a normal week',
-      quietFinding:
-        'Tuesday and Wednesday, 14:00 to 16:00, are your quietest hours — about 60% below your weekly average.',
       quietAction: 'Set this up for me',
       quietSelf: 'I will do it myself',
-      peakFinding:
-        'Your busiest hours are weekdays 08:00 to 10:00. Your morning deal already runs then, so there is little to gain from discounting deeper there.',
 
       nationCount: '{n} customers · {pct}%',
       readTitle: 'What language your customers use',
@@ -2872,8 +3299,6 @@ export const en = {
       cohort: '{back} of {first} · {pct}%',
       backFinding:
         '{first} people visited you for the first time in {month}. {back} came back within 30 days — {pct}%.',
-      lapsedFinding:
-        '{n} of your regulars have not visited in 30 days. They used to come about once a week.',
 
       compareTitle: 'How you compare',
       compareNote:
@@ -2886,24 +3311,6 @@ export const en = {
       roiUnits: ['repeat visits', 'claims', 'vouchers used'],
       roiPer: ['per repeat visit', 'per claim', 'per use'],
       roiLine: '{cost} spent · {n} {unit}',
-
-      /* One line per roster entry, index-aligned with `PD_ROSTER.pattern`. */
-      patterns: [
-        'Weekday mornings, often before 9',
-        'Weekday mornings',
-        'Weekends, late morning',
-        'Used to come Friday afternoons',
-        'Two visits, both afternoons',
-        'Weekday lunch',
-        'Weekend mornings',
-        'Afternoons, mixed days',
-        'Most weekday mornings',
-        'Three visits, afternoons',
-        'Was a Tuesday regular',
-        'Weekends',
-        'First visit two days ago',
-        'Thursday afternoons, less lately',
-      ],
       /* …and with `PD_ROSTER.reward`. */
       rewards: [
         '15% tier — your top spender',
@@ -2917,6 +3324,114 @@ export const en = {
         '10% tier — lapsed',
         '10% tier — slowing down',
       ],
+
+      /* The v3 screen. Every figure is a `{hole}`; nothing here names a month,
+         a city or a percentage the server did not send. */
+      page: {
+        thinKicker: 'New customers so far',
+        thinUnit: 'new to your venue in {month}',
+        thinLine:
+          'Too few new customers so far to say what each one cost without pointing at someone. The figure appears once there are enough.',
+        findingDown: 'Each new customer cost you {now} in {month}, down from {then} in {first}.',
+        findingUp: 'Each new customer cost you {now} in {month}, up from {then} in {first}.',
+        findingFlat: 'Each new customer cost you {now} in {month}, about the same as in {first}.',
+        trendNone: 'The trend starts once a full month has enough new customers to count.',
+        benchmark:
+          'Venues like yours on Paylez pay {amount} on average for each new customer. This is an estimate from {n} venues, not a promise.',
+
+        emptyTitle: 'No one is sharing their profile yet',
+        emptyBody:
+          'When a customer chooses to share their profile, they show up here so you can look after your regulars by name. You never see anyone who has not opted in.',
+        fewNote:
+          'Only a few people have shared their profile so far. More of your regulars will show up here as they opt in.',
+        shown: 'Showing your {n} most active. {total} have shared their profile in total.',
+        filters: {
+          all: 'Everyone',
+          regular: 'Regulars',
+          away: 'Slipping away',
+          new: 'New',
+          top: 'Top spenders',
+          members: 'Subscribers',
+        },
+        columns: {
+          customer: 'Customer',
+          spent: 'Spent',
+          visits: 'Visits',
+          vouchers: 'Vouchers',
+          last: 'Last seen',
+          status: 'Status',
+        },
+        statuses: { regular: 'Regular', away: 'Slipping away', new: 'New' },
+        tier: '{n}% tier',
+        stamps: '{done}/{of}',
+        open: 'Open {name}',
+
+        back: 'All customers',
+        sharingSince: 'Sharing their profile since {date}',
+        firstVisit: 'First came in on {date}',
+        privacy:
+          '{name} chose to share this with you and can turn it off whenever they like. You are only seeing it because they opted in.',
+        passKicker: 'Pass membership',
+        passSince: 'Since',
+        passUsed: 'Used this period',
+        passStatus: { trialing: 'Trialing', active: 'Active', cancelled: 'Cancelled' },
+        stats: {
+          spent: 'Spent with you',
+          visits: 'Visits',
+          average: 'Average spend',
+          vouchers: 'Vouchers used',
+          last: 'Last seen',
+        },
+        vouchersOf: '{used} of {issued}',
+        spendKicker: 'Spend with you, by month',
+        rewardKicker: 'Reward status',
+        rewardTier: '{n}% discount tier',
+        rewardTierNote: 'The deepest voucher discount they have bought here.',
+        rewardStamps: '{done} of {need} stamps',
+        rewardNone: 'No voucher or stamp card here yet.',
+        usedKicker: 'What they have used',
+        usedNone: 'Hasn’t used a deal yet.',
+        inCampaign: 'In your {name} campaign',
+        whenKicker: 'When they come in',
+        pattern: 'Most often on {day}, around {time}',
+        patternNone: 'Not enough visits yet to see a pattern.',
+        build: 'Build a deal like this',
+
+        heatLede: 'Every QR scan at the counter this month, by day and hour. Darker means busier.',
+        heatTitle: '{time} on {day}: {n} visits this month',
+        quiet: '{day} around {time} is your quietest open hour — about {pct}% below your average hour.',
+        busy: 'Your busiest hour is {day} around {time}.',
+        heatEmpty: 'No scans at the counter this month yet, so there is no week to draw.',
+        quietToast: 'Day and hour filled in for you. Add the offer.',
+
+        langOther: 'Other',
+        langHidden: 'Smaller groups are counted in “other”, so nobody can be picked out.',
+        langSuppressed: 'Too few customers this month to split by language without pointing at someone.',
+        langFinding:
+          '{pct}% of your customers use the app in {language}, but none of your live deals is written in {language}.',
+
+        backNone: 'Not enough first-time visitors yet to say who comes back.',
+        remindLine: '{n} customers are holding a reward or voucher they have not used yet.',
+        remind: 'Remind them',
+        lapsedLine: '{n} customers who used to come in have not been back for {days} days.',
+
+        lockLine: 'How you compare and where your money works come with the Growth plan.',
+        seePlan: 'See the Growth plan',
+        compareNote:
+          'Compared with {n} other venues like yours on Paylez. Numbers are averaged across venues, never shown per venue.',
+        compareRows: {
+          claim_rate: 'Deal claim rate',
+          second_visit_rate: 'Second visit within 30 days',
+          cost_per_new_customer: 'Cost per new customer',
+        },
+        compareNone:
+          'Not enough venues like yours are on Paylez yet for an average to mean anything, so we are not showing one.',
+        compareNoneNote: 'It appears on its own once enough venues nearby are running.',
+        roiRows: { loyalty: 'Loyalty campaigns', deals: 'Hot deals', vouchers: 'Vouchers' },
+        roiUnits: { loyalty: 'rewards used', deals: 'claims', vouchers: 'vouchers used' },
+        roiPer: { loyalty: 'per reward used', deals: 'per claim', vouchers: 'per use' },
+        roiNone: 'None of the three has spent anything this month yet.',
+      },
     },
 
     scans: {
@@ -2948,7 +3463,6 @@ export const en = {
       notCounted: 'Not counted',
       notCountedNote: 'Under the minimum bill, too soon after their last scan, or already counted that day.',
       discount: '{amount} off',
-      emptyWindow: 'No scans in this window yet.',
       emptySegment: 'No scans match this filter.',
       todayTitle: 'Today at the counter',
       count: '{n} scans',
@@ -2960,6 +3474,11 @@ export const en = {
       prev: 'Previous',
       next: 'Next',
       coords: 'Counter',
+      /* Under the receipt: the team member the visit is recorded against. The
+         owner is recorded as nobody, so an owner's own scans carry no line. */
+      confirmedBy: 'Confirmed by {name}',
+      /* Today's three figures, at the head of the counter drawer. */
+      todayLabels: ['Visits', 'Customers', 'Takings'],
 
       /*
        * Recording a visit from the dashboard.
@@ -3032,7 +3551,6 @@ export const en = {
       exportCsv: 'Export CSV',
       preview: 'Preview listing',
       exported: 'Your CSV is downloading.',
-      previewing: 'Opening your listing preview.',
     },
 
     /*
@@ -3046,7 +3564,6 @@ export const en = {
       /* The panel's heading when it was opened on an existing deal. One
          panel does both jobs and the heading is what says which. */
       editDeal: 'Edit this hot deal',
-      editCampaign: 'Edit this campaign',
       close: 'Close',
       cancel: 'Cancel',
       later: 'Save and finish later',
@@ -3064,15 +3581,13 @@ export const en = {
         descLabel: 'Description',
         descPlaceholder: 'Say what the customer gets, in one or two short lines.',
         translateNote: 'Paylez translates this for customers reading in another language.',
-        copyError: 'A deal needs a title and a description before it can go live.',
         kindTitle: 'What kind of deal',
-        kinds: ['Percentage off', 'Free item', 'Money off', 'Extra stamp'],
+        kinds: ['Percent off', 'Free item', 'Amount off', 'Extra stamp'],
         discountTitle: 'Discount and dates',
         badgeLabel: 'Discount text',
         badgeNote: 'Short and clear. Customers see this first. 14 characters at most.',
         from: 'Starts',
         to: 'Ends',
-        windowError: 'The end date is before the start date.',
         whenTitle: 'Which days and hours',
         hourFrom: 'From',
         hourTo: 'To',
@@ -3081,31 +3596,15 @@ export const en = {
         noDays: 'no days yet',
         audienceTitle: 'Who sees it',
         audienceEstimate: 'About {n} people match this, and {notifiable} of them can be notified.',
-        /* The two figures under the picker, read off `GET …/audiences`. Labels
-           rather than one sentence, because either figure can be withheld and
-           "About — people" is not a sentence. */
-        reachLabel: 'match this audience today',
-        notifiableLabel: 'can be notified',
         reachLanguage: 'The server does not size an audience by app language, so this one has no count.',
         notifyTitle: 'Notify people',
         notifySwitch: 'Send a notification for this deal',
-        notifyQuota: '{n} of {total} left this month.',
-        notifyOutTitle: 'You have used all {total} this month',
-        notifyOutBody:
-          'The count resets on the first. The Growth plan carries more of them, and the deal still runs without one — it just waits for people to open the app.',
-        notifyPlan: 'See the Growth plan',
         notifyWhen: 'When it goes out',
-        notifySuggested: 'Your audience opens the app most around {at}.',
-        useSuggested: 'Use {at}',
         /* The server's window, which is 07:00–21:00 venue-local. This said
            21:00 to 08:00 for a while and refused nothing it described. */
         quietNote: 'Nothing goes out before 07:00 or after 21:00 at your venue, whatever you set.',
         notifyWho: 'Who gets it',
-        notifyReach: '{n} of {total} have notifications switched on.',
         notifyWhoNote: 'Change it in “Who sees it” above',
-        notifyText: 'What it says',
-        notifyTextNote:
-          'Taken from your deal title. Shorten it if you like — 64 characters at most.',
         stopTitle: 'When should it stop',
         stopOptions: [
           { label: 'On the end date', note: 'It runs to the date you set and no further.' },
@@ -3123,7 +3622,6 @@ export const en = {
         previewClaim: 'Claim deal',
         previewUntitled: 'Your deal title',
         previewNoDesc: 'Your description shows here.',
-        previewLimitNone: 'No claim limit',
         previewLimitClaims: 'Stops after {n} claims',
         previewLimitMoney: 'Stops once it has cost {amount}',
         /* The six endings a press can have, now that it reaches a server. */
@@ -3169,7 +3667,6 @@ export const en = {
         rewardOff: 'off',
         rewardError: 'Say what the customer gets.',
         costTitle: 'What does this cost you',
-        costEach: 'each',
         costNote:
           'We use this to track what your campaigns are costing you. It is the amount held from your loyalty budget each time somebody earns this reward.',
         project: 'customers',
@@ -3206,7 +3703,6 @@ export const en = {
         costError: 'Say what one reward costs you — the money is held from your loyalty budget the moment somebody qualifies.',
       },
       valid: 'Fix the {n} thing above before publishing.',
-      validPlural: 'Fix the {n} things above before publishing.',
     },
 
     /*
@@ -3228,11 +3724,8 @@ export const en = {
      * for 1 — the translations follow the same shape for that reason.
      */
     assistant: {
-      /* What it knows, and what needs attention. */
-      knowTitle: 'What I know about {venue}',
       knowEmpty:
         'Nothing is measured here yet. I learn as customers scan at your counter — until then, this is everything I can see.',
-      knowNote: 'Every figure I quote comes from your venue’s own records. I will not make one up.',
       facts: {
         visits: 'Visits this month',
         customers: 'Customers this month',
@@ -3252,9 +3745,6 @@ export const en = {
         archived: 'Archived',
       },
       receipt: 'The figures this answer read',
-
-      attentionTitle: 'Needs your attention',
-      attentionNone: 'Nothing needs your attention right now.',
       attentionFailed: 'I could not read what needs your attention.',
       review: {
         dealStuck:
@@ -3273,9 +3763,6 @@ export const en = {
         startCampaign: 'Start a stamp card',
         dealThen: 'Create a deal for that hour',
       },
-
-      /* Where to start: the server's suggestions, by their keys. */
-      startTitle: 'Where to start',
       suggestions: {
         first_deal: {
           label: 'Run your first deal',
@@ -3308,19 +3795,14 @@ export const en = {
         },
       },
       quietPlain: 'A deal aimed at the hour you are quietest.',
-      askTitle: 'Questions I can answer',
       questions: {
         quiet: 'When is my venue quietest?',
         cost: 'What did each new customer cost me?',
         month: 'How is this month going?',
       },
-
-      /* The conversation. */
-      convTitle: 'Talk to your assistant',
       reset: 'Start over',
       opening:
         'Ask me about your visits, your quietest hours or what you spend. Or switch to Draft, tell me what you want to happen, and I will set it up for you to check in the form.',
-      modeLabel: 'What to do with your message',
       modes: { ask: 'Ask', draft: 'Draft' },
       fieldLabel: { ask: 'Your question', draft: 'What you want to happen' },
       placeholders: {
@@ -3328,7 +3810,6 @@ export const en = {
         draft: 'For example: more regulars coming back',
       },
       budgetLabel: 'Budget, optional',
-      budgetShown: 'Budget: {amount}',
       send: 'Send',
       composerNote:
         'I answer from your venue’s own numbers, and I never publish anything — a draft opens in the form, and only you can publish it.',
@@ -3363,7 +3844,6 @@ export const en = {
 
       /* A draft. */
       draftTag: 'Draft',
-      draftNote: 'Nothing here is live. It opens in the form, and only you can publish it.',
       goal: 'You asked for: “{goal}”',
       kinds: { hot_deal: 'Hot deal', campaign: 'Loyalty campaign', voucher_tiers: 'Voucher tiers' },
       fields: {
@@ -3405,7 +3885,6 @@ export const en = {
         unmatched:
           'I could not tie this goal to anything I measure, so this is a plain starting point. Change anything in the form.',
       },
-      openForm: 'Open in the form',
       openVouchers: 'Open vouchers',
 
       /* When there is nothing to talk about yet. */
@@ -3429,6 +3908,41 @@ export const en = {
       /* Nothing on the screen reads this any more. It stays because
          `scripts/verify-geo.ts` still counts it. */
       dayChoices: ['Tuesday and Wednesday', 'Thursday', 'Friday'],
+
+      /*
+       * v3's chat (`dashboardAssistant.tsx`). The snapshot rows reuse `facts`
+       * above, so every figure in the opening message is one the context
+       * endpoint sent. `hello` holds `{venue}` once — the screen sets the name
+       * in bold, which is why it is split rather than filled.
+       */
+      chat: {
+        online: 'Online',
+        newConversation: 'New conversation',
+        more: 'More',
+        clear: 'Clear conversation',
+        export: 'Export chat history',
+        name: 'Assistant',
+        you: 'You',
+        hello: 'Hi! I’m your Paylez assistant for {venue}. Here’s a quick snapshot:',
+        helloEmpty: 'Hi! I’m your Paylez assistant for {venue}.',
+        liveDeals: 'Live deals',
+        topDeal: 'Top performer: “{title}” — opened {n} times',
+        workOn: 'What would you like to work on?',
+        attention: 'A few things need a look:',
+        chips: {
+          deal: 'Create a hot deal',
+          campaign: 'Set up loyalty campaign',
+          stats: 'View my stats',
+          vouchers: 'Configure vouchers',
+        },
+        draftLead: 'Here’s what I’ve put together:',
+        draftHead: 'Draft: {kind}',
+        draftAsk:
+          'Want to add terms or change anything? Do it in the form — nothing is live until you publish it there.',
+        publish: 'Review and publish',
+        fieldLabel: 'Message the assistant',
+        placeholder: 'Ask anything about your business…',
+      },
     },
 
     collapse: 'Collapse menu',
@@ -3463,7 +3977,6 @@ export const en = {
       kicker: 'Your subscription',
       title: 'Your plan, and the three tiers',
       lede: 'What you are on, what you are using of it, and what the others include.',
-      mineKicker: 'In force now',
       noSubscription: 'Free tier',
       freeNote:
         'You are on the free tier, which every venue starts on. Nothing expires and nothing is owed.',
@@ -3471,7 +3984,13 @@ export const en = {
       renews: 'Renews {date}.',
       until: 'Changes on {date}.',
       notIncluded: 'Not included',
-      compareKicker: 'Compare',
+      /* The v3 plan modal's three words: the eyebrow on the card you are on,
+         the disclosure over the full table, and the press on every other card
+         — which is a conversation with sales, not a checkout (see
+         `dashboardPlan.tsx` for why). */
+      current: 'Current plan',
+      compareAll: 'Compare all features',
+      talk: 'Talk to us',
       compareTitle: 'What each tier includes',
       whatYouGet: 'What you get',
       yours: 'Yours',
@@ -3501,6 +4020,224 @@ export const en = {
     },
 
     ranges: ['Last 7 days', 'Last 14 days', 'Last 30 days', 'Last quarter'],
+    /* The Passes screen (`dashboardPasses.tsx`, its detail and its drawer).
+       Every figure arrives through a hole; a currency is never typed here. */
+    passes: {
+      intro: 'Subscriptions your customers buy from you — a coffee a day, a monthly bundle, a members’ club.',
+      introStrong: 'You keep all of it. Paylez takes no commission.',
+      included: 'Included in {plan}',
+      lockedPill: 'Growth and Chain plans',
+      lockedTitle: 'Passes come with the Growth plan',
+      seePlan: 'See the Growth plan',
+      lockedBody:
+        'Your plan, {plan}, does not include passes, so a new pass cannot be created or published here. Any pass you already have can still be opened, edited, paused or closed.',
+      payoutsTitle: 'Customers cannot subscribe yet',
+      payoutsBody:
+        'Paylez cannot take subscription payments for you yet — connecting a payout account is not available. You can build and publish a pass and it shows in the app, but nobody can subscribe until payouts open, and nobody is charged in the meantime.',
+      create: 'Create a pass',
+      stats: {
+        active: 'Active subscribers',
+        activeNote: 'across your live passes',
+        recurring: 'Recurring revenue',
+        recurringNote: 'what subscribers are on each month — not collected yet',
+        redemptions: 'Redemptions this month',
+        redemptionsNote: 'passes used at the counter',
+        upsell: 'Est. upsell',
+        upsellNote: 'extra spend beyond the pass, measured on {n} of {total} uses',
+      },
+      /* Why the upsell estimate is absent. Never drawn as 0. */
+      upsellWhy: {
+        no_redemptions: 'Not measured: no pass has been used this month.',
+        no_bills_recorded: 'Not measured: no bill was recorded beside a pass use.',
+        no_covered_value: 'Not measured: set “Most off one visit” so the covered part of a bill is known.',
+        unknown: 'Not measured yet.',
+      },
+      card: {
+        subscribers: 'subscribers',
+        used: 'used this month',
+        mrr: 'MRR',
+        view: 'View',
+        edit: 'Edit',
+        pause: 'Pause',
+        resume: 'Resume',
+        publish: 'Publish',
+      },
+      status: { live: 'Live', paused: 'Paused', draft: 'Draft', closed: 'Closed', soldOut: 'Sold out' },
+      period: { monthly: '/ month', quarterly: '/ quarter', annual: '/ year' },
+      periodWord: { monthly: 'a month', quarterly: 'a quarter', annual: 'a year' },
+      rule: {
+        anyBenefit: 'A member benefit',
+        discount: '{pct}% off everything',
+        perDay: 'once a day',
+        perDayN: '{n} a day',
+        perWeek: '{n} a week',
+        perMonth: '{n} a month',
+        unlimited: 'unlimited use',
+        anyDay: 'any day',
+        weekends: 'weekends',
+      },
+      templatesTitle: 'Start a new pass from a template',
+      templatesBody:
+        'Pick the closest one and tweak it. Every template fills in sensible defaults, so you can be live in a couple of minutes.',
+      templates: {
+        daily: { name: 'Daily allowance', blurb: 'One item a day for a flat monthly price.', example: 'One coffee a day · {amount} a month' },
+        bundle: { name: 'Monthly bundle', blurb: 'A set number of pre-paid items each month.', example: '10 coffees a month · {amount}' },
+        vip: { name: 'VIP perks club', blurb: 'Ongoing discount plus member perks.', example: '15% off everything + perks · {amount}' },
+        weekend: { name: 'Weekend or seasonal', blurb: 'Items limited to certain days or a season.', example: 'Two weekend coffees · {amount}' },
+        custom: { name: 'Start from scratch', blurb: 'A blank pass you build yourself.', example: 'Set every rule your own way' },
+      },
+      detail: {
+        back: 'All passes',
+        edit: 'Edit pass',
+        pauseSignups: 'Pause sign-ups',
+        resume: 'Resume',
+        publish: 'Publish',
+        close: 'Close',
+        deleteDraft: 'Delete draft',
+        subscribers: 'Subscribers',
+        subscribersNote: '+{new} new · {cancelled} cancelled this month',
+        revenue: 'Recurring revenue',
+        revenueNote: 'what subscribers are on — not collected yet',
+        redemptions: 'Redemptions',
+        perSub: '{n} per active subscriber',
+        upsell: 'Est. upsell',
+        upsellNote: 'spend beyond what the pass covers, on {n} of {total} uses',
+        lessonTitle: 'The Pret lesson',
+        lessonMeasured:
+          'These subscribers spent about {amount} beyond what the pass covers this month. The fee fills seats; the upsell is the profit.',
+        lessonGeneral:
+          'Once people subscribe, the fee is a footfall driver — subscribers come back more often and spend beyond what the pass covers. Price it to fill seats, not to profit on the cup.',
+        priceTitle: 'Changing the price',
+        priceBody:
+          'A new price only applies to new subscribers and to everyone else at their next renewal. Nobody is ever charged more mid-term.',
+        listTitle: 'Subscribers',
+        listNote: 'Only customers who agreed to share appear here, same as your Customers page.',
+        listShared: '{shared} of {total} subscribers share their name with you.',
+        listNone: 'No subscribers yet.',
+        listNoneShared: '{total} people hold this pass, and none of them has agreed to share their name with you.',
+        listLocked: 'Your plan does not include customer names, so subscribers are counted but not listed.',
+        since: 'Since {date}',
+        used: 'used',
+        subStatus: { active: 'Active', trialing: 'Trialing', cancelled: 'Cancelled' },
+      },
+      closeConfirm: {
+        title: 'Close {name}?',
+        body: 'Renewals stop and nobody new can subscribe. Current members keep the pass to the end of the period they are in. This cannot be undone.',
+        confirm: 'Close pass',
+      },
+      deleteConfirm: {
+        title: 'Delete {name}?',
+        body: 'Nobody has ever held this draft, so it is removed completely.',
+        confirm: 'Delete draft',
+      },
+      toasts: {
+        paused: 'Sign-ups paused. Existing subscribers keep their pass.',
+        resumed: 'Pass is live again.',
+        published: 'Pass published. It is live in the app now.',
+        closed: 'Pass closed. Renewals stop; current members keep it to the end of their period.',
+        deleted: 'Draft deleted.',
+        saved: 'Saved as a draft. Publish it when it is ready.',
+        updated: 'Pass updated. A new price applies at each subscriber’s next renewal.',
+      },
+      refusals: {
+        missing: 'The pass is not ready to publish: it still needs {what}.',
+        notVerified: 'Your venue has not been verified yet, so its passes cannot go live.',
+        entitlement: 'Your plan does not include passes, so this cannot be published.',
+      },
+      missing: {
+        name: 'a name',
+        benefit: 'something included',
+        price: 'a price',
+        unlimitedOk: 'a decision on unlimited use',
+      },
+      drawer: {
+        kicker: 'Subscription pass',
+        createTitle: 'Create a pass',
+        editTitle: 'Edit pass',
+        sub: 'Customers subscribe and pay you directly. You keep 100% — Paylez takes no commission.',
+        preview: 'Preview',
+        previewName: 'Your pass name',
+        previewTagline: 'Add a short tagline',
+        plain: '{benefit}, {cap}, {days} · {amount} {period}.',
+        s1: '1 · A starting point',
+        s2: '2 · What’s included',
+        item: 'A free or included item',
+        itemPlaceholder: 'Any filter coffee or flat white',
+        itemHelp: 'Leave blank for a discount-only pass.',
+        discount: 'An ongoing discount on everything',
+        discountHelp: 'A percentage off the whole bill, every visit.',
+        perks: 'Member perks',
+        perk: {
+          early_access: 'Early access to deals',
+          member_deals: 'Member-only deals',
+          skip_line: 'Skip the line',
+          birthday: 'Birthday treat',
+        },
+        s3: '3 · Limits & rules',
+        howOften: 'How often can they use it?',
+        cap: {
+          per_day: { label: 'Once a day', note: 'One use each day — the safe default most venues pick.' },
+          per_week: { label: 'A set number each week', note: 'They get a fixed number each week, then it stops until Monday.' },
+          per_month: { label: 'A set number each month', note: 'They get a fixed number, then it stops until next month.' },
+          unlimited: { label: 'Unlimited', note: 'No cap. Careful — heavy users can cost more than the fee.' },
+        },
+        unit: { per_day: 'times a day', per_week: 'a week', per_month: 'a month' },
+        unlimitedTitle: 'Heavy users can cost more than the fee',
+        unlimitedBody: 'Most venues cap this — it is the one thing that keeps a pass from losing money. Add a fair-use limit?',
+        addCap: 'Add a daily cap',
+        keepUnlimited: 'Keep it unlimited',
+        days: 'Which days',
+        dayNames: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        daysAny: 'Usable any day of the week.',
+        daysSome: 'Only usable on the days you picked.',
+        maxValue: 'Most off one visit',
+        maxValueHelp: 'So one use can’t take too much off a large bill.',
+        seats: 'Who can use it',
+        seatsOne: 'Just them',
+        seatsFamily: 'Friends & family',
+        seatsOneNote: 'A single-person pass.',
+        seatsFamilyNote: 'Up to {n} people share it. The cap applies to each seat.',
+        s4: '4 · Price & billing',
+        price: 'Price',
+        billed: 'Billed',
+        periods: { monthly: 'Monthly', quarterly: 'Quarterly', annual: 'Annual' },
+        intro: 'Intro offer',
+        intros: { none: 'No intro offer', trial_7: '7-day free trial', half_first: 'First month half price' },
+        subCap: 'Limit how many can hold it',
+        subCapUnit: 'seats',
+        subCapHelp: '0 means no limit. Shows “Sold out” when reached.',
+        econTitle: 'Does this make sense?',
+        econCost: 'Your cost per use',
+        econLoss:
+          'At {cap}, a heavy subscriber uses it about {n}× a month. Your cost ≈ {cost}; the pass earns {price} — so you ‘lose’ about {gap} on what it covers. But subscribers come far more often and spend beyond the pass. Price this to fill seats, not to profit on the cup.',
+        econMargin:
+          'At {cap}, a heavy subscriber uses it about {n}× a month. Your cost ≈ {cost}; the pass earns {price} — a margin of {gap} before the upsell even starts.',
+        econNoCost: 'Add your cost per use to see whether the price covers a heavy subscriber.',
+        s5: '5 · Branding',
+        name: 'Pass name',
+        namePlaceholder: 'Morning Coffee Club',
+        nameError: 'Give the pass a name customers will see.',
+        tagline: 'Short tagline',
+        taglinePlaceholder: 'A coffee a day, one flat price',
+        accent: 'Accent colour',
+        accents: { teal: 'Teal', deep_green: 'Deep green', purple: 'Purple', terracotta: 'Terracotta', ink: 'Ink' },
+        s6: '6 · Get paid',
+        payoutTitle: 'Payouts are not available yet',
+        payoutBody:
+          'Paylez cannot connect a payout account for you yet, so customers cannot subscribe — even to a published pass. Publishing puts the pass in the app; subscribing opens when payouts do.',
+        payoutFoot: 'When it opens, charges go straight from the customer to you. Paylez never holds the money.',
+        saveLater: 'Save and finish later',
+        publish: 'Publish pass',
+        save: 'Save changes',
+        invalid: {
+          name: 'Name your pass to continue',
+          benefit: 'Add an included item or a discount to continue',
+          price: 'Set a price to continue',
+          unlimitedOk: 'Resolve the unlimited-use warning to continue',
+          locked: 'Your plan does not include passes, so this cannot be published.',
+        },
+      },
+    },
     rangeMenu: 'Reporting window',
     notifications: 'Notifications',
     /* The bell's menu. The items themselves are the server's own words. */

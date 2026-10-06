@@ -1,0 +1,465 @@
+/*
+ * Scan activity (v3 §3.8) — `dashboardScans.tsx`.
+ *
+ * Tokens only (`--dx-*`); every rule is scoped under a `dx-scans` class, because
+ * `dashboard.css` and this sheet land before `site.css` and win by specificity
+ * rather than by order. The numbers are v3's inline styles: the toolbar's 18/24,
+ * the 12px cells with 20px at the two outer edges, the 5px progress track.
+ */
+
+/* ── the card ── */
+
+.dx-scans-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--dx-soft);
+}
+
+.dx-scans-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--dx-muted);
+}
+
+.dx-scans-note {
+  padding: 22px 24px;
+}
+
+.dx-scans-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 24px 52px;
+  text-align: center;
+}
+
+.dx-scans-empty h2 {
+  margin: 6px 0 0;
+}
+
+.dx-scans-empty .dx-fine {
+  max-width: 460px;
+}
+
+.dx-scans-empty-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.18);
+}
+
+/* ── the table ── */
+
+.dx-scans .dx-table :is(th, td) {
+  padding: 12px;
+}
+
+.dx-scans .dx-table :is(th, td):first-child,
+.dx-scans .dx-table :is(th, td):last-child {
+  padding-inline: 20px;
+}
+
+.dx-scans .dx-table td {
+  vertical-align: middle;
+}
+
+.dx-scans .dx-table td:first-child {
+  white-space: nowrap;
+}
+
+/* A scan that did not count is still a row, quieter than the ones that did. */
+.dx-scans .dx-table tr[data-uncounted='true'] td:not(:nth-child(3)) {
+  opacity: 0.62;
+}
+
+.dx-scans-day {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-scans-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--dx-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-scans-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dx-scans-who i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+  color: var(--dx-muted);
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.dx-scans-who[data-anon='true'] {
+  font-weight: 500;
+  color: var(--dx-muted);
+}
+
+.dx-scans-money {
+  white-space: nowrap;
+}
+
+.dx-scans-money b {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-scans-points {
+  display: inline-flex;
+  padding: 4px 9px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.22);
+}
+
+.dx-scans-points[data-zero='true'] {
+  color: var(--dx-muted);
+  background: var(--dx-soft);
+}
+
+.dx-scans-receipt {
+  display: inline-flex;
+  padding: 4px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+  color: var(--dx-muted);
+  font-family: var(--dx-mono);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dx-scans-by {
+  margin-top: 5px;
+  white-space: nowrap;
+}
+
+.dx-scans-site {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dx-scans-site svg {
+  color: var(--dx-faint);
+}
+
+.dx-scans-mono {
+  margin-top: 3px;
+  font-family: var(--dx-mono);
+  white-space: nowrap;
+}
+
+.dx-scans-progress {
+  min-width: 180px;
+}
+
+.dx-scans-progress > .dx-scans-sub {
+  margin: 0 0 5px;
+}
+
+.dx-scans-progress > b {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.dx-scans-progress-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.dx-scans-progress-row b {
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-scans-progress-row em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--dx-faint);
+  white-space: nowrap;
+}
+
+.dx-scans-bar-track {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--dx-soft);
+}
+
+.dx-scans-bar-track > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--dx-fill);
+}
+
+/* Complete is the solid deep, not the gradient — v3's one tell for "ready". */
+.dx-scans-bar-track > i[data-done='true'] {
+  background: var(--dx-deep);
+}
+
+/* ── the pager ── */
+
+.dx-scans-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--dx-soft);
+  font-size: 13px;
+  color: var(--dx-muted);
+}
+
+.dx-scans-pager {
+  display: flex;
+  gap: 8px;
+}
+
+.dx-scans-pager .dx-btn {
+  padding: 9px 15px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+/* ── the counter drawer ── */
+
+.dx-scans-today > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dx-scans-today-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+}
+
+.dx-scans-today-cell span {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--dx-muted);
+}
+
+.dx-scans-today-cell b {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.dx-scans-today-cell b[data-withheld='true'] {
+  font-weight: 500;
+  color: var(--dx-faint);
+  cursor: help;
+}
+
+.dx-scans-find {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.dx-scans-find .dx-field {
+  flex: 1;
+}
+
+.dx-scans-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+}
+
+.dx-scans-card-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dx-scans-card-who > i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-card);
+  color: var(--dx-muted);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dx-scans-card-who > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.dx-scans-card-who b {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.dx-scans-card-who em {
+  font-style: normal;
+  font-size: 12.5px;
+  color: var(--dx-ink);
+}
+
+.dx-scans-card-who em[data-quiet='true'] {
+  color: var(--dx-faint);
+}
+
+.dx-scans-offer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(var(--dx-deep-rgb), 0.3);
+  background: rgba(var(--dx-mint-rgb), 0.08);
+}
+
+.dx-scans-offer b {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.dx-scans-offer em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--dx-muted);
+}
+
+.dx-scans-offer code {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-family: var(--dx-mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dx-scans-stamps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dx-scans-stamps > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  font-size: 12.5px;
+}
+
+.dx-scans-stamps > div > b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-scans-stamps .dx-scans-bar-track {
+  grid-column: 1 / -1;
+}
+
+.dx-scans-bill {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dx-scans-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dx-scans-receipt-card {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(var(--dx-deep-rgb), 0.3);
+  background: rgba(var(--dx-mint-rgb), 0.08);
+}
+
+.dx-scans-receipt-card ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+@media (max-width: 30rem) {
+  .dx-scans-bar,
+  .dx-scans-foot {
+    padding-inline: 16px;
+  }
+
+  .dx-scans-count {
+    margin-left: 0;
+  }
+
+  .dx-scans-find {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -347,6 +347,8 @@ const PLANS: PlanSeed[] = [
       assistant: false,
       identified_profiles: false,
       export_csv: false,
+      /* Subscription passes a venue sells (`domain/passes.ts`): "Included in Growth". */
+      passes: false,
     },
   },
   {
@@ -369,6 +371,7 @@ const PLANS: PlanSeed[] = [
       assistant: true,
       identified_profiles: true,
       export_csv: true,
+      passes: true,
     },
   },
   {
@@ -390,6 +393,7 @@ const PLANS: PlanSeed[] = [
       assistant: true,
       identified_profiles: true,
       export_csv: true,
+      passes: true,
     },
   },
 ];

@@ -25,6 +25,7 @@ import {
 import { ApiError, hasToken, setToken, signOut as apiSignOut } from '../api/client';
 import * as api from '../api/consumer';
 import { readOwnListing } from '../api/listing';
+import { myWorkspaces } from '../api/workspaces';
 import { saveMe } from '../api/profile';
 import { useLanguage } from '../i18n/context';
 import { currentRoute, type Route } from '../router';
@@ -219,15 +220,20 @@ async function askServer(base: Account): Promise<ServerAnswers | null> {
   if (me.user.id !== base.id) return null;
 
   const type = typeFromRoles(me.roles, base.type, base.onboardedAt ?? me.user.onboardedAt);
-  const [games, listing] = await Promise.all([
+  const [games, listing, workspaces] = await Promise.all([
     type === 'individual' ? api.gamesState().catch(() => null) : Promise.resolve(null),
     type === 'business' && me.venues.length > 0
       ? readOwnListing(base.business?.venueId).then((read) =>
           read.state === 'ready' ? read.source : null,
         )
       : Promise.resolve(null),
+    /* Whether this account runs a venue as its manager — the one way into the
+       partner dashboard that no role on the account records. Asked of every
+       non-operator: an individual can be a manager, and so can an owner of a
+       different venue. Its own failure costs nothing but that one fact. */
+    type === 'admin' ? Promise.resolve(null) : myWorkspaces().catch(() => null),
   ]);
-  return { me, games, listing };
+  return { me, games, listing, workspaces };
 }
 
 function persist(account: Account | null): void {

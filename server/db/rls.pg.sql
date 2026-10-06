@@ -39,7 +39,7 @@ END $$;
 
 -- ══════════════════════════════════════════════════ row-level security ══
 --
--- 95 tables, every one of them. RLS with no policy is a closed door: the
+-- 99 tables, every one of them. RLS with no policy is a closed door: the
 -- owner and any role with BYPASSRLS read normally, everybody else — which is
 -- what a published anon key authenticates as — reads nothing.
 --
@@ -155,3 +155,7 @@ ALTER TABLE web_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE web_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contact_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subscription_passes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pass_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pass_periods ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pass_redemptions ENABLE ROW LEVEL SECURITY;

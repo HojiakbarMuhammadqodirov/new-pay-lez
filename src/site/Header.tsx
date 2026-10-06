@@ -440,7 +440,10 @@ function AccountChip() {
             <Icon name="people" size={15} />
             {copy.profile.title}
           </a>
-          {account.type === 'business' && (
+          {/* A venue's manager has the dashboard too, without owning a venue —
+              see `manages` on the account. Without this item the route that
+              `resolveRoute` opens for them had no door. */}
+          {(account.type === 'business' || account.manages === true) && (
             <a className="account-item" role="menuitem" href={PATHS.dashboard}>
               <Icon name="bars" size={15} />
               {copy.auth.dashboard}

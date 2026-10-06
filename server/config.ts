@@ -1538,6 +1538,31 @@ export const CONFIG = {
     /** The Messages API. Overridable for a proxy or a gateway. */
     baseUrl: process.env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com',
   },
+
+  /**
+   * Subscription passes a venue sells to its own customers (`domain/passes.ts`).
+   *
+   * The pass, its lifecycle, the allowance at the counter and the renewal clock
+   * are all real. **The money is not**: a venue-direct subscription has the
+   * venue as the merchant, which is Stripe Connect, and that is not built. So
+   * the one press that would take somebody's money — a customer subscribing in
+   * the app — is behind a switch that is off, and answers `not_available` while
+   * it is. Turning it on without a payment rail would create subscriptions
+   * nobody paid for, which is the thing the drawer's "You keep 100%" promise
+   * is about.
+   */
+  passes: {
+    /** `PAYLEZ_PASS_SUBSCRIBE=on` opens `POST /v1/passes/:id/subscribe`. Off by default. */
+    selfServeSubscribe: process.env.PAYLEZ_PASS_SUBSCRIBE === 'on',
+    /** "7-day free trial", the drawer's only trial length. */
+    trialDays: 7,
+    /** Passes a venue may hold that are not closed. A ceiling against a runaway client, not a tier. */
+    maxOpenPerVenue: 20,
+    /** "Friends and family (3 seats)". */
+    maxSeats: 3,
+    /** The most one counter press may redeem — seats bound it further. */
+    maxPerRedeem: 3,
+  },
 } as const;
 
 export type Config = typeof CONFIG;

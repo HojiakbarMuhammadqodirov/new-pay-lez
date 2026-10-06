@@ -14,6 +14,7 @@ import type {
   SpokenLanguage,
 } from './auth/business';
 import type { IconName } from './icons';
+import type { DxIconName } from './dashboardIcons';
 import type { Currency } from './i18n/currency';
 import { FX, type FxCode } from './i18n/fx';
 import { PATHS } from './router';
@@ -1134,41 +1135,105 @@ export const PARTNER_BUDGET = { total: 350, spent: 214 };
  */
 
 /**
- * The dashboard's screens, in rail order and index-aligned with
- * `copy.dashboard.screens`.
+ * Every screen the partner dashboard has, by id.
  *
- * `group` is which heading the rail files it under; `profile` is the only one
- * with a form behind it, and every other screen shows the empty state at the
- * matching index of `copy.dashboard.empty` — which is not a placeholder but the
- * state a venue genuinely starts in. A new partner has run no deals, has no
- * customers and has had no scans, and the prototype this is rebuilt from says
- * so screen by screen rather than showing zeroes.
+ * **Screens are named, never counted.** They used to be four lists held
+ * together by position alone — this array, `copy.dashboard.screens`,
+ * `copy.dashboard.empty` and the component table — plus a dozen hard-coded
+ * `index={n}` and `empty[n]` reads, so inserting one screen meant moving every
+ * number past it in eight files. The v3 redesign inserts three at once and is
+ * built by several people in parallel, which is exactly the case positional
+ * lists punish. So the id is the key everywhere: the dictionaries are keyed
+ * objects (`copy.dashboard.screens[id]`, `copy.dashboard.empty[id]`), the
+ * component table is a `Record<DashScreenId, …>` in `dashboardRegistry.tsx`,
+ * and the only thing that still has an order is `DASH_ORDER` below, which *is*
+ * an order — the rail's.
+ *
+ * Widening this union is what makes a missing entry a build error everywhere
+ * that has to know about it: `SCREEN_META` here, the registry, and every
+ * dictionary read keyed on it.
+ *
+ * `voucherActivity` was `issued` ("Issued vouchers") and moved from GROW to
+ * WORKSPACE when v3 renamed it; the register itself is the same component.
  */
-export const DASH_SCREENS: Array<{
-  id: string;
-  icon: IconName;
-  group: 'grow' | 'workspace';
-}> = [
-  { id: 'overview', icon: 'bars', group: 'grow' },
-  { id: 'deals', icon: 'ticket', group: 'grow' },
-  { id: 'campaigns', icon: 'trophy', group: 'grow' },
-  { id: 'vouchers', icon: 'gift', group: 'grow' },
-  /* The register, beside the ladder it is the other half of. `vouchers` is what
-     is on *offer* — the rungs, their prices, the pool behind them — and this is
-     what was *taken*: every voucher that exists, its status, its window and its
-     redemption. They were one screen's worth of questions with only the first
-     half answered, and an owner who had just set a redemption cap had nowhere
-     to see it being used up.
+export type DashScreenId =
+  | 'overview'
+  | 'deals'
+  | 'campaigns'
+  | 'vouchers'
+  | 'passes'
+  | 'customers'
+  | 'assistant'
+  | 'scans'
+  | 'voucherActivity'
+  | 'team'
+  | 'profile';
 
-     `card` rather than another `gift`: a rung is a gift on offer and an issued
-     voucher is a card in somebody's wallet, which is also what the wallet
-     screen calls it. `ticket` belongs to hot deals. */
-  { id: 'issued', icon: 'card', group: 'grow' },
-  { id: 'customers', icon: 'people', group: 'grow' },
-  { id: 'assistant', icon: 'spark', group: 'grow' },
-  { id: 'scans', icon: 'qr', group: 'workspace' },
-  { id: 'profile', icon: 'housing', group: 'workspace' },
+/**
+ * How a screen's page head is drawn.
+ *
+ * - `frame` — the frame draws the title, the lede under it and the two default
+ *   buttons (Export CSV / the screen's create button). Every screen that has
+ *   not been rebuilt yet is here, so it keeps a head while it waits.
+ * - `own` — the screen draws `<PageHead>` from `dashboardKit.tsx` itself, with
+ *   whatever actions it has. A rebuilt screen moves here: its buttons are its
+ *   own business and the frame should not have to know them.
+ * - `none` — no head at all. The assistant, which v3 draws as a full-height
+ *   conversation with nothing above it.
+ */
+export type DashHead = 'frame' | 'own' | 'none';
+
+const SCREEN_META: Record<
+  DashScreenId,
+  { icon: DxIconName; group: 'grow' | 'workspace'; head: DashHead }
+> = {
+  overview: { icon: 'overview', group: 'grow', head: 'own' },
+  deals: { icon: 'deals', group: 'grow', head: 'frame' },
+  campaigns: { icon: 'campaigns', group: 'grow', head: 'frame' },
+  vouchers: { icon: 'vouchers', group: 'grow', head: 'frame' },
+  passes: { icon: 'passes', group: 'grow', head: 'own' },
+  customers: { icon: 'customers', group: 'grow', head: 'frame' },
+  assistant: { icon: 'assistant', group: 'grow', head: 'none' },
+  scans: { icon: 'scans', group: 'workspace', head: 'own' },
+  voucherActivity: { icon: 'receipt', group: 'workspace', head: 'own' },
+  team: { icon: 'team', group: 'workspace', head: 'own' },
+  profile: { icon: 'house', group: 'workspace', head: 'frame' },
+};
+
+/**
+ * The rail, top to bottom — v3's order, which is the one fact about the
+ * screens that genuinely is positional. `npm run verify` pins it and checks it
+ * names every id exactly once, because a `Record` cannot say either.
+ */
+export const DASH_ORDER: readonly DashScreenId[] = [
+  'overview',
+  'deals',
+  'campaigns',
+  'vouchers',
+  'passes',
+  'customers',
+  'assistant',
+  'scans',
+  'voucherActivity',
+  'team',
+  'profile',
 ];
+
+/**
+ * The dashboard's screens, in rail order.
+ *
+ * `group` is which heading the rail files it under. Every screen but the
+ * profile has an entry in `copy.dashboard.empty`, which is not a placeholder
+ * but the state a venue genuinely starts in: a new partner has run no deals,
+ * has no customers and has had no scans, and the design says so screen by
+ * screen rather than showing zeroes.
+ */
+export const DASH_SCREENS: ReadonlyArray<{
+  id: DashScreenId;
+  icon: DxIconName;
+  group: 'grow' | 'workspace';
+  head: DashHead;
+}> = DASH_ORDER.map((id) => ({ id, ...SCREEN_META[id] }));
 
 /* ─────────────────────────────────────────────────────────────── l-earn ── */
 

@@ -1,0 +1,804 @@
+/*
+ * Business profile (v3 §3.11, §5.6) — `dashboardProfile.tsx`.
+ *
+ * Tokens only (`--dx-*`), every rule under a `dx-profile` class: this sheet
+ * lands before `site.css` and has to win by specificity, and the setup form's
+ * `.field` / `.business-*` kit — which `#/business/setup` still draws — is not
+ * touched by anything here.
+ */
+
+/* ── the row: the listing (or the form) and its rail ── */
+
+.dx-profile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.dx-profile-main {
+  display: flex;
+  flex: 1 1 420px;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.dx-profile-rail {
+  display: flex;
+  flex: 0 1 320px;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 260px;
+}
+
+.dx-profile .dx-eyebrow {
+  letter-spacing: 0.09em;
+}
+
+.dx-profile-soft {
+  color: var(--dx-faint);
+  font-weight: 500;
+}
+
+/* ── the head card ── */
+
+.dx-profile-id {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.dx-profile-id > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.dx-profile .dx-profile-id h2 {
+  margin: 0 0 3px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.dx-profile-id p {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--dx-muted);
+}
+
+.dx-profile-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--dx-press-bg);
+  color: var(--dx-press-fg);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.dx-profile-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dx-profile-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--dx-r-pill);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--dx-ink);
+  background: var(--dx-soft);
+}
+
+.dx-profile-state > i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dx-faint);
+}
+
+.dx-profile-state[data-state='live'] {
+  background: rgba(var(--dx-mint-rgb), 0.15);
+}
+
+.dx-profile-state[data-state='live'] > i {
+  background: var(--dx-deep);
+}
+
+.dx-profile-state[data-state='review'] {
+  background: rgba(var(--dx-amber-rgb), 0.15);
+}
+
+.dx-profile-state[data-state='review'] > i {
+  background: var(--dx-amber);
+}
+
+.dx-profile-state:is([data-state='rejected'], [data-state='suspended']) {
+  color: var(--dx-down);
+  background: rgba(var(--dx-down-rgb), 0.1);
+}
+
+.dx-profile-state:is([data-state='rejected'], [data-state='suspended']) > i {
+  background: var(--dx-down);
+}
+
+.dx-profile-note {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--dx-soft);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+
+/* ── the fact cards ── */
+
+.dx-profile .dx-profile-sect {
+  padding: 22px 24px;
+}
+
+.dx-profile-sect > .dx-eyebrow {
+  margin-bottom: 14px;
+}
+
+.dx-profile-about {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.dx-profile-rows {
+  margin: 0;
+}
+
+.dx-profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--dx-soft);
+}
+
+.dx-profile-rows:not([data-rule='top']) > .dx-profile-row:last-child {
+  border-bottom: none;
+}
+
+.dx-profile-rows[data-rule='top'] > .dx-profile-row {
+  border-top: 1px solid var(--dx-soft);
+  border-bottom: none;
+}
+
+.dx-profile-row dt {
+  flex: 0 0 120px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--dx-muted);
+}
+
+.dx-profile-row dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dx-profile-row dd a {
+  color: var(--dx-deep);
+}
+
+/* v3 draws the phone and the address in ink; only the web links are deep. */
+.dx-profile-row dd a:is([href^='tel:'], [href^='mailto:']) {
+  color: var(--dx-ink);
+}
+
+.dx-profile-row dd a:hover {
+  color: var(--dx-link-hover);
+}
+
+.dx-profile .dx-profile-maps {
+  margin-top: 16px;
+  padding: 10px 16px;
+  font-size: 13px;
+}
+
+.dx-profile-sublabel {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--dx-muted);
+}
+
+.dx-profile-sublabel[data-gap='true'] {
+  margin-top: 16px;
+}
+
+.dx-profile-langs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dx-profile-langs li {
+  padding: 6px 12px;
+  border-radius: var(--dx-r-pill);
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.dx-profile-hours {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dx-profile-hours li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--dx-soft);
+  font-size: 13px;
+}
+
+.dx-profile-hours li > span:first-child {
+  font-weight: 600;
+}
+
+.dx-profile-hours li > span:last-child {
+  color: var(--dx-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-profile-hours[data-framed='true'] {
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--dx-line);
+}
+
+.dx-profile-hours[data-framed='true'] li {
+  padding: 12px 15px;
+}
+
+.dx-profile-hours[data-framed='true'] li:last-child {
+  border-bottom: none;
+}
+
+/* ── the rail ── */
+
+.dx-profile .dx-profile-ready,
+.dx-profile .dx-profile-app {
+  padding: 22px;
+}
+
+.dx-profile-ready-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dx-profile-ready-head b {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dx-profile-ready-head strong {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-profile-meter {
+  display: block;
+  height: 8px;
+  margin-bottom: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+}
+
+.dx-profile-meter > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--dx-fill);
+  transition: width 0.3s ease;
+}
+
+.dx-profile-still {
+  display: block;
+  margin-bottom: 9px;
+  font-size: 12px;
+  color: var(--dx-muted);
+}
+
+.dx-profile-missing {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dx-profile-missing li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.dx-profile-missing li::before {
+  content: '';
+  flex: 0 0 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--dx-rule);
+}
+
+.dx-profile-app > .dx-eyebrow {
+  margin-bottom: 16px;
+  letter-spacing: 0.1em;
+}
+
+/* The phone is ink in both themes — it is a picture of an app whose ground is
+   black whichever theme is reading. */
+.dx-profile-phone {
+  padding: 14px;
+  border-radius: 22px;
+  background: var(--dx-press-bg);
+  box-shadow: var(--dx-shadow-toast);
+}
+
+:root:not([data-theme='light']) .dx-profile-phone {
+  background: var(--dx-ink-tile);
+  border: 1px solid var(--dx-line);
+}
+
+.dx-profile-phone > div {
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--dx-ink-tile);
+  color: var(--dx-ink-card-fg);
+}
+
+.dx-profile-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  background: linear-gradient(150deg, rgba(var(--dx-ink-card-rgb), 0.08), rgba(var(--dx-ink-card-rgb), 0));
+  font-size: 11.5px;
+  color: rgba(var(--dx-ink-card-rgb), 0.4);
+}
+
+.dx-profile-cover[data-has-logo='true'] img {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  object-fit: cover;
+}
+
+.dx-profile-phone-body {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
+
+.dx-profile-phone-body b {
+  margin-bottom: 5px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.dx-profile-phone-body > span {
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: rgba(var(--dx-ink-card-rgb), 0.45);
+}
+
+.dx-profile-phone-body em {
+  margin-bottom: 12px;
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--dx-ink-accent);
+}
+
+.dx-profile-phone-body p {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: rgba(var(--dx-ink-card-rgb), 0.72);
+}
+
+.dx-profile-phone-body ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dx-profile-phone-body li {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--dx-ink-accent);
+  background: rgba(var(--dx-mint-rgb), 0.14);
+}
+
+/* ── the editor ── */
+
+.dx-profile .dx-profile-edit {
+  flex: 1 1 420px;
+  padding: 24px;
+}
+
+.dx-profile-edit form {
+  display: flex;
+  flex-direction: column;
+}
+
+.dx-profile .dx-profile-edit-head h2 {
+  margin: 0;
+}
+
+.dx-profile-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.dx-profile-cancel {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dx-muted);
+  cursor: pointer;
+}
+
+.dx-profile-cancel:hover {
+  color: var(--dx-ink);
+}
+
+.dx-profile-intro {
+  margin: 0 0 24px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+
+.dx-profile-edit fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.dx-profile-edit fieldset + fieldset {
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--dx-soft);
+}
+
+.dx-profile-edit legend {
+  float: left;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* A floated legend sits outside the flex flow; the first field clears it. */
+.dx-profile-edit legend + * {
+  clear: both;
+}
+
+.dx-profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.dx-profile-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dx-ink);
+}
+
+.dx-profile-label i {
+  font-style: normal;
+  color: var(--dx-deep);
+}
+
+.dx-profile-help {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--dx-faint);
+}
+
+.dx-profile-edit select.dx-input {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dx-profile-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dx-profile-logo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px;
+  border-radius: var(--dx-r-input);
+  border: 1px dashed var(--dx-rule);
+  background: var(--dx-control-bg);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.dx-profile-logo:hover,
+.dx-profile-logo:focus-within {
+  border-color: var(--dx-deep);
+}
+
+/* The real input covers nothing and is still the one the label presses. */
+.dx-profile-logo input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dx-profile-logo-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: linear-gradient(150deg, var(--dx-bone), var(--dx-line));
+  color: var(--dx-muted);
+}
+
+.dx-profile-logo-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dx-profile-logo > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dx-profile-logo b {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.dx-profile-logo em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--dx-faint);
+}
+
+.dx-profile-toggle {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dx-deep);
+  cursor: pointer;
+}
+
+.dx-profile-toggle:hover {
+  color: var(--dx-link-hover);
+}
+
+.dx-profile-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dx-profile-chips button {
+  padding: 9px 14px;
+  border-radius: var(--dx-r-pill);
+  border: 1px solid var(--dx-line);
+  background: var(--dx-control-bg);
+  color: var(--dx-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.dx-profile-chips button[aria-pressed='true'] {
+  border-color: var(--dx-press-bg);
+  background: var(--dx-press-bg);
+  color: var(--dx-press-fg);
+}
+
+.dx-profile-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--dx-soft);
+}
+
+.dx-profile-foot .dx-field-error {
+  flex: 1 1 100%;
+}
+
+/* ── the review dialogue (§5.6) ── */
+
+.dx-profile-review {
+  position: relative;
+  width: 460px;
+  max-width: 100%;
+  padding: 32px 28px 28px;
+  border-radius: 20px;
+  background: var(--dx-overlay-bg);
+  color: var(--dx-ink);
+  box-shadow: var(--dx-shadow-modal);
+  text-align: center;
+  animation: dxFade 0.2s ease;
+}
+
+.dx-profile-review:focus-visible {
+  outline: none;
+}
+
+.dx-profile-review-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 20px;
+  border-radius: 16px;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.12);
+}
+
+.dx-profile-review h2 {
+  margin: 0 0 10px;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.dx-profile-review > p {
+  display: inline-block;
+  max-width: 360px;
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--dx-muted);
+  text-wrap: pretty;
+}
+
+.dx-profile-review-next {
+  margin-bottom: 24px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+  text-align: left;
+}
+
+.dx-profile-review-next b {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.dx-profile-review-next b svg {
+  color: var(--dx-muted);
+}
+
+.dx-profile-review-next ul {
+  margin: 0;
+  padding: 0 0 0 20px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--dx-muted);
+}
+
+@media (max-width: 40rem) {
+  .dx-profile-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dx-profile-rail {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+
+  .dx-profile-id {
+    flex-wrap: wrap;
+  }
+
+  .dx-profile .dx-profile-sect,
+  .dx-profile .dx-profile-edit {
+    padding: 20px 18px;
+  }
+
+  .dx-profile-row dt {
+    flex-basis: 96px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-profile-meter > i {
+    transition: none;
+  }
+
+  .dx-profile-review {
+    animation: none;
+  }
+}

@@ -37,7 +37,7 @@
  * conventions, and it reads its divisor from `i18n/fx.ts` like everything else
  * that touches a rate, so a złoty figure round-trips to the same złoty figure.
  */
-import { useMemo } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { ApiError, call, hasToken } from './client';
 import { useApi, type ApiResult, type ApiState } from './useApi';
 import { FX, type FxCode } from '../i18n/fx';
@@ -207,7 +207,19 @@ export interface BudgetBody {
      */
     issuedTotal?: number;
   }>;
-  averageCheck: { minor: number; currency: string };
+  /*
+   * `source` says where the figure came from — the venue's own confirmed
+   * scans over the last thirty days, or the category's typical check while
+   * there are too few of those — and the screen says which in words. Optional
+   * for the reason every take-up field is.
+   */
+  averageCheck: { minor: number; currency: string; source?: 'computed' | 'category'; samples?: number };
+  /**
+   * What expired vouchers handed back to this month's voucher pool, in minor
+   * units of the budget's currency (`vouchers.returnedToBudget`). Optional, so
+   * an API that predates it is an em dash rather than a zero.
+   */
+  returnedMinor?: number;
   /**
    * `budget.rebalanceHint` — the server's own opinion on whether one pool is
    * near empty while the other has room, or `null` for "do not ask".
@@ -331,6 +343,12 @@ export interface DealResponse {
   target_weekdays: string | null;
   target_from_min: number | null;
   target_to_min: number | null;
+  /* Two more columns of the same `SELECT *`, optional because nothing wrote
+     them down before the v3 drawer read them back: the language targeting
+     ("Russian speakers" is a language, not a segment) and the offer kind the
+     drawer files under `category`. */
+  target_languages?: string | null;
+  category?: string | null;
   cap_claims: number | null;
   spend_minor: number;
   seen_count: number;
@@ -441,6 +459,13 @@ export interface CustomerRowResponse {
   status: string;
   stamps: number;
   vouchersHeld: number;
+  /**
+   * Vouchers bought here in any state but cancelled, and how many of them were
+   * redeemed — the roster's "used / issued". Optional against an API that
+   * predates them, where the cell is the em dash rather than "0/0".
+   */
+  vouchersIssued?: number;
+  vouchersUsed?: number;
   /*
    * Two display facts that are **absent rather than null when unknown**, which
    * is the server's rule and the reason they are optional. Neither may acquire
@@ -470,6 +495,11 @@ export interface CustomerDetailResponse {
   firstSeenAt: string;
   lastSeenAt: string;
   status: string;
+  /** The same two counts as the roster row; optional for the same reason. */
+  vouchersIssued?: number;
+  vouchersUsed?: number;
+  /** When the sharing grant standing now began. Null or absent: not stated. */
+  sharingSince?: string | null;
   /** Visits and spend per venue-local month, oldest first. */
   trend: Array<{ month: string; visits: number; spend: number }>;
   visitPattern: Array<{ local_weekday: number; local_hour: number; n: number }>;
@@ -627,6 +657,13 @@ export interface ScanRowResponse {
   discountMinor: number;
   points: number;
   receipt: string;
+  /*
+   * The team member the visit is recorded against (`transactions.confirmed_member_id`),
+   * by name, or `null` when the owner confirmed it — the server records the
+   * owner as nobody rather than as themselves. Optional because a server that
+   * predates teams does not send it, and absent is not "the owner".
+   */
+  confirmedBy?: string | null;
   site: { venueId: string; name: string; address: string | null; lat: number | null; lng: number | null };
   progress: null | {
     campaignId: string;
@@ -729,6 +766,8 @@ export interface PartnerVenue {
   id: string;
   name: string;
   city: string | null;
+  /** The street line, from the same `SELECT *`. Optional: a manager's row comes from the listing read. */
+  address?: string | null;
   currency: string;
   timezone: string;
   status: string;
@@ -764,8 +803,36 @@ export interface PartnerVenue {
  * different route. When `auth/` moves to the server this becomes a subscription
  * to the session, and nothing else here changes.
  */
+/**
+ * The venue the dashboard's switcher has chosen, for the hooks below.
+ *
+ * Before the switcher, "which venue" had one answer — the first row of
+ * `GET /v1/partner/venues` — and every screen, the rail, the drawer and the
+ * plan sheet each asked for it themselves through the two hooks below. A
+ * switcher needs them all to agree on a *choice* instead, and a manager's venue
+ * is not in that list at all (it is owned by somebody else; it arrives through
+ * `GET /v1/me/workspaces`). So the dashboard frame resolves the choice once and
+ * provides it here, and both hooks read it when it is provided — which is how
+ * twenty-odd existing call sites follow the switcher without one of them being
+ * edited, and without a second request each.
+ *
+ * Outside the dashboard nothing provides it (`null`), and the hooks keep their
+ * old behaviour exactly.
+ */
+export interface SelectedVenue {
+  id: ApiResult<string | null>;
+  row: ApiResult<PartnerVenue | null>;
+}
+
+export const SelectedVenueContext = createContext<SelectedVenue | null>(null);
+
 export function usePartnerVenueId(): ApiResult<string | null> {
-  const result = useApi<PartnerVenue[]>(hasToken() ? '/v1/partner/venues' : null);
+  const selected = useContext(SelectedVenueContext);
+  /* No request when the frame has already answered — `null` is `useApi`'s "do
+     not ask". The hook order is the same either way. */
+  const result = useApi<PartnerVenue[]>(
+    selected === null && hasToken() ? '/v1/partner/venues' : null,
+  );
 
   const anonymous = useMemo<ApiResult<string | null>>(
     () => ({
@@ -788,6 +855,7 @@ export function usePartnerVenueId(): ApiResult<string | null> {
     };
   }, [result.state, result.reload]);
 
+  if (selected !== null) return selected.id;
   return hasToken() ? mapped : anonymous;
 }
 
@@ -802,7 +870,10 @@ export function usePartnerVenueId(): ApiResult<string | null> {
  * once by the drawer. One more GET of one row is the cheaper of the two costs.
  */
 export function usePartnerVenue(): ApiResult<PartnerVenue | null> {
-  const result = useApi<PartnerVenue[]>(hasToken() ? '/v1/partner/venues' : null);
+  const selected = useContext(SelectedVenueContext);
+  const result = useApi<PartnerVenue[]>(
+    selected === null && hasToken() ? '/v1/partner/venues' : null,
+  );
 
   const anonymous = useMemo<ApiResult<PartnerVenue | null>>(
     () => ({
@@ -825,6 +896,7 @@ export function usePartnerVenue(): ApiResult<PartnerVenue | null> {
     };
   }, [result.state, result.reload]);
 
+  if (selected !== null) return selected.row;
   return hasToken() ? mapped : anonymous;
 }
 
@@ -957,8 +1029,9 @@ export function chain<T>(
  * when the API moves.
  */
 export interface DealDraft {
-  /** Per language, keyed by the site's own two-letter codes. */
-  copy: Record<string, { title: string; description: string }>;
+  /** Per language, keyed by the site's own two-letter codes. `terms` is the
+      deal's small print — the server has always stored it beside the title. */
+  copy: Record<string, { title: string; description: string; terms?: string }>;
   /** The badge — "20%", "2+1". Free text on the server, and rightly so. */
   discountText: string;
   category?: string;
@@ -1193,7 +1266,14 @@ export interface DealPatch {
   validTo?: string;
   capClaims?: number;
   capSpendMinor?: number;
-  copy?: Record<string, { title?: string; description?: string }>;
+  /* The targeting, as the create body has it. Sent only when the form owns
+     them; absent is "leave it", and the route reads them only when present. */
+  targetWeekdays?: number[];
+  targetFromMin?: number;
+  targetToMin?: number;
+  targetLanguages?: string[];
+  targetAudience?: string[];
+  copy?: Record<string, { title?: string; description?: string; terms?: string }>;
 }
 
 export const updateDeal = (dealId: string, patch: DealPatch) =>
@@ -1341,9 +1421,20 @@ export interface VoucherTotals {
   expired: number;
   /** Live now and gone within the week — the only figure here anybody can act on. */
   lapsing: number;
+  /*
+   * The money beside the three counts, in minor units of `VoucherRegister.currency`:
+   * what the live ones hold set aside, what the redeemed ones took off bills,
+   * and what the expired ones handed back to the pool. Optional — an older API
+   * sends none, and each card then says the count without a sum.
+   */
+  activeReservedMinor?: number;
+  redeemedSpentMinor?: number;
+  expiredReleasedMinor?: number;
 }
 
 export interface VoucherRegister {
+  /** The venue's currency, which every `…Minor` below is counted in. Absent on an older API. */
+  currency?: string;
   /** The ladder, carrying each rung's caps and its lifetime count. */
   tiers: BudgetBody['tiers'];
   totals: VoucherTotals;

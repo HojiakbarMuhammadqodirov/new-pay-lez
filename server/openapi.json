@@ -3,7 +3,7 @@
   "info": {
     "title": "Paylez API",
     "version": "1.0.0",
-    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n120 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
+    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n134 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
     "contact": {
       "name": "Paylez backend",
       "url": "https://pay-lez.com"
@@ -81,6 +81,10 @@
       "description": "Staff and Manager workspaces: the team, joining, the counter. See server/TEAM.md."
     },
     {
+      "name": "passes",
+      "description": "Subscription passes a venue sells to its customers. No payment rail yet: in-app subscribing is switched off."
+    },
+    {
       "name": "billing",
       "description": "Plans, subscriptions, receipts."
     },
@@ -140,6 +144,7 @@
                   "daily_cap",
                   "quota_exceeded",
                   "quiet_hours",
+                  "not_available",
                   "invalid_trigger",
                   "replay_detected",
                   "rate_limited",
@@ -1973,6 +1978,407 @@
                 },
                 "value": {
                   "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PassTerms": {
+        "type": "object",
+        "description": "The redemption rule as **locked onto one period**. A pass edited mid-term changes what new subscribers get at once and what existing ones get at their next renewal, never before.",
+        "properties": {
+          "benefitItem": {
+            "type": "string",
+            "nullable": true
+          },
+          "discountPct": {
+            "type": "integer",
+            "nullable": true
+          },
+          "capKind": {
+            "type": "string",
+            "enum": [
+              "per_day",
+              "per_week",
+              "per_month",
+              "unlimited"
+            ]
+          },
+          "capCount": {
+            "type": "integer",
+            "description": "Uses per window. Ignored when `capKind` is `unlimited`."
+          },
+          "allowedDays": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "nullable": true,
+            "description": "Monday-zero. Null is any day."
+          },
+          "fromMin": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Minutes past local midnight, or null."
+          },
+          "toMin": {
+            "type": "integer",
+            "nullable": true
+          },
+          "maxValueMinor": {
+            "type": "integer",
+            "nullable": true,
+            "description": "\"Most off one visit\", in minor units."
+          },
+          "seats": {
+            "type": "integer",
+            "description": "1, or up to 3 for \"Friends and family\"."
+          },
+          "billingPeriod": {
+            "type": "string",
+            "enum": [
+              "monthly",
+              "quarterly",
+              "annual"
+            ]
+          }
+        }
+      },
+      "Pass": {
+        "type": "object",
+        "description": "A pass as its venue sees it. `soldOut` is derived (holders against `subscriberCap`). `missing` lists what publishing would still refuse: `name`, `benefit`, `price`, `unlimitedOk`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "venueId": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "bundle",
+              "vip",
+              "weekend",
+              "custom"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "tagline": {
+            "type": "string",
+            "nullable": true
+          },
+          "accent": {
+            "type": "string",
+            "enum": [
+              "teal",
+              "deep_green",
+              "purple",
+              "terracotta",
+              "ink"
+            ]
+          },
+          "benefitItem": {
+            "type": "string",
+            "nullable": true
+          },
+          "discountPct": {
+            "type": "integer",
+            "nullable": true
+          },
+          "perks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "early_access",
+                "member_deals",
+                "skip_line",
+                "birthday"
+              ]
+            }
+          },
+          "capKind": {
+            "type": "string",
+            "enum": [
+              "per_day",
+              "per_week",
+              "per_month",
+              "unlimited"
+            ]
+          },
+          "capCount": {
+            "type": "integer"
+          },
+          "unlimitedOk": {
+            "type": "boolean"
+          },
+          "allowedDays": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "nullable": true
+          },
+          "fromMin": {
+            "type": "integer",
+            "nullable": true
+          },
+          "toMin": {
+            "type": "integer",
+            "nullable": true
+          },
+          "maxValueMinor": {
+            "type": "integer",
+            "nullable": true
+          },
+          "seats": {
+            "type": "integer"
+          },
+          "priceMinor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Price per billing period **in minor units** (grosze). 14200 is 142,00 zł."
+          },
+          "currency": {
+            "type": "string"
+          },
+          "billingPeriod": {
+            "type": "string",
+            "enum": [
+              "monthly",
+              "quarterly",
+              "annual"
+            ]
+          },
+          "intro": {
+            "type": "string",
+            "enum": [
+              "none",
+              "trial_7",
+              "half_first"
+            ]
+          },
+          "subscriberCap": {
+            "type": "integer",
+            "nullable": true
+          },
+          "costPerUseMinor": {
+            "type": "integer",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "live",
+              "paused",
+              "closed"
+            ]
+          },
+          "soldOut": {
+            "type": "boolean"
+          },
+          "holders": {
+            "type": "integer",
+            "description": "Current holders: trialing, active, or cancelled inside their period."
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "publishedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "pausedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "closedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "PassUpsell": {
+        "type": "object",
+        "description": "Extra spend beyond the pass, **estimated** from the uses where the till entered a bill and the covered value is known. Never scaled up to unmeasured uses. `minor` is null — with a `reason` — when nothing could be measured; it is never a stand-in 0.",
+        "properties": {
+          "minor": {
+            "type": "integer",
+            "nullable": true
+          },
+          "measured": {
+            "type": "integer"
+          },
+          "redemptions": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "no_redemptions",
+              "no_bills_recorded",
+              "no_covered_value",
+              null
+            ]
+          }
+        }
+      },
+      "PassAllowance": {
+        "type": "object",
+        "properties": {
+          "capKind": {
+            "type": "string"
+          },
+          "window": {
+            "type": "string",
+            "description": "`d:YYYY-MM-DD`, `w:YYYY-Www`, `m:<period anchor>` or `u`."
+          },
+          "used": {
+            "type": "integer"
+          },
+          "allowance": {
+            "type": "integer",
+            "nullable": true
+          },
+          "remaining": {
+            "type": "integer",
+            "nullable": true
+          },
+          "resetsAt": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PassSubscription": {
+        "type": "object",
+        "description": "`charged` is always false today: there is no payment rail for venue passes.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "passId": {
+            "type": "string"
+          },
+          "venueId": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "description": "`PS-XXXXXX`. What the customer shows the counter."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "trialing",
+              "active",
+              "cancelled",
+              "expired"
+            ]
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "periodStart": {
+            "type": "string"
+          },
+          "periodEnd": {
+            "type": "string"
+          },
+          "priceMinor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The price this period is locked at **in minor units** (grosze). 14200 is 142,00 zł."
+          },
+          "currency": {
+            "type": "string"
+          },
+          "periodKind": {
+            "type": "string",
+            "enum": [
+              "trial",
+              "intro",
+              "full"
+            ]
+          },
+          "charged": {
+            "type": "boolean"
+          },
+          "cancelledAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "terms": {
+            "$ref": "#/components/schemas/PassTerms"
+          }
+        }
+      },
+      "PassMembers": {
+        "type": "object",
+        "description": "Current holders who share their profile with this venue. `total` counts everybody holding.",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "shared": {
+            "type": "integer"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "subscriptionId": {
+                  "type": "string"
+                },
+                "passId": {
+                  "type": "string"
+                },
+                "passName": {
+                  "type": "string"
+                },
+                "accent": {
+                  "type": "string"
+                },
+                "userId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "avatar": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "since": {
+                  "type": "string"
+                },
+                "usedThisPeriod": {
+                  "type": "integer"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "trialing",
+                    "active",
+                    "cancelled"
+                  ]
                 }
               }
             }
@@ -8875,7 +9281,7 @@
     "/v1/partner/venues/{id}/customers": {
       "get": {
         "summary": "Customers who share their profile with this venue",
-        "description": "Rows gain two optional keys, **absent rather than null** when unknown: `tierPct`, the highest discount this customer bought a voucher for here, and `spendTrend` (`up` / `down` / `flat`), their last 30 days of spend here against the 30 before. The `status` filter now applies before paging, and an unknown `sort` or `status` is a 400.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "Rows gain two optional keys, **absent rather than null** when unknown: `tierPct`, the highest discount this customer bought a voucher for here, and `spendTrend` (`up` / `down` / `flat`), their last 30 days of spend here against the 30 before. Every row also carries `vouchersIssued` (bought here, any state but cancelled) and `vouchersUsed` (of those, redeemed); the detail carries the same two plus `sharingSince`, when the current sharing grant began. The `status` filter now applies before paging, and an unknown `sort` or `status` is a 400.\n\n**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "getPartnerVenuesByIdCustomers",
         "tags": [
           "partner"
@@ -12229,10 +12635,10 @@
           }
         }
       },
-      "put": {
+      "patch": {
         "summary": "Set the gift-card policy",
         "description": "The whole policy, in the shape `GET` answers (without `updatedAt`). Applies to the next purchase, and to `gift_card_priority` in every consumer's entitlements. Audited.\n\n**Access:** Admin only. Not part of the mobile surface.",
-        "operationId": "putAdminGiftCardsPolicy",
+        "operationId": "patchAdminGiftCardsPolicy",
         "tags": [
           "admin"
         ],
@@ -15169,6 +15575,1459 @@
                       "type": "object"
                     }
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/passes": {
+      "get": {
+        "summary": "The Passes screen: four stat cards and a card per pass",
+        "description": "Owner, admin or this venue’s manager. Every revenue figure is the **contracted** price — no payment rail exists for venue passes, so nothing is collected. `recurringMinor` is each *active* subscription (not trialing, not cancelled, on a pass that is not closed) at the price its current period is locked at, spread over its billing period. \"This month\" is the venue-local month in `month`.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdPasses",
+        "tags": [
+          "passes",
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "month": {
+                      "type": "string",
+                      "description": "YYYY-MM"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "stats": {
+                      "type": "object",
+                      "properties": {
+                        "activeSubscribers": {
+                          "type": "integer"
+                        },
+                        "livePasses": {
+                          "type": "integer"
+                        },
+                        "recurringMinor": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "Recurring revenue a month **in minor units** (grosze). 14200 is 142,00 zł."
+                        },
+                        "redemptionsThisMonth": {
+                          "type": "integer",
+                          "description": "Uses, counting quantity."
+                        },
+                        "upsell": {
+                          "$ref": "#/components/schemas/PassUpsell"
+                        }
+                      }
+                    },
+                    "payouts": {
+                      "type": "object",
+                      "properties": {
+                        "connected": {
+                          "type": "boolean"
+                        },
+                        "available": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "subscribeAvailable": {
+                      "type": "boolean",
+                      "description": "Whether customers can subscribe in the app (`PAYLEZ_PASS_SUBSCRIBE`)."
+                    },
+                    "passes": {
+                      "type": "array",
+                      "items": {
+                        "allOf": [
+                          {
+                            "$ref": "#/components/schemas/Pass"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "stats": {
+                                "type": "object",
+                                "properties": {
+                                  "subscribers": {
+                                    "type": "integer"
+                                  },
+                                  "usedThisMonth": {
+                                    "type": "integer"
+                                  },
+                                  "recurringMinor": {
+                                    "type": "integer"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a pass (always a draft)",
+        "description": "Needs the `passes` entitlement (Growth, Chain). Every field is optional; a template fills the *rule* (accent, cap, days, VIP’s 15%) and never a name, item or price. `null` removes a nullable field. `subscriberCap: 0` means no limit.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "postPartnerVenuesByIdPasses",
+        "tags": [
+          "passes",
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "template": {
+                    "type": "string",
+                    "enum": [
+                      "daily",
+                      "bundle",
+                      "vip",
+                      "weekend",
+                      "custom"
+                    ]
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "≤ 60."
+                  },
+                  "tagline": {
+                    "type": "string",
+                    "description": "≤ 120."
+                  },
+                  "accent": {
+                    "type": "string",
+                    "enum": [
+                      "teal",
+                      "deep_green",
+                      "purple",
+                      "terracotta",
+                      "ink"
+                    ]
+                  },
+                  "benefitItem": {
+                    "type": "string",
+                    "description": "≤ 120. Null for a discount-only pass."
+                  },
+                  "discountPct": {
+                    "type": "integer",
+                    "description": "1–100, or null."
+                  },
+                  "perks": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "early_access",
+                        "member_deals",
+                        "skip_line",
+                        "birthday"
+                      ]
+                    }
+                  },
+                  "capKind": {
+                    "type": "string",
+                    "enum": [
+                      "per_day",
+                      "per_week",
+                      "per_month",
+                      "unlimited"
+                    ]
+                  },
+                  "capCount": {
+                    "type": "integer",
+                    "description": "1–1000."
+                  },
+                  "unlimitedOk": {
+                    "type": "boolean",
+                    "description": "\"Keep it unlimited\" — required to publish an unlimited *item* pass."
+                  },
+                  "allowedDays": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "nullable": true
+                  },
+                  "fromMin": {
+                    "type": "integer"
+                  },
+                  "toMin": {
+                    "type": "integer"
+                  },
+                  "maxValueMinor": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "Most off one visit **in minor units** (grosze). 14200 is 142,00 zł."
+                  },
+                  "seats": {
+                    "type": "integer",
+                    "description": "1–3."
+                  },
+                  "priceMinor": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "Price per billing period **in minor units** (grosze). 14200 is 142,00 zł."
+                  },
+                  "billingPeriod": {
+                    "type": "string",
+                    "enum": [
+                      "monthly",
+                      "quarterly",
+                      "annual"
+                    ]
+                  },
+                  "intro": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "trial_7",
+                      "half_first"
+                    ]
+                  },
+                  "subscriberCap": {
+                    "type": "integer"
+                  },
+                  "costPerUseMinor": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "The venue’s own cost per use, for the economics panel **in minor units** (grosze). 14200 is 142,00 zł."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pass"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` naming the field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`entitlement_required` — `passes`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cap_reached` — twenty open passes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/passes/members": {
+      "get": {
+        "summary": "Every current pass holder who shares, across passes",
+        "description": "For the Customers page’s subscriber chip and its \"Pass membership\" row.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdPassesMembers",
+        "tags": [
+          "passes",
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PassMembers"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/passes/{passId}": {
+      "get": {
+        "summary": "One pass, with the detail view’s stats",
+        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdPassesByPassId",
+        "tags": [
+          "passes",
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "passId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "month": {
+                      "type": "string"
+                    },
+                    "pass": {
+                      "$ref": "#/components/schemas/Pass"
+                    },
+                    "stats": {
+                      "type": "object",
+                      "properties": {
+                        "subscribers": {
+                          "type": "integer"
+                        },
+                        "newThisMonth": {
+                          "type": "integer"
+                        },
+                        "cancelledThisMonth": {
+                          "type": "integer"
+                        },
+                        "recurringMinor": {
+                          "type": "integer"
+                        },
+                        "redemptionsThisMonth": {
+                          "type": "integer"
+                        },
+                        "perActiveSubscriber": {
+                          "type": "number",
+                          "description": "One decimal. 0 with nobody holding."
+                        },
+                        "upsell": {
+                          "$ref": "#/components/schemas/PassUpsell"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Edit a pass",
+        "description": "Same body as create, every field optional. A new price or rule reaches new subscribers at once and existing ones at their next renewal. A live or paused pass may not be edited into something publishing would refuse (`validation_failed` with `missing`). Closed passes: 400.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "patchPartnerVenuesByIdPassesByPassId",
+        "tags": [
+          "passes",
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "passId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pass"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a draft nobody ever held",
+        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "deletePartnerVenuesByIdPassesByPassId",
+        "tags": [
+          "passes",
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "passId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_state` — not a draft, or it has subscribers: close it instead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/passes/{passId}/status": {
+      "post": {
+        "summary": "Publish, pause, resume or close a pass",
+        "description": "`publish` draft → live and `resume` paused → live both need a verified venue, the `passes` entitlement and a complete pass. `pause` stops sign-ups only — subscribers keep using it and keep renewing. `close` stops renewals; members keep it to the end of their period. Asking for the state it is already in returns the pass.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "postPartnerVenuesByIdPassesByPassIdStatus",
+        "tags": [
+          "passes",
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "passId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "publish",
+                      "pause",
+                      "resume",
+                      "close"
+                    ]
+                  }
+                },
+                "required": [
+                  "action"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pass"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_state` — the transition does not exist (a draft is deleted, not closed); `validation_failed` with `missing`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`not_verified`, or `entitlement_required` — `passes`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/passes/{passId}/subscribers": {
+      "get": {
+        "summary": "A pass’s subscribers — those who share their profile",
+        "description": "Needs `identified_profiles`, like the Customers page, and runs the same consent rule in SQL.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdPassesByPassIdSubscribers",
+        "tags": [
+          "passes",
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "passId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PassMembers"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`entitlement_required` — `identified_profiles`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/passes/lookup": {
+      "post": {
+        "summary": "The counter: what a pass code is, and what is left on it",
+        "description": "Needs `scan` at this venue. Writes nothing. The customer’s name only when they share; a staff login sees first name and initial.\n\n**Access:** Any signed-in account.",
+        "operationId": "postPartnerVenuesByIdPassesLookup",
+        "tags": [
+          "passes",
+          "team"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "`PS-XXXXXX`, any case."
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "subscription": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "periodEnd": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "pass": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "benefitItem": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "discountPct": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "seats": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "customer": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      }
+                    },
+                    "allowance": {
+                      "$ref": "#/components/schemas/PassAllowance"
+                    },
+                    "usable": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "nullable": true,
+                          "enum": [
+                            "expired",
+                            "wrong_day",
+                            "outside_hours",
+                            "used_up",
+                            null
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No `scan` at this venue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no pass with that code here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/passes/redeem": {
+      "post": {
+        "summary": "The counter: use a pass",
+        "description": "Needs `redeem` — the permission that already confirms voucher and reward redemptions. `memberId` is the shared device naming who is on shift (an active member holding `redeem`); the use is recorded against them in `confirmed_member_id`. A member cannot redeem their own pass. The allowance is counted in the venue’s day, its ISO week, or a month anchored on the period start, under a lock. `billMinor`, or a committed `transactionId` for this customer at this venue, feeds the upsell estimate.\n\n**Access:** Any signed-in account.",
+        "operationId": "postPartnerVenuesByIdPassesRedeem",
+        "tags": [
+          "passes",
+          "team"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "A key you generate per attempt. Retrying with the same key returns the *stored* response instead of doing the work twice. The same key with a different body is a 409.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "quantity": {
+                    "type": "integer",
+                    "description": "1–3, and at most the pass’s seats."
+                  },
+                  "billMinor": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "The whole bill on this visit **in minor units** (grosze). 14200 is 142,00 zł."
+                  },
+                  "transactionId": {
+                    "type": "string"
+                  },
+                  "memberId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "redemption": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "subscriptionId": {
+                          "type": "string"
+                        },
+                        "passId": {
+                          "type": "string"
+                        },
+                        "quantity": {
+                          "type": "integer"
+                        },
+                        "billMinor": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "coveredMinor": {
+                          "type": "integer",
+                          "nullable": true
+                        },
+                        "transactionId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "redeemedAt": {
+                          "type": "string"
+                        },
+                        "confirmedBy": {
+                          "type": "object",
+                          "nullable": true,
+                          "properties": {
+                            "memberId": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "allowance": {
+                      "$ref": "#/components/schemas/PassAllowance"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No `redeem` here, a member naming somebody without it, or a member’s own pass.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no pass with that code here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cap_reached` (with `used`, `allowance`, `resetsAt`), `expired`, `conflict` with `reason: wrong_day | outside_hours`, `already_used` (a linked sale).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/venues/{id}/passes": {
+      "get": {
+        "summary": "A venue’s live passes, as a customer sees them",
+        "description": "Paused, draft and closed passes are absent. `subscribable` is false with `unavailableReason: payments_unavailable` while in-app subscribing is switched off.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "operationId": "getVenuesByIdPasses",
+        "tags": [
+          "passes",
+          "catalogue"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "passes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "subscribeAvailable": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/passes": {
+      "get": {
+        "summary": "My passes",
+        "description": "Current subscriptions and anything that ended in the last 90 days, each with its code and allowance.\n\n**Access:** Any signed-in account.",
+        "operationId": "getMePasses",
+        "tags": [
+          "passes",
+          "me"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "subscriptions": {
+                      "type": "array",
+                      "items": {
+                        "allOf": [
+                          {
+                            "$ref": "#/components/schemas/PassSubscription"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "pass": {
+                                "type": "object"
+                              },
+                              "allowance": {
+                                "$ref": "#/components/schemas/PassAllowance"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/passes/{passId}/subscribe": {
+      "post": {
+        "summary": "Subscribe to a pass — switched off",
+        "description": "There is no payment rail for venue-direct subscriptions (it needs Stripe Connect). Until one exists this answers `409 not_available` with `reason: payments_unavailable`, unless the deployment sets `PAYLEZ_PASS_SUBSCRIBE=on`.\n\n**Access:** Any signed-in account.",
+        "operationId": "postPassesByPassIdSubscribe",
+        "tags": [
+          "passes"
+        ],
+        "parameters": [
+          {
+            "name": "passId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "A key you generate per attempt. Retrying with the same key returns the *stored* response instead of doing the work twice. The same key with a different body is a 409.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PassSubscription"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_state` — the pass is paused or not on sale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`not_available` (the default), `conflict` (already held), `cap_reached` (sold out).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/passes/{subscriptionId}/cancel": {
+      "post": {
+        "summary": "Stop renewing a pass",
+        "description": "Kept to the end of the current period, trial included, then expired.\n\n**Access:** Any signed-in account.",
+        "operationId": "postMePassesBySubscriptionIdCancel",
+        "tags": [
+          "passes",
+          "me"
+        ],
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PassSubscription"
                 }
               }
             }

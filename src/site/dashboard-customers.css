@@ -1,0 +1,1301 @@
+/*
+ * Customers — v3 §3.6. Tokens only (`--dx-*`, set on `.pd-app.dx-app`); every
+ * rule is scoped under `.dx-app` because `dashboard.css` and this sheet land
+ * before `site.css` in the bundle, and a bare class would lose to it on order.
+ * The measurements are the mock's inline styles, quoted where they are odd.
+ */
+
+/* ═══════════════════════════════════════════════════════ the ink slab ══ */
+
+.dx-app .dx-customers-hero {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 32px;
+  padding: 30px 32px;
+}
+
+.dx-app .dx-customers-hero-main {
+  flex: 1 1 400px;
+  min-width: min(300px, 100%);
+}
+
+.dx-app .dx-customers-hero .dx-eyebrow {
+  margin-bottom: 16px;
+}
+
+.dx-app .dx-customers-hero-figure {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.dx-app .dx-customers-hero-value {
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-ink-card-fg);
+}
+
+.dx-app .dx-customers-hero-value b {
+  font-weight: inherit;
+}
+
+.dx-app .dx-customers-hero-unit {
+  padding-bottom: 7px;
+  font-size: 14px;
+  color: rgba(var(--dx-ink-card-rgb), 0.6);
+}
+
+.dx-app .dx-customers-hero-line {
+  margin: 0 0 20px;
+  max-width: 460px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: rgba(var(--dx-ink-card-rgb), 0.8);
+  text-wrap: pretty;
+}
+
+/* v3's gap-grid: 1px of the row's background shows between the tiles. */
+.dx-app .dx-customers-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin-bottom: 20px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(var(--dx-ink-card-rgb), 0.08);
+}
+
+.dx-app .dx-customers-tiles > div {
+  flex: 1 1 140px;
+  padding: 13px 15px;
+  background: var(--dx-ink-tile);
+}
+
+.dx-app .dx-customers-tiles span {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11.5px;
+  color: rgba(var(--dx-ink-card-rgb), 0.5);
+}
+
+.dx-app .dx-customers-tiles b {
+  font-size: 14.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-ink-card-fg);
+}
+
+.dx-app .dx-customers-hero-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.dx-app .dx-customers-hero-foot p {
+  flex: 1 1 300px;
+  min-width: min(260px, 100%);
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: rgba(var(--dx-ink-card-rgb), 0.72);
+  text-wrap: pretty;
+}
+
+.dx-app .dx-customers-hero-act {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 11px 16px;
+  border-radius: var(--dx-r-btn);
+  border: 1px solid rgba(var(--dx-ink-card-rgb), 0.2);
+  background: rgba(var(--dx-ink-card-rgb), 0.06);
+  color: var(--dx-ink-accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.dx-app .dx-customers-hero-act:hover {
+  border-color: var(--dx-ink-accent);
+}
+
+.dx-app .dx-customers-hero-side {
+  flex: 0 1 260px;
+  min-width: min(220px, 100%);
+}
+
+.dx-app .dx-customers-side-kicker {
+  display: block;
+  margin-bottom: 18px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: rgba(var(--dx-ink-card-rgb), 0.4);
+}
+
+.dx-app .dx-customers-side-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: rgba(var(--dx-ink-card-rgb), 0.45);
+}
+
+.dx-app .dx-customers-trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+  margin-bottom: 16px;
+}
+
+.dx-app .dx-customers-trend > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.dx-app .dx-customers-trend-value {
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(var(--dx-ink-card-rgb), 0.7);
+}
+
+.dx-app .dx-customers-trend-value b {
+  font-weight: 400;
+}
+
+.dx-app .dx-customers-trend i {
+  display: block;
+  width: 34px;
+  border-radius: 8px;
+  background: var(--dx-soft);
+}
+
+.dx-app .dx-customers-trend > div[data-on='true'] i {
+  background: var(--dx-fill-v);
+}
+
+.dx-app .dx-customers-trend em {
+  margin-top: 8px;
+  font-size: 11.5px;
+  font-style: normal;
+  color: rgba(var(--dx-ink-card-rgb), 0.45);
+}
+
+/* ═══════════════════════════════════════════════════════════ shared ══ */
+
+.dx-app .dx-customers-card {
+  padding: 24px;
+}
+
+.dx-app .dx-customers-card .dx-card-head {
+  margin-bottom: 20px;
+}
+
+.dx-app .dx-customers-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-foot {
+  margin: 15px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-foot[data-lead='true'] {
+  margin-top: 6px;
+}
+
+.dx-app .dx-customers-foot[data-gap='true'] {
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-scroll {
+  overflow-x: auto;
+}
+
+.dx-app .dx-customers-kicker {
+  display: block;
+  margin-bottom: 13px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-kicker[data-tone='faint'] {
+  margin-bottom: 16px;
+  letter-spacing: 0.09em;
+}
+
+.dx-app .dx-customers-quiet-line,
+.dx-app .dx-customers-faint-line {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-faint-line {
+  font-size: 13px;
+  color: var(--dx-faint);
+}
+
+/* A track and its fill, at v3's three heights. `data-tier` is the gradient
+   v3 reserves for a voucher tier; a stamp count is solid deep. */
+.dx-app .dx-customers-bar {
+  display: block;
+  height: 9px;
+  margin-bottom: 11px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--dx-soft);
+  text-decoration: none;
+}
+
+.dx-app .dx-customers-bar[data-h='8'] {
+  height: 8px;
+  margin: 0;
+}
+
+.dx-app .dx-customers-bar u,
+.dx-app .dx-customers-prog u {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--dx-deep);
+}
+
+.dx-app :is(.dx-customers-bar, .dx-customers-prog) u[data-tier='true'] {
+  background: var(--dx-fill);
+}
+
+.dx-app .dx-customers-bar u[data-tier='other'] {
+  background: var(--dx-soft);
+}
+
+/* v3's bone callout with the finding on the left and its presses on the right. */
+.dx-app .dx-customers-finding {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: 22px;
+  padding: 18px 20px;
+  border-radius: 13px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+}
+
+.dx-app .dx-customers-finding > p,
+.dx-app .dx-customers-finding > div:first-child:not(.dx-customers-finding-acts) {
+  flex: 1 1 340px;
+  min-width: min(280px, 100%);
+}
+
+.dx-app .dx-customers-finding p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.dx-app .dx-customers-finding[data-tight='true'] {
+  gap: 18px;
+  margin-top: 16px;
+  padding: 17px 20px;
+}
+
+.dx-app .dx-customers-finding[data-tight='true'] .dx-customers-kicker {
+  margin-bottom: 6px;
+}
+
+.dx-app .dx-customers-finding[data-tight='true'] p {
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.dx-app .dx-customers-finding-acts {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  gap: 9px;
+}
+
+.dx-app .dx-customers-finding-acts .dx-btn {
+  padding: 12px 18px;
+  border-radius: 11px;
+}
+
+.dx-app .dx-customers-finding-note {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--dx-muted);
+}
+
+/* ═════════════════════════════════════════════════════════ the roster ══ */
+
+.dx-app .dx-customers-roster-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 2px;
+}
+
+.dx-app .dx-customers-roster-head > div {
+  flex: 1 1 340px;
+  min-width: min(260px, 100%);
+}
+
+.dx-app .dx-customers-roster-head h2 {
+  margin: 0 0 6px;
+}
+
+.dx-app .dx-customers-roster-head p {
+  margin: 0;
+  max-width: 560px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+  text-wrap: pretty;
+}
+
+.dx-app .dx-customers-sharing {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 99px;
+  background: rgba(var(--dx-deep-rgb), 0.1);
+  color: var(--dx-deep);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dx-app .dx-customers-few {
+  margin: 16px 0 0;
+  padding: 13px 16px;
+  border-radius: 11px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 20px 0 2px;
+}
+
+/* "Everyone  16" — the two spaces are the copy's, so keep them. */
+.dx-app .dx-customers-chips button {
+  padding: 7px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-control-bg);
+  color: var(--dx-muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: pre;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.dx-app .dx-customers-chips button[aria-pressed='true'] {
+  border-color: var(--dx-press-bg);
+  background: var(--dx-press-bg);
+  color: var(--dx-toast-fg);
+}
+
+.dx-app .dx-customers-grid {
+  min-width: 760px;
+  margin-top: 14px;
+}
+
+.dx-app .dx-customers-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) 100px 66px 96px 112px 118px 18px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 8px;
+  border: none;
+  border-bottom: 1px solid var(--dx-soft);
+  border-radius: 0;
+  background: var(--dx-card);
+  color: var(--dx-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+:root:not([data-theme='light']) .dx-app .dx-customers-row {
+  background: transparent;
+}
+
+.dx-app button.dx-customers-row:hover {
+  background: var(--dx-hover-row);
+}
+
+.dx-app .dx-customers-row[data-head='true'] {
+  padding: 0 8px 11px;
+  border-bottom-color: var(--dx-line);
+  background: transparent;
+  cursor: default;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-sort {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  white-space: nowrap;
+  color: var(--dx-faint);
+  cursor: pointer;
+}
+
+.dx-app .dx-customers-sort[data-on='true'] {
+  color: var(--dx-ink);
+}
+
+.dx-app .dx-customers-who {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.dx-app .dx-customers-who > span {
+  min-width: 0;
+}
+
+.dx-app .dx-customers-who b {
+  display: block;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dx-app .dx-customers-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--dx-soft);
+  color: var(--dx-ink);
+  font-size: 12.5px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+/* A top spender is drawn in the press: ink with mint on paper. */
+.dx-app .dx-customers-avatar[data-top='true'] {
+  background: var(--dx-nav-on-bg);
+  color: var(--dx-nav-on-fg);
+}
+
+.dx-app .dx-customers-avatar[data-size='lg'] {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.dx-app .dx-customers-prog {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 5px;
+}
+
+.dx-app .dx-customers-prog s {
+  display: block;
+  width: 66px;
+  height: 4px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--dx-soft);
+}
+
+.dx-app .dx-customers-prog em {
+  font-size: 10.5px;
+  font-style: normal;
+  white-space: nowrap;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-spent {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-app .dx-customers-spent i {
+  font-size: 9px;
+  font-style: normal;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-spent i[data-trend='up'] {
+  color: var(--dx-deep);
+}
+
+.dx-app .dx-customers-spent i[data-trend='down'] {
+  color: var(--dx-down);
+}
+
+.dx-app .dx-customers-quiet {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-quiet[data-away='true'] {
+  color: var(--dx-down);
+}
+
+.dx-app .dx-customers-vouchers {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-vouchers[data-open='true'] {
+  color: var(--dx-ink);
+}
+
+.dx-app .dx-customers-vouchers > span,
+.dx-app .dx-customers-dash {
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-status-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.dx-app .dx-customers-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-deep-rgb), 0.12);
+}
+
+.dx-app .dx-customers-status[data-s='away'] {
+  color: var(--dx-down);
+  background: rgba(var(--dx-down-rgb), 0.13);
+}
+
+.dx-app .dx-customers-status[data-s='new'] {
+  color: var(--dx-warn);
+  background: rgba(var(--dx-warn-rgb), 0.16);
+}
+
+.dx-app .dx-customers-status[data-size='lg'] {
+  padding: 4px 11px;
+  font-size: 12px;
+}
+
+.dx-app .dx-customers-chev {
+  display: flex;
+  justify-content: flex-end;
+  color: var(--dx-rule);
+}
+
+.dx-app .dx-customers-empty {
+  max-width: 520px;
+  padding: 8px 0 4px;
+}
+
+.dx-app .dx-customers-empty-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  margin: 16px 0;
+  border-radius: 12px;
+  background: var(--dx-bone);
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-empty h3 {
+  margin: 0 0 9px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.dx-app .dx-customers-empty p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--dx-muted);
+}
+
+/* ═════════════════════════════════════════════════════════ one person ══ */
+
+.dx-app .dx-customers-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 22px;
+  padding: 8px 13px 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-control-bg);
+  color: var(--dx-muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.dx-app .dx-customers-back:hover {
+  border-color: var(--dx-deep);
+  color: var(--dx-deep);
+}
+
+.dx-app .dx-customers-person {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.dx-app .dx-customers-person > div {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.dx-app .dx-customers-person-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 11px;
+}
+
+.dx-app .dx-customers-person h2 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.dx-app .dx-customers-person p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  max-width: 660px;
+  margin-bottom: 22px;
+  padding: 11px 15px;
+  border-radius: 11px;
+  background: rgba(var(--dx-deep-rgb), 0.08);
+  color: var(--dx-deep);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.dx-app .dx-customers-privacy svg {
+  margin-top: 2px;
+}
+
+.dx-app .dx-customers-pass {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 11px;
+  max-width: 660px;
+  margin-bottom: 22px;
+  padding: 16px 18px;
+  border-radius: 13px;
+  border: 1px solid var(--dx-line);
+}
+
+/* The pass's own accent, mapped onto the palette's scoped hues: v3 paints the
+   tile in the pass art's colour, and the five a pass may carry fold onto the
+   four this dashboard already owns. */
+.dx-app .dx-customers-pass-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--dx-deep);
+  color: var(--dx-card);
+}
+
+.dx-app .dx-customers-pass-ico[data-accent='purple'] {
+  background: var(--dx-purple);
+}
+
+.dx-app .dx-customers-pass-ico[data-accent='terracotta'] {
+  background: var(--dx-down);
+}
+
+.dx-app .dx-customers-pass-ico[data-accent='ink'] {
+  background: var(--dx-press-bg);
+  color: var(--dx-press-fg);
+}
+
+:root:not([data-theme='light']) .dx-app .dx-customers-pass-ico {
+  color: var(--bg);
+}
+
+.dx-app .dx-customers-pass-name {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.dx-app .dx-customers-pass-name span {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-pass-name b {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.dx-app .dx-customers-pass-facts {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.dx-app .dx-customers-pass-facts span {
+  display: block;
+  font-size: 12px;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-pass-facts b {
+  font-size: 13.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-app .dx-customers-pass-facts .dx-pill {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.dx-app .dx-customers-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1px;
+  margin-bottom: 20px;
+  border-radius: 13px;
+  overflow: hidden;
+  background: var(--dx-line);
+}
+
+.dx-app .dx-customers-stats > div {
+  padding: 16px 18px;
+  background: var(--dx-card);
+}
+
+:root:not([data-theme='light']) .dx-app .dx-customers-stats > div {
+  background: var(--dx-overlay-bg);
+}
+
+.dx-app .dx-customers-stats span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-stats b {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-app .dx-customers-detail-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.dx-app .dx-customers-panel {
+  padding: 18px 20px;
+  border-radius: 13px;
+  border: 1px solid var(--dx-line);
+}
+
+.dx-app .dx-customers-panel[data-wide='true'] {
+  flex: 1 1 320px;
+  min-width: min(280px, 100%);
+}
+
+.dx-app .dx-customers-panel[data-wide='true'] .dx-customers-kicker {
+  margin-bottom: 18px;
+}
+
+.dx-app .dx-customers-detail-side {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 300px;
+  min-width: min(260px, 100%);
+  gap: 16px;
+}
+
+.dx-app .dx-customers-months {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  height: 96px;
+}
+
+.dx-app .dx-customers-months > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1;
+  height: 100%;
+}
+
+.dx-app .dx-customers-months i {
+  display: block;
+  width: 26px;
+  border-radius: 7px 7px 0 0;
+  background: var(--dx-soft);
+}
+
+.dx-app .dx-customers-months i[data-on='true'] {
+  background: var(--dx-fill-v);
+}
+
+.dx-app .dx-customers-months em {
+  margin-top: 8px;
+  font-size: 10.5px;
+  font-style: normal;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-reward {
+  display: block;
+  margin-bottom: 11px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.dx-app .dx-customers-used {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dx-app .dx-customers-used li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+}
+
+.dx-app .dx-customers-used svg {
+  color: var(--dx-deep);
+}
+
+.dx-app .dx-customers-campaign {
+  margin: 11px 0 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--dx-soft);
+  font-size: 13px;
+  color: var(--dx-muted);
+}
+
+/* ══════════════════════════════════════════════════════════ heat map ══ */
+
+.dx-app .dx-customers-heat {
+  min-width: 620px;
+}
+
+.dx-app .dx-customers-heat-row {
+  display: grid;
+  grid-template-columns: 44px repeat(14, minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.dx-app .dx-customers-heat-row > span {
+  margin-right: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-heat-row[data-head='true'] {
+  margin-bottom: 6px;
+}
+
+.dx-app .dx-customers-heat-row em {
+  font-size: 10.5px;
+  font-style: normal;
+  text-align: center;
+  color: var(--dx-faint);
+}
+
+/* `--a` is the cell's share of the busiest hour, set inline: 0.06 + v/max·0.82. */
+.dx-app .dx-customers-heat-row i {
+  display: block;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(var(--dx-deep-rgb), var(--a, 0.06));
+}
+
+/* ══════════════════════════════════════════════════════════ languages ══ */
+
+.dx-app .dx-customers-langs {
+  max-width: 560px;
+}
+
+.dx-app .dx-customers-langs > div {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dx-app .dx-customers-lang > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.dx-app .dx-customers-lang span {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dx-app .dx-customers-lang em {
+  font-size: 12.5px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-lang .dx-customers-bar {
+  margin: 0;
+}
+
+.dx-app .dx-customers-langs > .dx-customers-faint-line {
+  margin-top: 14px;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+/* ══════════════════════════════════════════════════════ come back ══ */
+
+.dx-app .dx-customers-statement {
+  margin: 0 0 20px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.dx-app .dx-customers-cohorts {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dx-app .dx-customers-cohorts > div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) 150px;
+  align-items: center;
+  gap: 16px;
+}
+
+.dx-app .dx-customers-cohorts span {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dx-app .dx-customers-cohorts em {
+  font-size: 12.5px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-thin {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px;
+  border-radius: 13px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-thin svg {
+  margin-top: 1px;
+}
+
+/* ═════════════════════════════════════════════ compare · money works ══ */
+
+.dx-app .dx-customers-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.dx-app .dx-customers-pair > .dx-card {
+  flex: 1 1 380px;
+  min-width: min(320px, 100%);
+}
+
+.dx-app .dx-customers-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: 13px;
+  overflow: hidden;
+  background: var(--dx-line);
+}
+
+.dx-app .dx-customers-rows > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 15px 17px;
+  background: var(--dx-card);
+}
+
+:root:not([data-theme='light']) .dx-app .dx-customers-rows > div {
+  background: var(--dx-overlay-bg);
+}
+
+.dx-app .dx-customers-rows > div > span {
+  flex: 1 1 160px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dx-app .dx-customers-rows > div > div:first-child {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.dx-app .dx-customers-rows > div > div:last-child {
+  text-align: right;
+}
+
+.dx-app .dx-customers-rows b {
+  display: block;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-app .dx-customers-rows b[data-better='true'] {
+  color: var(--dx-deep);
+}
+
+.dx-app .dx-customers-rows em {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-style: normal;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dx-ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dx-app .dx-customers-link:hover {
+  color: var(--dx-deep);
+}
+
+.dx-app .dx-customers-roi-line {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-customers-nodata {
+  padding: 20px;
+  border-radius: 13px;
+  border: 1px dashed var(--dx-rule);
+  background: var(--dx-bone);
+}
+
+.dx-app .dx-customers-nodata > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin-bottom: 9px;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-customers-nodata b {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--dx-ink);
+}
+
+.dx-app .dx-customers-nodata > span {
+  display: block;
+  padding-left: 27px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+
+/* The locked pair, without a blurred copy of figures nobody sent. */
+.dx-app .dx-customers-lock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 180px;
+  text-align: center;
+}
+
+.dx-app .dx-customers-lock b {
+  max-width: 420px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+/* ═════════════════════════════════════════════════════════ narrow ══ */
+
+@media (max-width: 46rem) {
+  .dx-app .dx-customers-hero {
+    padding: 24px 20px;
+  }
+
+  .dx-app .dx-customers-hero-value {
+    font-size: 40px;
+  }
+
+  .dx-app .dx-customers-card {
+    padding: 20px 16px;
+  }
+
+  .dx-app .dx-customers-cohorts > div {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .dx-app .dx-customers-cohorts em {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+
+  .dx-app .dx-customers-pass-facts {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-app .dx-customers-row,
+  .dx-app .dx-customers-chips button,
+  .dx-app .dx-customers-back,
+  .dx-app .dx-customers-hero-act {
+    transition: none;
+  }
+}

@@ -16,6 +16,7 @@
  * answer means for the account it already has.
  */
 import type { GamesState, Me } from '../api/consumer';
+import { managedVenues, type WorkspacesBody } from '../api/workspaces';
 import type { ProfileWrite } from '../api/profile';
 import { businessFromSource, type ListingSource } from '../api/listing';
 import type { Account, AccountType, ProfilePatch, ProfileResult, UserProfile } from './context';
@@ -80,7 +81,10 @@ export function awaitsServer(account: Account | null, requested: Route): boolean
   const missing =
     account.type === null ||
     (account.type === 'individual' && account.onboardedAt === null) ||
-    (account.type === 'business' && account.business === null);
+    (account.type === 'business' && account.business === null) ||
+    /* Never asked whether this account manages a venue, and it asked for the
+       dashboard: the mirror alone would send a manager home. */
+    (requested === 'dashboard' && account.manages === undefined && account.type !== 'admin');
   if (!missing) return false;
   const lands = resolveRoute(requested, account);
   return lands !== requested || HOLD_SCREENS.has(lands);
@@ -155,6 +159,12 @@ export interface ServerAnswers {
   me: Me;
   games: GamesState | null;
   listing: ListingSource | null;
+  /**
+   * `GET /v1/me/workspaces`, or `null` when it was not asked or did not
+   * answer — in which case `manages` keeps whatever this browser held.
+   * Optional so a caller that predates it still type-checks.
+   */
+  workspaces?: WorkspacesBody | null;
 }
 
 /**
@@ -203,6 +213,15 @@ export function foldServer(held: Account, answers: ServerAnswers, language: stri
     profile: profileFromServer(me.user, held.profile),
     onboardedAt,
     profileCompletedAt: held.profileCompletedAt ?? me.user.profileCompletedAt,
+    /* Asked → the server's answer, either way; not asked → what was held. An
+       operator is never a venue manager here: the console replaces the
+       dashboard for them, and a stray team row must not route them into it. */
+    manages:
+      type === 'admin'
+        ? false
+        : answers.workspaces
+          ? managedVenues(answers.workspaces).length > 0
+          : held.manages,
   };
 }
 

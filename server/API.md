@@ -949,3 +949,61 @@ client that resends its whole form keeps working.
 `city: null` with a `countryCode` beside it is a 400. Clearing never takes back a
 profile-completion bonus that was paid.
 
+
+## 14. Subscription passes
+
+A venue sells a monthly subscription straight to its own customers — "a coffee a
+day for 49 zł", "ten coffees a month", "15% off and perks". `domain/passes.ts`;
+the full shapes are in `openapi.json` under the `passes` tag.
+
+**There is no payment rail.** A venue-direct subscription has the venue as the
+merchant (Stripe Connect), and that is not built. So:
+
+- `POST /v1/passes/{passId}/subscribe` answers **`409 not_available`** with
+  `reason: "payments_unavailable"` unless the deployment sets
+  `PAYLEZ_PASS_SUBSCRIBE=on`. Leave it off until a rail exists: on, it creates
+  subscriptions nobody paid for.
+- Every period row is `charge_status: "not_charged"` (`"free"` for a trial), and
+  every revenue figure is the **contracted** price, never money collected.
+- `ports/passPayments.ts` is the TODO port where a renewal will ask for money.
+
+| method | path | who | what |
+|---|---|---|---|
+| GET | `/v1/partner/venues/{id}/passes` | owner, admin, manager | list + the four stat cards |
+| POST | `/v1/partner/venues/{id}/passes` | same, plan has `passes` | create (always a draft) |
+| GET | `/v1/partner/venues/{id}/passes/{passId}` | same | detail + its stats |
+| PATCH | `/v1/partner/venues/{id}/passes/{passId}` | same | edit (not closed) |
+| DELETE | `/v1/partner/venues/{id}/passes/{passId}` | same | a never-held draft only |
+| POST | `/v1/partner/venues/{id}/passes/{passId}/status` | same | `{action: publish\|pause\|resume\|close}` |
+| GET | `/v1/partner/venues/{id}/passes/{passId}/subscribers` | same, `identified_profiles` | holders who share |
+| GET | `/v1/partner/venues/{id}/passes/members` | same, `identified_profiles` | every sharing holder, all passes |
+| POST | `/v1/partner/venues/{id}/passes/lookup` | counter with `scan` | `{code}` → allowance, usable |
+| POST | `/v1/partner/venues/{id}/passes/redeem` | counter with `redeem` | `{code, quantity?, billMinor?, transactionId?, memberId?}` |
+| GET | `/v1/venues/{id}/passes` | anyone | live passes, `subscribable`, `unavailableReason` |
+| GET | `/v1/me/passes` | signed in | my subscriptions, codes, allowance |
+| POST | `/v1/passes/{passId}/subscribe` | signed in | **off** — `not_available` |
+| POST | `/v1/me/passes/{subscriptionId}/cancel` | signed in | stop renewing |
+
+The rules a client has to respect:
+
+- **Lifecycle** `draft → live ⇄ paused → closed`. Paused stops sign-ups only;
+  subscribers keep using and renewing. Closed stops renewals; members keep it to
+  the end of their period, then it expires. A draft is deleted, not closed.
+  Sold out is derived (`soldOut`), never a status.
+- **Price and terms are locked per period.** An edit reaches new subscribers at
+  once and existing ones at their next renewal (the hourly job). Nobody is
+  charged more, or given less, mid-term.
+- **The allowance is the server's.** `per_day` is the venue's local day,
+  `per_week` its ISO week, `per_month` a month anchored on the period start.
+  Over it is `409 cap_reached` with `used`, `allowance` and `resetsAt`; a day or
+  hour the pass does not cover is `409 conflict` with `reason: wrong_day |
+  outside_hours`; an ended period is `409 expired`.
+- **Counter permission is `redeem`** (the same bit that confirms vouchers and
+  rewards); looking a code up is `scan`. `memberId` attributes to the member on
+  shift and lands in `confirmed_member_id`; a member cannot redeem their own pass.
+- **Upsell is an estimate, and may be null.** Measured only on uses with a bill
+  (`billMinor` or a linked committed `transactionId`) whose covered value is
+  known (an item pass needs `maxValueMinor`). `minor: null` comes with a
+  `reason`; never draw it as 0.
+- **Names are consent-gated**, in SQL, exactly as the Customers page: `total`
+  counts every holder, `rows` only those who share.

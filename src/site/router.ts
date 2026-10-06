@@ -578,6 +578,17 @@ export function resolveRoute(route: Route, account: Account | null): Route {
      * consumer account filling it in is the exact bug the note above records.
      */
     if (route === 'dashboard' && DEMO_MODE) return 'dashboard';
+    /*
+     * A venue's manager. They own nothing — the account is an individual's, a
+     * player's — and run somebody else's venue as a row in `team_members`,
+     * which the server folds into `manages` through `GET /v1/me/workspaces`.
+     * The partner routes already admit them (`team.requireManage`); this is the
+     * site agreeing. Only the dashboard opens: setup writes a venue onto *this*
+     * account, which is not what a manager is, and the marketing pages that
+     * sell to a business stay closed to an individual as before. Staff are not
+     * `manages` — the counter is the phone's.
+     */
+    if (route === 'dashboard' && account.manages === true) return 'dashboard';
     return route === 'business' || route === 'analytics' || PRIVATE.includes(route)
       ? 'landing'
       : route;
@@ -597,7 +608,9 @@ export function resolveRoute(route: Route, account: Account | null): Route {
    * flag on, `dashboard` resolves to `dashboard`, and `npm run verify` walks
    * the whole matrix with the flag off, because Node has no `window`.
    */
-  if (route === 'dashboard' && account.business === null && !DEMO_MODE) {
+  /* An owner who has not set up a venue of their own but manages somebody
+     else's has a dashboard to open — the managed venue's. */
+  if (route === 'dashboard' && account.business === null && !DEMO_MODE && account.manages !== true) {
     return 'business-setup';
   }
   return route;

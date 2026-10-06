@@ -70,6 +70,18 @@ export interface Account {
    * `users.profile_completed_at` and is the record; this is the device's copy.
    */
   profileCompletedAt: string | null;
+  /**
+   * Whether this account runs some venue as its **manager** — a `team_members`
+   * row on somebody else's venue, which no role on the account records.
+   *
+   * Folded in from `GET /v1/me/workspaces` (`auth/mirror.ts`), and it is what
+   * lets `resolveRoute` open the partner dashboard to a person who owns no
+   * venue. Optional, and `undefined` means "not asked yet" rather than "no":
+   * rows written before the field existed carry none, and `awaitsServer` holds
+   * the first page for the answer only where waiting would change where they
+   * land. Staff are not managers here — the counter is the phone's.
+   */
+  manages?: boolean;
 }
 
 /**

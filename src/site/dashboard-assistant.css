@@ -1,0 +1,700 @@
+/* ══════════════════════════════════════════ the partner assistant (v3) ══
+ *
+ * `dashboardAssistant.tsx`, drawn as v3's chat (§3.7): a full-height column
+ * with an "Online" bar, a centred 720px thread of bubbles, starter chips, a
+ * draft card and a composer pinned to the foot.
+ *
+ * v3 renders the chat *outside* its `<main>` so the column can own the whole
+ * height under the bar. Here the frame's `.dx-page` pads every screen, so the
+ * column takes that padding back with negative margins and fills the viewport
+ * below the top bar; the thread then scrolls with the page and the composer
+ * is `position: sticky` to the bottom rather than the foot of a fixed-height
+ * box — a fixed height would have to know the top bar's height, which wraps.
+ *
+ * Every colour is a `--dx-*` token. The four v3 spends outside the shared
+ * palette — the owner's teal bubble, the amber draft header, the typing dots
+ * and the grey body copy — are the `--dx-chat-*` tokens in `dashboard.css`.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+.dx-assistant {
+  display: flex;
+  flex-direction: column;
+  margin: -26px -24px -48px;
+  min-height: calc(100dvh - 64px);
+}
+
+/* ── the bar ── */
+
+.dx-assistant-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 24px 8px;
+}
+
+.dx-assistant-online {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dx-faint);
+}
+
+.dx-assistant-online i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dx-deep);
+}
+
+.dx-assistant-spacer {
+  flex: 1;
+}
+
+.dx-assistant-kebab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-control-bg);
+  color: var(--dx-muted);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.dx-assistant-kebab:hover {
+  border-color: var(--dx-deep);
+}
+
+.dx-assistant-menu {
+  top: calc(100% + 4px);
+}
+
+.dx-assistant-menu .dx-menu-item {
+  padding: 10px 14px;
+  font-weight: 400;
+}
+
+.dx-assistant-menu .dx-menu-item:disabled {
+  color: var(--dx-faint);
+  cursor: default;
+}
+
+.dx-assistant-menu .dx-menu-item:disabled:hover {
+  background: none;
+}
+
+/* ── the thread ── */
+
+.dx-assistant-thread {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  /* v3's 720 includes the padding, so the bubbles sit in 672. */
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 24px 24px;
+  outline: none;
+}
+
+/* Focus lands on the log by script, after a press that removed its own
+   control — a place to stand, not a selection, so no ring round the thread
+   (the drawer's rule). Controls inside keep theirs. */
+.dx-assistant-thread:focus-visible {
+  outline: none;
+}
+
+.dx-assistant-turn {
+  animation: dxFade 0.25s ease;
+}
+
+.dx-assistant-turn[data-from='you'] {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The anchor the newest turn is scrolled to. Its margin is the composer's
+   height, so "nearest" stops with the turn above the pinned composer. */
+.dx-assistant-end {
+  height: 0;
+  scroll-margin-bottom: 150px;
+}
+
+/* ── a message from the assistant ── */
+
+.dx-assistant-bot {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 92%;
+}
+
+.dx-assistant-avatar {
+  flex: 0 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: var(--dx-deep);
+  color: var(--dx-chat-bot-fg);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.dx-assistant-bot[data-bare] .dx-assistant-avatar {
+  margin-top: 0;
+}
+
+.dx-assistant-bot-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.dx-assistant-bot[data-bare] .dx-assistant-bot-body {
+  flex: 0 0 auto;
+}
+
+.dx-assistant-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.dx-assistant-who b {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dx-ink);
+}
+
+.dx-assistant-who time {
+  font-size: 11.5px;
+  color: var(--dx-faint);
+}
+
+.dx-assistant-bubble {
+  padding: 16px 18px;
+  border-radius: 4px 14px 14px 14px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-card);
+  backdrop-filter: var(--dx-card-blur);
+  -webkit-backdrop-filter: var(--dx-card-blur);
+  box-shadow: var(--dx-shadow-bubble);
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--dx-ink);
+  overflow-wrap: anywhere;
+}
+
+.dx-assistant-bot[data-bare] .dx-assistant-bubble {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 14px 18px;
+}
+
+.dx-assistant-p {
+  margin: 0 0 14px;
+}
+
+.dx-assistant-p[data-gap='lg'] {
+  margin-bottom: 16px;
+}
+
+.dx-assistant-bubble > :last-child {
+  margin-bottom: 0;
+}
+
+.dx-assistant-muted {
+  color: var(--dx-muted);
+}
+
+.dx-assistant-fine {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--dx-faint);
+}
+
+.dx-assistant-withheld {
+  font-weight: 400;
+  color: var(--dx-faint);
+  cursor: help;
+}
+
+/* The snapshot: one emoji, one line. */
+.dx-assistant-snap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.dx-assistant-snap li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--dx-chat-text);
+}
+
+.dx-assistant-snap li > span:first-child {
+  flex: 0 0 auto;
+}
+
+/* v3's stats mini-table: a bordered box of rows, the label left and the figure
+   right in tabular digits. */
+.dx-assistant-table {
+  margin: 0 0 14px;
+  border: 1px solid var(--dx-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.dx-assistant-table > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  padding: 11px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--dx-soft);
+}
+
+.dx-assistant-table > div:last-child {
+  border-bottom: none;
+}
+
+.dx-assistant-table dt {
+  font-weight: 600;
+  color: var(--dx-ink);
+}
+
+.dx-assistant-table dd {
+  margin: 0;
+  text-align: right;
+  color: var(--dx-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The receipt: the figures the answer read, quiet under it. */
+.dx-assistant-receipt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dx-faint);
+}
+
+.dx-assistant-receipt b {
+  font-weight: 600;
+  color: var(--dx-muted);
+}
+
+.dx-assistant-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* "Needs a look": rows split by a hairline, each with its own press. */
+.dx-assistant-attn {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dx-assistant-attn li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--dx-soft);
+}
+
+.dx-assistant-attn li:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.dx-assistant-attn li:last-child {
+  padding-bottom: 0;
+}
+
+.dx-assistant-attn p {
+  margin: 0;
+  color: var(--dx-chat-text);
+}
+
+/* ── the typing indicator ── */
+
+.dx-assistant-dots {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.dx-assistant-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dx-chat-dot);
+  animation: dxAssistantDots 1.4s infinite ease-in-out both;
+}
+
+.dx-assistant-dots i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.dx-assistant-dots i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes dxAssistantDots {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.4);
+    opacity: 0.3;
+  }
+
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ── a message from the owner ── */
+
+.dx-assistant-you {
+  display: flex;
+  justify-content: flex-end;
+  max-width: 75%;
+}
+
+.dx-assistant-you p {
+  margin: 0;
+  padding: 13px 17px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--dx-chat-user-bg);
+  color: var(--dx-chat-user-fg);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ── the starter chips ── */
+
+.dx-assistant-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding-left: 44px;
+  animation: dxFade 0.3s ease;
+}
+
+.dx-assistant-chip {
+  padding: 10px 16px;
+  border-radius: var(--dx-r-pill);
+  border: 1.5px solid var(--dx-ink);
+  background: var(--dx-control-bg);
+  color: var(--dx-ink);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.dx-assistant-chip:hover:not(:disabled) {
+  background: var(--dx-press-bg);
+  border-color: var(--dx-press-bg);
+  color: var(--dx-press-fg);
+}
+
+.dx-assistant-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── the draft card ── */
+
+.dx-assistant-draft {
+  margin: 0 0 14px;
+  border: 1.5px solid var(--dx-line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.dx-assistant-draft:last-child {
+  margin-bottom: 0;
+}
+
+.dx-assistant-draft-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  background: var(--dx-chat-draft-bg);
+  border-bottom: 1px solid var(--dx-chat-draft-line);
+}
+
+.dx-assistant-draft-head span:last-child {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dx-chat-draft-fg);
+}
+
+.dx-assistant-draft-body {
+  padding: 18px;
+}
+
+.dx-assistant-draft-title {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--dx-ink);
+}
+
+.dx-assistant-goal {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  color: var(--dx-faint);
+}
+
+.dx-assistant-draft-rows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+.dx-assistant-draft-rows > div {
+  display: contents;
+}
+
+.dx-assistant-draft-rows dt {
+  color: var(--dx-muted);
+}
+
+.dx-assistant-draft-rows dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--dx-ink);
+}
+
+.dx-assistant-draft-note {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.dx-assistant-draft-note b {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dx-ink);
+}
+
+.dx-assistant-draft-note :is(p, ul) {
+  margin: 0;
+  color: var(--dx-muted);
+}
+
+.dx-assistant-draft-note ul {
+  padding-left: 18px;
+}
+
+.dx-assistant-ask {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--dx-muted);
+}
+
+/* ── the composer ── */
+
+.dx-assistant-composer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  padding: 16px 24px 20px;
+  border-top: 1px solid var(--dx-line);
+  background: var(--dx-rail-bg);
+  backdrop-filter: var(--dx-chrome-blur);
+  -webkit-backdrop-filter: var(--dx-chrome-blur);
+}
+
+.dx-assistant-composer-in {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.dx-assistant-well {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 8px 8px 8px 16px;
+  border-radius: 14px;
+  border: 1.5px solid var(--dx-chat-well);
+  background: var(--dx-control-bg);
+  box-shadow: var(--dx-shadow-bubble);
+  transition: border-color 0.15s;
+}
+
+.dx-assistant-well:focus-within {
+  border-color: var(--dx-deep);
+}
+
+.dx-assistant-well textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 120px;
+  padding: 7px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--dx-ink);
+  font-size: 14px;
+  line-height: 1.6;
+  resize: none;
+}
+
+.dx-assistant-well textarea::placeholder {
+  color: var(--dx-faint);
+}
+
+.dx-assistant-send {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  border: none;
+  background: var(--dx-press-bg);
+  color: var(--dx-press-fg);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dx-assistant-send:hover:not(:disabled) {
+  background: var(--dx-press-hover);
+}
+
+.dx-assistant-send:disabled {
+  background: var(--dx-disabled-bg);
+  color: var(--dx-disabled-fg);
+  cursor: not-allowed;
+}
+
+.dx-assistant-foot {
+  margin: 10px 0 0;
+  padding: 0 4px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--dx-faint);
+}
+
+/* The site's floating assistant button, while this screen is the assistant:
+   two assistants on one page is one too many, and on a phone the button sits
+   on the composer's send and footnote. Scoped to this screen being mounted. */
+.site-app:has(.dx-assistant) .assistant-fab {
+  display: none;
+}
+
+/* ── the states before there is a conversation ── */
+
+.dx-assistant-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dx-gap);
+}
+
+/* ── motion ── */
+
+/* The dots stop and hold at a middle step: still three marks saying "busy",
+   without the pulse. The visually hidden sentence beside them says the rest. */
+@media (prefers-reduced-motion: reduce) {
+  .dx-assistant-dots i {
+    animation: none;
+    opacity: 0.6;
+    transform: scale(0.8);
+  }
+
+  .dx-assistant-turn,
+  .dx-assistant-chips {
+    animation: none;
+  }
+}
+
+/* ── phone ── */
+
+@media (max-width: 46rem) {
+  /* The bar is not sticky on a phone and the tab bar takes the foot, so the
+     column fills what is left between them and the composer sits on the tabs. */
+  /* The foot also takes back `.dx-main`'s room for the tab bar: a sticky
+     element cannot pass its own box's bottom, and without this the composer
+     stops a few pixels short of the tabs at the end of the thread. */
+  .dx-assistant {
+    margin: -20px -16px calc(-40px - 64px - env(safe-area-inset-bottom));
+    min-height: calc(100dvh - 128px);
+  }
+
+  .dx-assistant-bar {
+    padding: 12px 16px 8px;
+  }
+
+  .dx-assistant-thread {
+    padding: 16px;
+  }
+
+  .dx-assistant-bot,
+  .dx-assistant-you {
+    max-width: 100%;
+  }
+
+  .dx-assistant-you {
+    padding-left: 15%;
+  }
+
+  .dx-assistant-chips {
+    padding-left: 0;
+  }
+
+  .dx-assistant-chip {
+    white-space: normal;
+    text-align: left;
+  }
+
+  /* On the tab bar: 44px buttons, 6px of padding either side and a 1px rule
+     is 57, and a pixel under it rather than a strip of thread above it. */
+  .dx-assistant-composer {
+    bottom: calc(56px + env(safe-area-inset-bottom));
+    padding: 12px 16px 14px;
+  }
+}

@@ -32,7 +32,7 @@
  * a `toLocaleDateString` called in here would be a sixth place that decides
  * what locale means, and it would be the one nobody remembers to change.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
@@ -63,12 +63,13 @@ export interface ChartPoint {
 const STEP_RUNGS = [1, 2, 5, 10];
 
 /*
- * Intervals aimed for between the baseline and the top gridline — so six
- * labels at most, four at worst once the step is rounded onto a rung. Fewer
- * than four and the eye has nothing to interpolate against; more than six and
- * the gridlines are louder than the series they are there to measure.
+ * Intervals aimed for between the baseline and the top gridline. v3 draws
+ * three gridlines (baseline, middle, top) and lets the series carry the
+ * panel; three intervals on the nice-step ladder lands on three to five, which
+ * keeps v3's quiet axis while every label stays a number a reader can add up
+ * (v3's own 0 / 33 / 66 is the peak divided, which is not).
  */
-const TARGET_INTERVALS = 5;
+const TARGET_INTERVALS = 3;
 
 /* Headroom above the top gridline, so its label is not cut by the panel and a
    series that reaches the top does not read as clipped. */
@@ -83,7 +84,7 @@ const PAD_BOTTOM = 28;
 const GUTTER_MIN = 34;
 
 /*
- * The digit advance of the 11px tabular face `.pa-chart-tick` is set in.
+ * The digit advance of the 11px tabular face `.dx-chart-tick` is set in.
  *
  * A text node cannot be measured before it is drawn, and drawing it to measure
  * it costs a second layout pass on every render. One estimate here is cheaper
@@ -191,6 +192,8 @@ export function AnalyticsChart({
   labelRedeemed: string;
   emptyText?: string;
 }): ReactElement {
+  /* The area's gradient needs an id, and two charts on one page must not share one. */
+  const fadeId = `dx-chart-fade-${useId().replace(/:/g, '')}`;
   const plotRef = useRef<HTMLDivElement | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
   /*
@@ -325,7 +328,7 @@ export function AnalyticsChart({
   /* Hooks first, and the early return after them: an empty panel that returned
      before `useEffect` would change the hook order the frame the first day of
      data arrived. */
-  if (count < 2) return <p className="pa-chart-empty">{emptyText}</p>;
+  if (count < 2) return <p className="dx-chart-empty">{emptyText}</p>;
 
   /* Clamped rather than trusted: the panel's date range is a control, so
      `points` can shrink under a hover that is already held, and an index one
@@ -336,7 +339,7 @@ export function AnalyticsChart({
   const dates = dateTicks(count, plotW);
 
   return (
-    <figure className="pa-chart">
+    <figure className="dx-chart">
       {/*
         No legend here.
 
@@ -351,10 +354,10 @@ export function AnalyticsChart({
         name the two rows of the hover tooltip, which is the other place a
         reader has to be told which line is which.
       */}
-      <div className="pa-chart-plot" ref={plotRef}>
+      <div className="dx-chart-plot" ref={plotRef}>
         {w > 0 && h > 0 && (
           <svg
-            className="pa-chart-svg"
+            className="dx-chart-svg"
             viewBox={`0 0 ${w} ${h}`}
             role="img"
             aria-label={`${labelVisits} · ${labelRedeemed}`}
@@ -365,6 +368,14 @@ export function AnalyticsChart({
             onBlur={() => show(null)}
             onKeyDown={trackKeys}
           >
+            {/* v3's area: the accent fading to nothing toward the baseline. The
+                stops take their colour from the sheet, so the theme decides it. */}
+            <defs>
+              <linearGradient id={fadeId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" className="dx-chart-stop" />
+                <stop offset="1" className="dx-chart-stop" data-end="true" />
+              </linearGradient>
+            </defs>
             {/* The gridline and its label are one pair drawn in one space, at
                 one y. That is the whole point of the rewrite: they cannot
                 disagree, because there is no second coordinate system for them
@@ -372,7 +383,7 @@ export function AnalyticsChart({
             {scale.ticks.map((value) => (
               <g key={value}>
                 <line
-                  className="pa-chart-grid"
+                  className="dx-chart-grid"
                   data-base={value === 0 ? 'true' : undefined}
                   x1={gutter}
                   x2={w - PAD_RIGHT}
@@ -380,7 +391,7 @@ export function AnalyticsChart({
                   y2={yOf(value)}
                 />
                 <text
-                  className="pa-chart-tick"
+                  className="dx-chart-tick"
                   x={gutter - TICK_GAP + 4}
                   y={yOf(value)}
                   textAnchor="end"
@@ -391,14 +402,14 @@ export function AnalyticsChart({
               </g>
             ))}
 
-            <path className="pa-chart-area" d={visitsArea} />
-            <path className="pa-chart-line" d={visitsLine} />
-            <path className="pa-chart-line" data-series="redeemed" d={redeemedLine} />
+            <path className="dx-chart-area" d={visitsArea} fill={`url(#${fadeId})`} />
+            <path className="dx-chart-line" d={visitsLine} />
+            <path className="dx-chart-line" data-series="redeemed" d={redeemedLine} />
 
             {dates.map((index) => (
               <text
                 key={index}
-                className="pa-chart-date"
+                className="dx-chart-date"
                 x={xOf(index)}
                 y={baseline + 17}
                 textAnchor={index === count - 1 ? 'end' : index === 0 ? 'start' : 'middle'}
@@ -414,23 +425,23 @@ export function AnalyticsChart({
               fade. `pointer-events: none` in the sheet keeps it out of the
               way of the move handler it is drawn by.
             */}
-            <g className="pa-chart-cursor" data-on={hover === null ? 'false' : 'true'}>
+            <g className="dx-chart-cursor" data-on={hover === null ? 'false' : 'true'}>
               <line
-                className="pa-chart-cursor-line"
+                className="dx-chart-cursor-line"
                 x1={xOf(active)}
                 x2={xOf(active)}
                 y1={PAD_TOP}
                 y2={baseline}
               />
               <circle
-                className="pa-chart-dot"
+                className="dx-chart-dot"
                 data-series="redeemed"
                 cx={xOf(active)}
                 cy={yOf(activePoint.redemptions)}
                 r={3.5}
               />
               <circle
-                className="pa-chart-dot"
+                className="dx-chart-dot"
                 cx={xOf(active)}
                 cy={yOf(activePoint.visits)}
                 r={4}
@@ -440,7 +451,7 @@ export function AnalyticsChart({
                   on, covering the tick it lands between. A tooltip alone says
                   what the number is; this says where it sits. */}
               <rect
-                className="pa-chart-pill"
+                className="dx-chart-pill"
                 x={0}
                 y={yOf(activePoint.visits) - PILL_H / 2}
                 width={Math.max(gutter - 4, 0)}
@@ -448,7 +459,7 @@ export function AnalyticsChart({
                 rx={3}
               />
               <text
-                className="pa-chart-pill-text"
+                className="dx-chart-pill-text"
                 x={gutter - TICK_GAP + 4}
                 y={yOf(activePoint.visits)}
                 textAnchor="end"
@@ -460,14 +471,14 @@ export function AnalyticsChart({
           </svg>
         )}
 
-        <div className="pa-chart-tip" ref={tipRef} data-on={hover === null ? 'false' : 'true'}>
-          <span className="pa-chart-tip-day">{formatFull(activePoint.day)}</span>
-          <span className="pa-chart-tip-row">
+        <div className="dx-chart-tip" ref={tipRef} data-on={hover === null ? 'false' : 'true'}>
+          <span className="dx-chart-tip-day">{formatFull(activePoint.day)}</span>
+          <span className="dx-chart-tip-row">
             <i />
             {labelVisits}
             <b>{formatNumber(activePoint.visits)}</b>
           </span>
-          <span className="pa-chart-tip-row">
+          <span className="dx-chart-tip-row">
             <i data-series="redeemed" />
             {labelRedeemed}
             <b>{formatNumber(activePoint.redemptions)}</b>

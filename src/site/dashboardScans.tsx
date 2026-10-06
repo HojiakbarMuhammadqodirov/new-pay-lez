@@ -1,16 +1,15 @@
 /**
- * The Scan activity screen's two working panels: the counter tool and the till
- * log.
+ * Scan activity (v3 §3.8): the till log, and the counter tool behind a button.
  *
- * ── the till log is the server's now ──────────────────────────────────────
+ * ── the till log is the server's ──────────────────────────────────────────
  *
  * `GET …/scans` returns the committed transactions at the venue inside the range
- * picker's window, newest first, twelve to a page, with the three counts the
+ * picker's window, newest first, twelve to a page, with the counts the
  * segmented control needs over the whole window. Paging, the segment and the
  * window are all the server's — a client that received six months of receipts
  * to page through twelve would have received six months of receipts.
  *
- * Two rules the log must not break, and both are the server's first:
+ * Three rules the log must not break, and all three are the server's first:
  *
  *  - **A name only where the customer shared it.** `who` is `null` for
  *    everybody without an unrevoked sharing consent for this venue, which is
@@ -20,64 +19,163 @@
  *    inside the cooldown or a second that day: it happened at the till, and a
  *    log that hid it would disagree with the till roll the owner reconciles
  *    against.
+ *  - **"Confirmed by" is a name or nothing.** The server records the owner as
+ *    nobody (`null`) and so does every transaction from before teams existed,
+ *    so a `null` cannot be printed as "you" — it would claim the owner rang up
+ *    a year of scans they never touched. v3 draws no staff column; the name sits
+ *    under the receipt mark it belongs to.
  *
- * `DEMO_SCANS` is gone; the demo pages `dashboardDemo.ts`'s own till roll
- * through the same response shape, so both paths render through `scanFromApi`.
+ * ── what v3 draws that this screen does not ───────────────────────────────
+ *
+ * The **Pass** segment and the purple "Pass · Daily Brew" tag: a scan row
+ * carries no subscription pass (the server's `intent` is earn, voucher or
+ * reward, and `SCAN_SEGMENTS` is all / first / again), so a fourth button would
+ * filter to nothing for ever. The "All branches" bar: no endpoint aggregates
+ * venues, and the frame's switcher already says which one this is.
  *
  * ── the counter tool ──────────────────────────────────────────────────────
  *
- * The one money input on the dashboard that is **not** in the reader's currency:
- * see the note on `Counter`.
+ * v3 has no counter tool, and this one is real — a visit recorded here is
+ * opened, priced and confirmed on the server in one press — so it is kept, as a
+ * drawer behind "Record at the counter" rather than a panel above the log. The
+ * log is what the screen is; the tool is a thing you open with a customer in
+ * front of you. Today's three figures sit at the head of that drawer, where the
+ * person at the till is looking.
+ *
+ * The bill is the one money input on the dashboard that is **not** in the
+ * reader's currency: see the note on `CounterDrawer`.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  chain,
   counterLookup,
   counterRecord,
+  exportCsv,
   isNoSession,
   majorToMinor,
   minorToEuro,
   usePartnerScans,
+  usePartnerToday,
+  usePartnerVenue,
   type CounterLookup,
   type CounterResult,
   type PartnerVenue,
   type ScanSegment,
   type ScansResponse,
+  type TodayResponse,
 } from './api/partner';
 import { ApiError } from './api/client';
-import { NumberWell } from './dashboardControls';
-import { demoScans } from './dashboardDemo';
+import type { ApiState } from './api/useApi';
+import { DEMO_TODAY, DEMO_VENUE, demoScans } from './dashboardDemo';
 import { useNum, useVenueDates, useVenueMoney } from './dashboardFormat';
+import { Button, Card, DxIcon, Drawer, Field, PageHead, Pill, Segmented, Table } from './dashboardKit';
+import { initialsOf } from './dashboardKitHooks';
 import { useDashboard } from './dashboardShell';
 import { DEMO_MODE } from './demoMode';
-import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import { FX, type FxCode } from './i18n/fx';
-import { PD_RANGES, PD_SCAN_PAGE, scanFromApi, type ScanRow } from './partnerMetrics';
+import { metricValue, PD_RANGES, PD_SCAN_PAGE, scanFromApi, type ScanRow } from './partnerMetrics';
+import './dashboard-scans.css';
 
 /** Which rows the segmented control is showing. Index-aligned with `copy.filters`. */
 const SEGMENTS: ScanSegment[] = ['all', 'first', 'again'];
 
-/**
- * Initials for the avatar disc — for a *shared* name only.
- *
- * Two words at most, because three initials in a 28px circle is a texture
- * rather than a name.
- */
-function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => [...word][0] ?? '')
-    .join('')
-    .toUpperCase();
+/* ═════════════════════════════════════════════════════════════ the screen ══ */
+
+export function Scans() {
+  const dashboard = useCopy().dashboard;
+  const { openDrawer, toast } = useDashboard();
+
+  const venueApi = usePartnerVenue();
+  const liveVenue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const venue = liveVenue ?? (DEMO_MODE ? DEMO_VENUE : null);
+  const todayApi = usePartnerToday(liveVenue?.id ?? null);
+  const todayState = chain(venueApi, todayApi);
+
+  const [counterOpen, setCounterOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  /* Bumped after a visit is recorded, so the log re-reads the page it is on. */
+  const [logSignal, setLogSignal] = useState(0);
+
+  const reloadToday = todayApi.reload;
+  const recorded = useCallback(() => {
+    reloadToday();
+    setLogSignal((n) => n + 1);
+  }, [reloadToday]);
+
+  /* The same download the frame's head does: a blob and a synthetic click,
+     because the CSV arrives in the body rather than at a URL. */
+  const download = async () => {
+    if (exporting) return;
+    if (liveVenue === null) {
+      toast(dashboard.drawer.deal.needsSession);
+      return;
+    }
+    setExporting(true);
+    try {
+      const file = await exportCsv(liveVenue.id);
+      const url = URL.createObjectURL(new Blob([file.csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast(dashboard.actions.exported);
+    } catch (cause) {
+      toast(
+        cause instanceof ApiError && cause.status === 403
+          ? dashboard.acts.exportLocked
+          : cause instanceof ApiError && cause.status === 0
+            ? dashboard.acts.offline
+            : fill(dashboard.acts.refused, { why: cause instanceof Error ? cause.message : String(cause) }),
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const screen = dashboard.screens.scans;
+
+  return (
+    <>
+      <PageHead
+        title={screen.name}
+        subtitle={screen.lede}
+        actions={
+          <>
+            <Button variant="secondary" icon="download" disabled={exporting} onClick={() => void download()}>
+              {dashboard.actions.exportCsv}
+            </Button>
+            <Button variant="secondary" icon="scans" onClick={() => setCounterOpen(true)}>
+              {dashboard.scans.counter.title}
+            </Button>
+            <Button variant="primary" icon="plus" onClick={() => openDrawer('campaign')}>
+              {dashboard.actions.newCampaign}
+            </Button>
+          </>
+        }
+      />
+
+      <ScanLog venue={venue} live={liveVenue !== null} reloadSignal={logSignal} />
+
+      {counterOpen && (
+        <CounterDrawer
+          venue={liveVenue}
+          demo={liveVenue === null && venue !== null}
+          today={todayState}
+          onRecorded={recorded}
+          onClose={() => setCounterOpen(false)}
+        />
+      )}
+    </>
+  );
 }
 
-/* ══════════════════════════════════════════════════════════════ the log ══ */
+/* ═════════════════════════════════════════════════════════════════ the log ══ */
 
-export function ScanLog({
+function ScanLog({
   venue,
   live,
   reloadSignal,
@@ -152,33 +250,22 @@ export function ScanLog({
   const rangeLabel = rangeIndex >= 0 ? dashboard.rangeLabels[rangeIndex] : '';
 
   return (
-    <div className="pd-glass pd-panel ps-panel" data-solid="true" data-reveal>
-      <div className="ps-head">
-        {/* One of three and always one, which is what a `radiogroup` is. The
-            count on each is the server's, over the whole window. */}
-        <div className="ps-seg" role="radiogroup" aria-label={copy.columns[2]}>
-          {SEGMENTS.map((value, index) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={segment === value}
-              data-on={segment === value ? 'true' : undefined}
-              onClick={() => setSegment(value)}
-            >
-              {copy.filters[index]}
-              {counts && <i>{num(counts[value])}</i>}
-            </button>
-          ))}
-        </div>
-        <span className="ps-count">
+    <Card pad="none" className="dx-scans">
+      <div className="dx-scans-bar">
+        <Segmented
+          label={copy.columns[2]}
+          value={segment}
+          onChange={setSegment}
+          options={SEGMENTS.map((value, index) => ({ value, label: copy.filters[index] }))}
+        />
+        <span className="dx-scans-count">
           {counts ? fill(copy.count, { n: num(shownTotal) }) : ''}
-          {rangeLabel && ` · ${rangeLabel}`}
+          {counts && rangeLabel ? ` · ${rangeLabel}` : ''}
         </span>
       </div>
 
       {response === null ? (
-        <p className="pd-fine">
+        <p className="dx-fine dx-scans-note">
           {scansApi.state.status === 'error'
             ? isNoSession(scansApi.state.error)
               ? dashboard.unmeasured.noSession
@@ -186,18 +273,21 @@ export function ScanLog({
             : dashboard.unmeasured.asking}
         </p>
       ) : shownTotal === 0 ? (
-        <div className="ps-empty">
-          <p className="pd-fine">{segment === 'all' ? copy.emptyWindow : copy.emptySegment}</p>
-          {segment === 'all' && <p className="pd-fine">{dashboard.empty[7].body}</p>}
+        <div className="dx-scans-empty">
+          <span className="dx-scans-empty-ico" aria-hidden>
+            <DxIcon name="scans" size={20} />
+          </span>
+          <h2>{segment === 'all' ? dashboard.empty.scans.title : copy.emptySegment}</h2>
+          {segment === 'all' && <p className="dx-fine">{dashboard.empty.scans.body}</p>}
         </div>
       ) : (
         <>
-          <div className="ps-scroll" aria-busy={scansApi.state.status === 'loading' || undefined}>
-            <table className="ps-table">
+          <div aria-busy={scansApi.state.status === 'loading' || undefined}>
+            <Table minWidth={1080} label={dashboard.screens.scans.name}>
               <thead>
                 <tr>
                   {copy.columns.map((label, index) => (
-                    <th key={label} data-col={index}>
+                    <th key={label} data-align={index === 3 || index === 4 ? 'right' : undefined}>
                       {label}
                     </th>
                   ))}
@@ -208,10 +298,10 @@ export function ScanLog({
                   <Row key={row.id} row={row} currency={currency} timezone={timezone} />
                 ))}
               </tbody>
-            </table>
+            </Table>
           </div>
 
-          <div className="ps-foot">
+          <div className="dx-scans-foot">
             <span>
               {fill(copy.page, {
                 from: num(at * PD_SCAN_PAGE + 1),
@@ -219,28 +309,18 @@ export function ScanLog({
                 total: num(shownTotal),
               })}
             </span>
-            <div className="ps-pager">
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={at === 0}
-                onClick={() => setPage(at - 1)}
-              >
+            <div className="dx-scans-pager">
+              <Button variant="secondary" disabled={at === 0} onClick={() => setPage(at - 1)}>
                 {copy.prev}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={at >= pages - 1}
-                onClick={() => setPage(at + 1)}
-              >
+              </Button>
+              <Button variant="secondary" disabled={at >= pages - 1} onClick={() => setPage(at + 1)}>
                 {copy.next}
-              </button>
+              </Button>
             </div>
           </div>
         </>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -260,35 +340,33 @@ function Row({ row, currency, timezone }: { row: ScanRow; currency: string; time
 
   return (
     <tr data-uncounted={row.counted ? undefined : 'true'}>
-      <td data-col="0">
-        <b>{dates.day(row.at)}</b>
-        <i>{dates.time(row.at)}</i>
+      <td>
+        <b className="dx-scans-day">{dates.day(row.at)}</b>
+        <span className="dx-scans-sub">{dates.time(row.at)}</span>
       </td>
 
-      <td data-col="1">
+      <td>
         {row.who === null ? (
-          <span className="ps-who" data-anon="true" title={copy.anonymousNote}>
+          <span className="dx-scans-who" data-anon="true" title={copy.anonymousNote}>
             {copy.anonymous}
           </span>
         ) : (
-          <span className="ps-who">
-            <i aria-hidden="true">{initials(row.who)}</i>
+          <span className="dx-scans-who">
+            <i aria-hidden="true">{initialsOf(row.who)}</i>
             {row.who}
           </span>
         )}
       </td>
 
-      <td data-col="2">
+      <td>
         {/* A scan that did not count created no visit, so it is neither a first
             visit nor a return — it is the third thing, and says which rules can
             stop a scan counting. */}
         {row.counted ? (
-          <span className="ps-first" data-on={row.first ? 'true' : undefined}>
-            {row.first ? copy.first : copy.again}
-          </span>
+          <Pill tone={row.first ? 'live' : 'neutral'}>{row.first ? copy.first : copy.again}</Pill>
         ) : (
-          <span className="ps-first" data-off="true" title={copy.notCountedNote}>
-            {copy.notCounted}
+          <span title={copy.notCountedNote}>
+            <Pill tone="paused">{copy.notCounted}</Pill>
           </span>
         )}
       </td>
@@ -297,76 +375,78 @@ function Row({ row, currency, timezone }: { row: ScanRow; currency: string; time
           `'unit'` rather than `'exact'`: a till line is the one place on this
           dashboard where the minor units are the point. A redemption carries
           what it took off, named by what it was. */}
-      <td data-col="3" className="ps-money">
+      <td data-align="right" className="dx-scans-money">
         <b>{money(row.spent, 'unit')}</b>
-        <i>{venueMoney(row.spentMinor, currency)}</i>
+        <span className="dx-scans-sub">{venueMoney(row.spentMinor, currency)}</span>
         {row.discount > 0 && (
-          <i className="ps-discount">
+          <span className="dx-scans-sub">
             {row.intent === 'earn' ? '' : `${dashboard.acts.intents[row.intent]} · `}
             {fill(copy.discount, { amount: money(row.discount, 'unit') })}
-          </i>
+          </span>
         )}
       </td>
 
-      <td data-col="4">
-        <span className="ps-points" data-zero={row.points === 0 ? 'true' : undefined}>
+      <td data-align="right">
+        <span className="dx-scans-points" data-zero={row.points === 0 ? 'true' : undefined}>
           {row.points > 0 ? `+${num(row.points)}` : '0'}
         </span>
       </td>
 
-      <td data-col="5">
-        <span className="ps-receipt">{row.receipt}</span>
+      <td>
+        <span className="dx-scans-receipt">{row.receipt}</span>
+        {row.confirmedBy ? (
+          <span className="dx-scans-sub dx-scans-by">{fill(copy.confirmedBy, { name: row.confirmedBy })}</span>
+        ) : null}
       </td>
 
-      <td data-col="6">
-        <span className="ps-site">
-          <b>
-            <Icon name="pin" size={12} />
-            {row.site.name}
-          </b>
-          {/* The site's own coordinates when it has them, its address when it
-              does not, and nothing when it has neither — per-scan GPS is not
-              collected anywhere. */}
-          {row.site.lat !== null && row.site.lng !== null ? (
-            <i>
-              {row.site.lat.toFixed(4)}, {row.site.lng.toFixed(4)}
-            </i>
-          ) : row.site.address ? (
-            <i>{row.site.address}</i>
-          ) : null}
+      <td>
+        <span className="dx-scans-site">
+          <DxIcon name="pin" size={12} strokeWidth={2} />
+          {row.site.name}
         </span>
+        {/* The site's own coordinates when it has them, its address when it
+            does not, and nothing when it has neither — per-scan GPS is not
+            collected anywhere. */}
+        {row.site.lat !== null && row.site.lng !== null ? (
+          <span className="dx-scans-sub dx-scans-mono">
+            {row.site.lat.toFixed(4)}, {row.site.lng.toFixed(4)}
+          </span>
+        ) : row.site.address ? (
+          <span className="dx-scans-sub">{row.site.address}</span>
+        ) : null}
       </td>
 
-      <td data-col="7">
+      <td className="dx-scans-progress">
         {row.progress === null ? (
-          <span className="ps-progress">
-            <i>{copy.noCampaign}</i>
-            <b className="ps-none">—</b>
-          </span>
+          <>
+            <span className="dx-scans-sub">{copy.noCampaign}</span>
+            <b>—</b>
+          </>
         ) : (
-          <span className="ps-progress">
-            <i>{row.progress.campaign}</i>
-            <span className="ps-progress-row">
+          <>
+            <span className="dx-scans-sub">{row.progress.campaign}</span>
+            <span className="dx-scans-progress-row">
               <b>
                 {fill(copy.progress, {
                   done: num(row.progress.done),
                   need: num(row.progress.need),
                 })}
               </b>
-              <em data-ready={row.progress.rewardEarned ? 'true' : undefined}>
+              <em>
                 {row.progress.rewardEarned
                   ? copy.ready
                   : fill(copy.toGo, { n: num(Math.max(0, row.progress.need - row.progress.done)) })}
               </em>
             </span>
-            <s>
-              <u
+            <span className="dx-scans-bar-track" aria-hidden>
+              <i
+                data-done={row.progress.rewardEarned || row.progress.done >= row.progress.need ? 'true' : undefined}
                 style={{
                   width: `${Math.min(100, (row.progress.done / Math.max(1, row.progress.need)) * 100)}%`,
                 }}
               />
-            </s>
-          </span>
+            </span>
+          </>
         )}
       </td>
     </tr>
@@ -374,6 +454,23 @@ function Row({ row, currency, timezone }: { row: ScanRow; currency: string; time
 }
 
 /* ═══════════════════════════════════════════════════════ the counter tool ══ */
+
+/** One of today's figures: a number, or the withheld dash — never a zero for "not told". */
+function TodayFigure({ label, value }: { label: string; value: string | null }) {
+  const dashboard = useCopy().dashboard;
+  return (
+    <div className="dx-scans-today-cell">
+      <span>{label}</span>
+      {value === null ? (
+        <b data-withheld="true" title={dashboard.unmeasured.withheld}>
+          —
+        </b>
+      ) : (
+        <b>{value}</b>
+      )}
+    </div>
+  );
+}
 
 /**
  * Record a visit from the dashboard: who, the bill, confirm.
@@ -403,19 +500,24 @@ function Row({ row, currency, timezone }: { row: ScanRow; currency: string; time
  * records the visit and moves the caret back to the code for the next customer.
  * Somebody at a till does not reach for a mouse between two customers.
  */
-export function Counter({
+function CounterDrawer({
   venue,
-  demoVenue,
+  demo,
+  today,
   onRecorded,
+  onClose,
 }: {
   /** The live venue. `null` when there is no session to record against. */
   venue: PartnerVenue | null;
-  /** Set only under `?demo=1`, where the panel explains why it cannot record. */
-  demoVenue: PartnerVenue | null;
+  /** Under `?demo=1`, where the drawer explains why it cannot record. */
+  demo: boolean;
+  today: ApiState<TodayResponse>;
   onRecorded: () => void;
+  onClose: () => void;
 }) {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.scans.counter;
+  const money = useMoney();
   const num = useNum();
   const venueMoney = useVenueMoney();
   const dates = useVenueDates(venue?.timezone ?? null);
@@ -426,7 +528,7 @@ export function Counter({
      code nobody looked at. */
   const [looked, setLooked] = useState('');
   const [lookup, setLookup] = useState<CounterLookup | null>(null);
-  const [bill, setBill] = useState<number | null>(null);
+  const [bill, setBill] = useState('');
   const [phase, setPhase] = useState<'idle' | 'looking' | 'recording'>('idle');
   const [problem, setProblem] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<CounterResult | null>(null);
@@ -443,17 +545,48 @@ export function Counter({
     if (receipt) codeRef.current?.focus();
   }, [receipt]);
 
+  /* Today's figures: the server's, or the demo's under `?demo=1` with no
+     session, or nothing at all — a row of dashes is not drawn for a state
+     that was never asked. */
+  const todayData =
+    today.status === 'ready'
+      ? today.data
+      : today.status === 'error' && DEMO_MODE && isNoSession(today.error)
+        ? DEMO_TODAY
+        : null;
+  const todayCurrency = venue?.currency ?? DEMO_VENUE.currency;
+  const figure = (value: number | null, format: (n: number) => string) =>
+    value === null ? null : format(value);
+
+  const todayRow = todayData ? (
+    <section className="dx-scans-today" aria-label={dashboard.scans.todayTitle}>
+      <span className="dx-eyebrow" data-tone="faint">
+        {dashboard.scans.todayTitle}
+      </span>
+      <div>
+        <TodayFigure label={dashboard.scans.todayLabels[0]} value={figure(metricValue(todayData.visits), num)} />
+        <TodayFigure label={dashboard.scans.todayLabels[1]} value={figure(metricValue(todayData.customers), num)} />
+        <TodayFigure
+          label={dashboard.scans.todayLabels[2]}
+          value={figure(metricValue(todayData.salesMinor), (minor) =>
+            money(minorToEuro(minor, todayCurrency), 'exact'),
+          )}
+        />
+      </div>
+    </section>
+  ) : null;
+
   if (venue === null) {
     /* No session to record against. Under the demo that is the honest state
        too: a till tool that pretended to record a visit would teach somebody
        that it had. */
     return (
-      <section className="pd-glass pd-panel ps-counter" data-reveal>
-        <div className="ps-counter-head">
-          <h2 className="pd-title">{copy.title}</h2>
+      <Drawer title={copy.title} sub={copy.lede} onClose={onClose}>
+        <div className="dx-sections">
+          {todayRow}
+          <p className="dx-fine">{demo ? copy.needsVenue : dashboard.unmeasured.noSession}</p>
         </div>
-        <p className="pd-fine">{demoVenue ? copy.needsVenue : dashboard.unmeasured.noSession}</p>
-      </section>
+      </Drawer>
     );
   }
 
@@ -502,7 +635,7 @@ export function Counter({
   const clear = () => {
     setLookup(null);
     setLooked('');
-    setBill(null);
+    setBill('');
     setProblem(null);
     codeRef.current?.focus();
   };
@@ -516,7 +649,7 @@ export function Counter({
     try {
       const found = await counterLookup(venue.id, typed);
       setLooked(typed);
-      setBill(null);
+      setBill('');
       setLookup(found);
     } catch (cause) {
       setLookup(null);
@@ -526,27 +659,22 @@ export function Counter({
     }
   };
 
-  const record = async (typed: number | null) => {
+  const record = async () => {
     if (lookup === null || phase !== 'idle') return;
-    const value = typed ?? bill;
-    if (value === null || !(value > 0)) {
+    const value = Number(bill.replace(',', '.'));
+    if (bill.trim() === '' || !Number.isFinite(value) || !(value > 0)) {
       setProblem(copy.badAmount);
       return;
     }
     setPhase('recording');
     setProblem(null);
     try {
-      const result = await counterRecord(
-        venue.id,
-        looked,
-        majorToMinor(value, currency),
-        crypto.randomUUID(),
-      );
+      const result = await counterRecord(venue.id, looked, majorToMinor(value, currency), crypto.randomUUID());
       setReceipt(result);
       setLookup(null);
       setLooked('');
       setCode('');
-      setBill(null);
+      setBill('');
       onRecorded();
     } catch (cause) {
       setProblem(refusal(cause));
@@ -558,190 +686,197 @@ export function Counter({
   const customer = lookup?.customer ?? null;
 
   return (
-    <section className="pd-glass pd-panel ps-counter" data-reveal aria-labelledby="ps-counter-title">
-      <div className="ps-counter-head">
-        <h2 className="pd-title" id="ps-counter-title">
-          {copy.title}
-        </h2>
-        <p className="pd-fine">{copy.lede}</p>
-      </div>
+    <Drawer title={copy.title} sub={copy.lede} onClose={onClose}>
+      <div className="dx-sections">
+        {todayRow}
 
-      <form
-        className="ps-counter-find"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void find();
-        }}
-      >
-        <label className="field ps-counter-code">
-          <span className="field-label">{copy.codeLabel}</span>
-          <input
-            ref={codeRef}
-            value={code}
-            placeholder={copy.codePlaceholder}
-            autoComplete="off"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            enterKeyHint="search"
-            onChange={(event) => {
-              setCode(event.target.value);
-              if (lookup !== null && event.target.value.trim() !== looked) {
-                setLookup(null);
-                setBill(null);
-              }
-            }}
-          />
-        </label>
-        <button
-          type="submit"
-          className="btn btn-ghost"
-          disabled={phase !== 'idle' || code.trim() === ''}
+        <form
+          className="dx-scans-find"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void find();
+          }}
         >
-          {phase === 'looking' ? copy.looking : copy.lookup}
-        </button>
-      </form>
+          <Field label={copy.codeLabel}>
+            {/* A bare `input` with the kit's class rather than `Input`: the kit's
+                props type carries no `ref`, and the caret has to come back here. */}
+            <input
+              className="dx-input"
+              ref={codeRef}
+              value={code}
+              placeholder={copy.codePlaceholder}
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="search"
+              onChange={(event) => {
+                setCode(event.target.value);
+                if (lookup !== null && event.target.value.trim() !== looked) {
+                  setLookup(null);
+                  setBill('');
+                }
+              }}
+            />
+          </Field>
+          <Button type="submit" variant="secondary" disabled={phase !== 'idle' || code.trim() === ''}>
+            {phase === 'looking' ? copy.looking : copy.lookup}
+          </Button>
+        </form>
 
-      {lookup !== null && customer !== null && (
-        <div className="ps-counter-card">
-          <div className="ps-counter-who">
-            {/* Initials only for a name the customer shared; otherwise the handle
-                mark, which says "an account" and nothing about a person. */}
-            <i aria-hidden="true">{customer.name ? initials(customer.name) : '@'}</i>
-            <span>
-              <b>{customer.handle ?? copy.noHandle}</b>
-              <em data-quiet={customer.name ? undefined : 'true'}>{customer.name ?? copy.notShared}</em>
-            </span>
-            <span className="ps-first" data-on={customer.firstVisit ? 'true' : undefined}>
-              {customer.firstVisit ? copy.firstVisit : copy.returning}
-            </span>
-          </div>
-
-          {lookup.kind === 'voucher' && (
-            <div className="ps-counter-offer">
-              <span className="console-label">{copy.voucherTitle}</span>
-              <b>
-                {fill(copy.voucher, {
-                  pct: num(lookup.voucher.discountPct),
-                  cap: venueMoney(lookup.voucher.maxDiscountMinor, currency),
-                })}
-              </b>
-              <em>{fill(copy.expires, { date: dates.long(lookup.voucher.expiresAt) })}</em>
-              <code>{lookup.voucher.code}</code>
-            </div>
-          )}
-
-          {lookup.kind === 'reward' && (
-            <div className="ps-counter-offer">
-              <span className="console-label">{copy.rewardTitle}</span>
-              <b>{lookup.reward.label}</b>
-              <em>
-                {fill(copy.rewardWorth, { amount: venueMoney(lookup.reward.costMinor, currency) })}
-                {' · '}
-                {fill(copy.expires, { date: dates.long(lookup.reward.expiresAt) })}
-              </em>
-              <code>{lookup.reward.code}</code>
-            </div>
-          )}
-
-          <div className="ps-counter-stamps">
-            {customer.stamps.length === 0 ? (
-              <p className="pd-fine">{copy.noCampaigns}</p>
-            ) : (
-              customer.stamps.map((card) => (
-                <div key={card.campaignId}>
-                  <span>{card.campaign}</span>
-                  <b>{fill(copy.stamps, { done: num(card.done), need: num(card.need) })}</b>
-                  <s aria-hidden="true">
-                    <u style={{ width: `${Math.min(100, (card.done / Math.max(1, card.need)) * 100)}%` }} />
-                  </s>
-                </div>
-              ))
-            )}
-          </div>
-
-          <form
-            className="ps-counter-bill"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void record(null);
-            }}
-          >
-            <div className="field">
-              <span className="field-label">{copy.billLabel}</span>
-              <NumberWell
-                inputRef={billRef}
-                value={bill}
-                onChange={setBill}
-                unit={fx.symbol}
-                label={copy.billLabel}
-                step={1 / 10 ** fx.decimals}
-                min={0}
-                wide
-                describedBy="ps-counter-bill-note"
-                onEnter={(typed) => void record(typed)}
-              />
-              <span className="field-help" id="ps-counter-bill-note">
-                {fill(copy.billNote, { currency: fx.code })}
-                {typeof ceiling === 'number' && ` ${fill(copy.billCeiling, { amount: venueMoney(ceiling, currency) })}`}
+        {lookup !== null && customer !== null && (
+          <section className="dx-scans-card">
+            <div className="dx-scans-card-who">
+              {/* Initials only for a name the customer shared; otherwise the
+                  handle mark, which says "an account" and nothing about a person. */}
+              <i aria-hidden="true">{customer.name ? initialsOf(customer.name) : '@'}</i>
+              <span>
+                <b>{customer.handle ?? copy.noHandle}</b>
+                <em data-quiet={customer.name ? undefined : 'true'}>{customer.name ?? copy.notShared}</em>
               </span>
+              <Pill tone={customer.firstVisit ? 'live' : 'neutral'}>
+                {customer.firstVisit ? copy.firstVisit : copy.returning}
+              </Pill>
             </div>
-            <div className="ps-counter-acts">
-              <button type="submit" className="btn btn-solid" disabled={phase !== 'idle'}>
-                {phase === 'recording' ? copy.recording : copy.confirm}
-              </button>
-              <button type="button" className="btn btn-ghost" onClick={clear}>
-                {copy.clear}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
-      {/* Polite, because every change here answers a press the person just made. */}
-      <div className="ps-counter-live" aria-live="polite">
-        {problem && (
-          <p className="field-error" role="alert">
-            {problem}
-          </p>
+            {lookup.kind === 'voucher' && (
+              <div className="dx-scans-offer">
+                <span className="dx-eyebrow">{copy.voucherTitle}</span>
+                <b>
+                  {fill(copy.voucher, {
+                    pct: num(lookup.voucher.discountPct),
+                    cap: venueMoney(lookup.voucher.maxDiscountMinor, currency),
+                  })}
+                </b>
+                <em>{fill(copy.expires, { date: dates.long(lookup.voucher.expiresAt) })}</em>
+                <code>{lookup.voucher.code}</code>
+              </div>
+            )}
+
+            {lookup.kind === 'reward' && (
+              <div className="dx-scans-offer">
+                <span className="dx-eyebrow">{copy.rewardTitle}</span>
+                <b>{lookup.reward.label}</b>
+                <em>
+                  {fill(copy.rewardWorth, { amount: venueMoney(lookup.reward.costMinor, currency) })}
+                  {' · '}
+                  {fill(copy.expires, { date: dates.long(lookup.reward.expiresAt) })}
+                </em>
+                <code>{lookup.reward.code}</code>
+              </div>
+            )}
+
+            <div className="dx-scans-stamps">
+              {customer.stamps.length === 0 ? (
+                <p className="dx-fine">{copy.noCampaigns}</p>
+              ) : (
+                customer.stamps.map((card) => (
+                  <div key={card.campaignId}>
+                    <span>{card.campaign}</span>
+                    <b>{fill(copy.stamps, { done: num(card.done), need: num(card.need) })}</b>
+                    <span className="dx-scans-bar-track" aria-hidden>
+                      <i
+                        data-done={card.done >= card.need ? 'true' : undefined}
+                        style={{ width: `${Math.min(100, (card.done / Math.max(1, card.need)) * 100)}%` }}
+                      />
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <form
+              className="dx-scans-bill"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void record();
+              }}
+            >
+              <Field
+                label={copy.billLabel}
+                help={
+                  <>
+                    {fill(copy.billNote, { currency: fx.code })}
+                    {typeof ceiling === 'number' &&
+                      ` ${fill(copy.billCeiling, { amount: venueMoney(ceiling, currency) })}`}
+                  </>
+                }
+              >
+                {/* The kit's unit well, drawn by hand for the same `ref` reason. */}
+                <span className="dx-input dx-unit">
+                  <input
+                    ref={billRef}
+                    type="number"
+                    inputMode="decimal"
+                    value={bill}
+                    min={0}
+                    step={1 / 10 ** fx.decimals}
+                    enterKeyHint="done"
+                    onChange={(event) => setBill(event.target.value)}
+                  />
+                  <span>{fx.symbol}</span>
+                </span>
+              </Field>
+              <div className="dx-scans-acts">
+                <Button type="submit" variant="primary" disabled={phase !== 'idle'}>
+                  {phase === 'recording' ? copy.recording : copy.confirm}
+                </Button>
+                <Button variant="secondary" onClick={clear}>
+                  {copy.clear}
+                </Button>
+              </div>
+            </form>
+          </section>
         )}
-        {receipt && (
-          <div className="ps-counter-receipt">
-            <span className="console-label">
-              <Icon name="check" size={14} strokeWidth={2.6} />
-              {copy.receiptTitle}
-              {receipt.lookup.customer.handle && ` · ${receipt.lookup.customer.handle}`}
-            </span>
-            <ul>
-              <li>{fill(copy.receiptBill, { amount: venueMoney(receipt.receipt.amountMinor, receipt.receipt.currency) })}</li>
-              <li>
-                {receipt.receipt.pointsGranted > 0
-                  ? fill(copy.points, { n: num(receipt.receipt.pointsGranted) })
-                  : copy.noPoints}
-              </li>
-              {receipt.receipt.discountMinor > 0 && (
+
+        {/* Polite, because every change here answers a press the person just made. */}
+        <div aria-live="polite">
+          {problem && (
+            <p className="dx-field-error" role="alert">
+              {problem}
+            </p>
+          )}
+          {receipt && (
+            <div className="dx-scans-receipt-card">
+              <span className="dx-eyebrow">
+                {copy.receiptTitle}
+                {receipt.lookup.customer.handle && ` · ${receipt.lookup.customer.handle}`}
+              </span>
+              <ul>
                 <li>
-                  {fill(copy.discount, {
-                    amount: venueMoney(receipt.receipt.discountMinor, receipt.receipt.currency),
+                  {fill(copy.receiptBill, {
+                    amount: venueMoney(receipt.receipt.amountMinor, receipt.receipt.currency),
                   })}
                 </li>
-              )}
-              {receipt.receipt.stamped && <li>{copy.stamped}</li>}
-              {receipt.receipt.rewardEarned && (
                 <li>
-                  <b>
-                    {fill(copy.rewardEarned, {
-                      label: receipt.receipt.rewardEarned.label,
-                      code: receipt.receipt.rewardEarned.code,
-                    })}
-                  </b>
+                  {receipt.receipt.pointsGranted > 0
+                    ? fill(copy.points, { n: num(receipt.receipt.pointsGranted) })
+                    : copy.noPoints}
                 </li>
-              )}
-              {!receipt.receipt.visitCounted && <li>{copy.notCounted}</li>}
-            </ul>
-          </div>
-        )}
+                {receipt.receipt.discountMinor > 0 && (
+                  <li>
+                    {fill(copy.discount, {
+                      amount: venueMoney(receipt.receipt.discountMinor, receipt.receipt.currency),
+                    })}
+                  </li>
+                )}
+                {receipt.receipt.stamped && <li>{copy.stamped}</li>}
+                {receipt.receipt.rewardEarned && (
+                  <li>
+                    <b>
+                      {fill(copy.rewardEarned, {
+                        label: receipt.receipt.rewardEarned.label,
+                        code: receipt.receipt.rewardEarned.code,
+                      })}
+                    </b>
+                  </li>
+                )}
+                {!receipt.receipt.visitCounted && <li>{copy.notCounted}</li>}
+              </ul>
+            </div>
+          )}
+        </div>
       </div>
-    </section>
+    </Drawer>
   );
 }

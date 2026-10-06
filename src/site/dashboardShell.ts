@@ -1,6 +1,24 @@
 import { createContext, useContext } from 'react';
 
+import type { PartnerVenue } from './api/partner';
+import type { DashScreenId } from './content';
 import { RANGE_DAYS, type RangeDays } from './partnerMetrics';
+
+/**
+ * One venue this account can open the dashboard on.
+ *
+ * Two sources, merged by `useVenueDirectory` (`dashboardVenues.ts`): the venues
+ * the account **owns** (`GET /v1/partner/venues`, the whole row) and the ones it
+ * **manages** (`GET /v1/me/workspaces`, `kind: 'manager'` — a name and an id,
+ * because that endpoint is a switcher's list and not a venue read). `role` is
+ * what tells them apart, and it matters: a manager runs the venue and never
+ * touches its billing, its team or its listing.
+ */
+export interface DashVenue {
+  id: string;
+  name: string;
+  role: 'owner' | 'manager';
+}
 
 /**
  * What every dashboard screen can reach for, and nothing else.
@@ -80,11 +98,40 @@ export interface DrawerTarget {
 }
 
 export interface DashboardShell {
-  /** Index into `DASH_SCREENS`. */
-  screen: number;
-  go: (index: number) => void;
-  /** Go by id, so a caller can say `'campaigns'` rather than count the rail. */
-  goTo: (id: string) => void;
+  /** The screen showing, by id — never by position (see `DashScreenId`). */
+  screen: DashScreenId;
+  /** Show another screen. */
+  goTo: (id: DashScreenId) => void;
+  /**
+   * The venue every screen is about — the switcher's choice.
+   *
+   * `null` while the venue list is still being asked for, when it failed, or
+   * when this device has no partner session (the demo, for one). Every
+   * `usePartnerX(venueId)` hook already treats `null` as "nobody to ask", so a
+   * screen passes this straight through. The older hooks that take no venue —
+   * `usePartnerVenueId()`, `usePartnerVenue()` — read the same choice through
+   * `SelectedVenueContext` in `api/partner.ts`, which is how the screens built
+   * before the switcher follow it without being edited.
+   */
+  venueId: string | null;
+  /** The chosen venue's row (currency, timezone, status), or `null` until known. */
+  venue: PartnerVenue | null;
+  /** Every venue this account may open, owned first. Empty with no session. */
+  venues: DashVenue[];
+  /** Whether this account owns the chosen venue or manages it for somebody else. */
+  role: 'owner' | 'manager' | null;
+  setVenue: (id: string) => void;
+  /**
+   * Where overlays mount — a node at the end of the frame's `<main>`.
+   *
+   * Not `document.body`: the dashboard's tokens are declared on `.pd-app`, so a
+   * modal portalled out of it would render with none of them. And not inside
+   * the screen: a `position: fixed` element inside a transformed ancestor (every
+   * `[data-reveal]` panel, the screen's own fade-in) is positioned against that
+   * ancestor rather than the viewport. `Modal` and `Drawer` in the kit portal
+   * here; `null` only for the first render.
+   */
+  overlayRoot: HTMLElement | null;
   /**
    * Open the create panel — on nothing, on a deal (`dealId`), with a draft
    * (`prefill`), or on a campaign (`campaignId`, which is edit mode).
@@ -131,20 +178,32 @@ export interface DashboardShell {
    */
   range: RangeDays;
   setRange: (days: RangeDays) => void;
+  /**
+   * Open the plan sheet. It lives on the frame (the rail's plan card opens it
+   * too), so a screen's "See the Growth plan" reaches the same sheet rather than
+   * drawing a second one.
+   */
+  openPlan: () => void;
 }
 
 /* The default is a working no-op rather than `null` so a screen rendered outside
    the frame — a test, a story — degrades to a dead button instead of throwing. */
 export const DashboardContext = createContext<DashboardShell>({
-  screen: 0,
-  go: () => {},
+  screen: 'overview',
   goTo: () => {},
+  venueId: null,
+  venue: null,
+  venues: [],
+  role: null,
+  setVenue: () => {},
+  overlayRoot: null,
   openDrawer: () => {},
   closeDrawer: () => {},
   refresh: () => {},
   toast: () => {},
   range: RANGE_DAYS,
   setRange: () => {},
+  openPlan: () => {},
 });
 
 export function useDashboard(): DashboardShell {

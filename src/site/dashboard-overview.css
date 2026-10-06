@@ -1,0 +1,1115 @@
+/*
+ * The Overview (`dashboardOverview.tsx`) and its chart (`dashboardChart.tsx`),
+ * in v3's dress — `Paylez Partner Dashboard v3.dc.html` §3.1.
+ *
+ * Tokens only: every colour below is a `--dx-*` from `dashboard.css`'s two
+ * token blocks, so light is v3's palette and dark is the dashboard's glass
+ * without a rule of its own. Everything is scoped under `.dx-ov` or
+ * `.dx-chart`, and both prefixes were grepped before naming — the old screen's
+ * `.pd-*` and `.pa-chart*` rules in `site.css` are not used here, so none of
+ * them can bleed in.
+ *
+ * `dashboard.css` lands before `site.css` and this file after `dashboard.css`;
+ * nothing here relies on source order against `site.css`, because no class here
+ * appears there.
+ */
+
+.dx-ov {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dx-gap);
+  min-width: 0;
+}
+
+/* Zero-specificity, so any class below sets its own margin without a fight. */
+:where(.dx-ov) p {
+  margin: 0;
+}
+
+.dx-ov-withheld {
+  color: var(--dx-faint);
+  font-weight: 600;
+  cursor: help;
+}
+
+.dx-ov-acts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* End asks in words (the label turns into the question); the down hue is the
+   second channel, on the one press of three a hand must not hit by accident. */
+.dx-ov .dx-btn[data-end='true'] {
+  color: var(--dx-down);
+}
+
+.dx-ov .dx-btn[data-end='true'][aria-pressed='true'] {
+  border-color: var(--dx-down);
+  background: rgba(var(--dx-down-rgb), 0.08);
+}
+
+/* ── the low-budget banner (v3 §3.1.1) ── */
+
+.dx-ov-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--dx-caution-rgb), 0.35);
+  background: rgba(var(--dx-caution-rgb), 0.09);
+}
+
+.dx-ov-banner > svg {
+  flex: none;
+  color: var(--dx-caution);
+}
+
+.dx-ov-banner p {
+  flex: 1 1 320px;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+/* ── the hero (v3 §3.1.2) ── */
+
+.dx-ov-hero {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 34px;
+}
+
+.dx-ov-hero-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1 1 460px;
+  min-width: min(300px, 100%);
+}
+
+.dx-ov-hero-label {
+  margin-top: 20px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: rgba(var(--dx-ink-card-rgb), 0.4);
+}
+
+.dx-ov-counted {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+}
+
+.dx-ov-counted b {
+  font-size: 52px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-ink-card-fg);
+}
+
+.dx-ov-counted span {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(var(--dx-ink-card-rgb), 0.7);
+}
+
+.dx-ov-counted-new {
+  margin-top: 8px;
+  font-size: 14px;
+  color: rgba(var(--dx-ink-card-rgb), 0.7);
+}
+
+.dx-ov-counted-new b {
+  font-weight: 700;
+  color: var(--dx-ink-accent);
+}
+
+.dx-ov-estimate {
+  margin-top: 22px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px dashed rgba(var(--dx-ink-card-rgb), 0.22);
+}
+
+.dx-ov-chip {
+  display: inline-block;
+  padding: 3px 7px;
+  border-radius: 5px;
+  border: 1px solid rgba(var(--dx-ink-card-rgb), 0.2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(var(--dx-ink-card-rgb), 0.45);
+}
+
+.dx-ov-estimate b {
+  display: block;
+  margin: 10px 0 6px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: rgba(var(--dx-ink-card-rgb), 0.9);
+}
+
+.dx-ov-estimate p,
+.dx-ov-claim p {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: rgba(var(--dx-ink-card-rgb), 0.55);
+  text-wrap: pretty;
+}
+
+.dx-ov-claim {
+  margin-top: 12px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(var(--dx-mint-rgb), 0.1);
+}
+
+.dx-ov-claim b {
+  display: block;
+  margin: 8px 0 6px;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--dx-ink-card-fg);
+}
+
+/* The support rows: a gap grid, 1px rules between tiles drawn by the gap. */
+.dx-ov-support {
+  flex: 0 1 320px;
+  min-width: min(260px, 100%);
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(var(--dx-ink-card-rgb), 0.08);
+}
+
+.dx-ov-support > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  background: var(--dx-ink-tile);
+}
+
+.dx-ov-support span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dx-ov-support span b {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgba(var(--dx-ink-card-rgb), 0.72);
+}
+
+.dx-ov-support span i {
+  font-style: normal;
+  font-size: 11px;
+  color: rgba(var(--dx-ink-card-rgb), 0.4);
+}
+
+.dx-ov-support strong {
+  flex: none;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-ink-card-fg);
+}
+
+/* ── what it cost (v3 §3.1.3) ── */
+
+.dx-ov-cost {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px 40px;
+}
+
+.dx-ov-cost-rows {
+  flex: 1 1 380px;
+  min-width: 0;
+}
+
+.dx-ov-cost-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.dx-ov-month {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: var(--dx-r-chip);
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: var(--dx-muted);
+}
+
+.dx-ov-cost-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--dx-soft);
+  font-size: 13.5px;
+  color: var(--dx-muted);
+}
+
+.dx-ov-cost-row b {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dx-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-ov-cost-row[data-total='true'] {
+  padding-top: 16px;
+  border-bottom: 0;
+}
+
+.dx-ov-cost-row[data-total='true'] span {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dx-ink);
+}
+
+.dx-ov-cost-row[data-total='true'] b {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.dx-ov-return {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+}
+
+.dx-ov-return > span {
+  font-size: 12.5px;
+  color: var(--dx-muted);
+}
+
+.dx-ov-return > b {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-ov-verdict {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 13px;
+  background: rgba(var(--dx-mint-rgb), 0.16);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.dx-ov-verdict[data-good='false'] {
+  background: rgba(var(--dx-down-rgb), 0.09);
+}
+
+/* ── the proof (v3 §3.1.5) ── */
+
+.dx-ov .dx-ov-proof {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 26px 28px;
+}
+
+.dx-ov-proof > div:first-child {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.dx-ov-proof-kick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dx-ov-statement {
+  margin: 12px 0 8px;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.dx-ov-statement b {
+  color: var(--dx-deep);
+}
+
+.dx-ov-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.dx-ov-bars span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11.5px;
+  color: var(--dx-faint);
+}
+
+.dx-ov-bars i {
+  display: block;
+  width: 44px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: var(--dx-soft);
+}
+
+.dx-ov-bars span[data-on='true'] i {
+  background: var(--dx-fill-v);
+}
+
+.dx-ov-bars b {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--dx-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-ov-bars span[data-on='true'] b {
+  color: var(--dx-deep);
+}
+
+/* ── the chart (v3 §3.1.6) ── */
+
+.dx-ov-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dx-muted);
+}
+
+.dx-ov-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dx-ov-key i {
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--dx-deep);
+}
+
+.dx-ov-key [data-series='redeemed'] i {
+  background: var(--dx-ink);
+}
+
+.dx-chart {
+  margin: 0;
+}
+
+/* A chart states its own height: the SVG is 100% of it, and a percentage
+   against an `auto` parent resolves to nothing. v3's plot is 1000 × 260 at
+   ~1150px wide, which is about 300px tall; the clamp keeps that proportion
+   on a phone instead of a desktop height. */
+.dx-chart-plot {
+  position: relative;
+  height: clamp(200px, 120px + 14vw, 300px);
+}
+
+.dx-chart-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+  outline: none;
+}
+
+.dx-chart-svg:focus-visible {
+  outline: 2px solid var(--dx-deep);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.dx-chart-grid {
+  stroke: var(--dx-soft);
+  stroke-width: 1;
+}
+
+.dx-chart-grid[data-base='true'] {
+  stroke: var(--dx-line);
+}
+
+.dx-chart-tick,
+.dx-chart-date {
+  fill: var(--dx-faint);
+  font-family: var(--dx-font);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-chart-stop {
+  stop-color: var(--dx-mint);
+  stop-opacity: 0.45;
+}
+
+.dx-chart-stop[data-end='true'] {
+  stop-opacity: 0;
+}
+
+.dx-chart-area {
+  stroke: none;
+}
+
+.dx-chart-line {
+  fill: none;
+  stroke: var(--dx-deep);
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.dx-chart-line[data-series='redeemed'] {
+  stroke: var(--dx-ink);
+  stroke-width: 2.2;
+}
+
+.dx-chart-cursor {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.dx-chart-cursor[data-on='true'] {
+  opacity: 1;
+}
+
+.dx-chart-cursor-line {
+  stroke: var(--dx-rule);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.dx-chart-dot {
+  fill: var(--dx-deep);
+  stroke: var(--dx-card);
+  stroke-width: 2;
+}
+
+.dx-chart-dot[data-series='redeemed'] {
+  fill: var(--dx-ink);
+}
+
+/* The hovered figure on the axis, over the tick it covers — filled, so it
+   hides the tick rather than printing two numbers on one another. */
+.dx-chart-pill {
+  fill: var(--dx-press-bg);
+}
+
+.dx-chart-pill-text {
+  fill: var(--dx-press-fg);
+  font-family: var(--dx-font);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-chart-tip {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  transform: translateX(-50%);
+  max-width: calc(100% - 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--dx-line);
+  border-radius: 10px;
+  background: var(--dx-overlay-bg);
+  box-shadow: var(--dx-shadow-menu);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.dx-chart-tip[data-on='true'] {
+  opacity: 1;
+}
+
+.dx-chart-tip-day {
+  font-weight: 700;
+}
+
+.dx-chart-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--dx-muted);
+}
+
+.dx-chart-tip-row i {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--dx-deep);
+}
+
+.dx-chart-tip-row i[data-series='redeemed'] {
+  background: var(--dx-ink);
+}
+
+.dx-chart-tip-row b {
+  margin-left: auto;
+  padding-left: 10px;
+  font-weight: 700;
+  color: var(--dx-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-chart-empty {
+  margin: 0;
+  padding: 32px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--dx-muted);
+}
+
+/* ── stats (the subscriptions row, and the reach funnel) ── */
+
+.dx-ov-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 18px;
+}
+
+.dx-ov-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dx-ov-stat-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dx-muted);
+}
+
+.dx-ov-stats > div[data-dot] .dx-ov-stat-label::before {
+  content: '';
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--dx-deep);
+}
+
+.dx-ov-stats > div[data-dot='ink'] .dx-ov-stat-label::before {
+  background: var(--dx-ink);
+}
+
+.dx-ov-stats > div[data-dot='amber'] .dx-ov-stat-label::before {
+  background: var(--dx-amber);
+}
+
+.dx-ov-stats > div[data-dot='purple'] .dx-ov-stat-label::before {
+  background: var(--dx-purple);
+}
+
+.dx-ov-stats b {
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-ov-stats b[data-tone='purple'] {
+  color: var(--dx-purple);
+}
+
+.dx-ov-stats i {
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dx-faint);
+}
+
+/* ── reach: the split under the funnel ── */
+
+.dx-ov-split {
+  margin-top: 22px;
+  border-top: 1px solid var(--dx-soft);
+}
+
+.dx-ov-split-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(70px, auto) minmax(70px, auto);
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--dx-soft);
+  font-size: 13.5px;
+  color: var(--dx-muted);
+}
+
+.dx-ov-split-row b {
+  text-align: right;
+  font-weight: 600;
+  color: var(--dx-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-ov-split-row[data-head='true'] {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dx-faint);
+}
+
+.dx-ov-split-row[data-head='true'] b {
+  font-weight: 700;
+  color: var(--dx-faint);
+}
+
+.dx-ov-split-row[data-sub='true'] span {
+  padding-left: 16px;
+}
+
+.dx-ov-split-row:last-child {
+  border-bottom: 0;
+}
+
+/* ── money you are holding (v3 §3.1.7) ── */
+
+.dx-ov-holding {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 18px 28px;
+}
+
+.dx-ov-holding > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.dx-ov .dx-ov-holding h2 {
+  margin-bottom: 4px;
+}
+
+.dx-ov-holding-line {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* ── what we noticed (v3 §3.1.8) ── */
+
+.dx-ov-notices-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 18px 24px 14px;
+}
+
+.dx-ov-notices-head > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dx-deep);
+}
+
+.dx-ov-notices-empty {
+  padding: 0 24px 22px;
+}
+
+.dx-ov-notice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px 24px;
+  padding: 18px 24px 18px 28px;
+  border-top: 1px solid var(--dx-soft);
+}
+
+/* The 5px rail: mint by default, amber for a warning, purple for pass money. */
+.dx-ov-notice::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: var(--dx-mint);
+}
+
+.dx-ov-notice[data-rail='warn']::before {
+  background: var(--dx-amber);
+}
+
+.dx-ov-notice[data-rail='good']::before {
+  background: var(--dx-purple);
+}
+
+.dx-ov-notice > div:first-child {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.dx-ov-notice-lead {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.dx-ov-notice-detail {
+  margin-top: 4px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+  text-wrap: pretty;
+}
+
+/* ── your subscriptions (v3 §3.1.9) ── */
+
+.dx-ov-subs-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.dx-ov-subs-head > div {
+  flex: 1 1 360px;
+  min-width: 0;
+  max-width: 560px;
+}
+
+.dx-ov-subs-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dx-ov-included {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: var(--dx-r-pill);
+  background: rgba(var(--dx-mint-rgb), 0.16);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dx-deep);
+}
+
+/* The promo: an ink slab with the in-card mint press. */
+/* Three classes: it has to beat the kit's ink-card padding and radius by
+   specificity, since bundle order between the two sheets is not promised. */
+.dx-ov .dx-card.dx-ov-promo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px 28px;
+  padding: 26px 28px;
+  border-radius: var(--dx-r-card);
+}
+
+.dx-ov-promo > div {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.dx-ov-promo-kick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dx-ov-promo-badge {
+  padding: 3px 9px;
+  border-radius: var(--dx-r-pill);
+  background: rgba(var(--dx-ink-card-rgb), 0.1);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dx-ink-accent);
+}
+
+.dx-ov-promo-badge[data-locked='true'] {
+  color: rgba(var(--dx-ink-card-rgb), 0.6);
+}
+
+.dx-ov-promo-title {
+  margin-top: 10px;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.45;
+  color: var(--dx-ink-card-fg);
+}
+
+.dx-ov-promo-body {
+  margin-top: 6px;
+  max-width: 560px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: rgba(var(--dx-ink-card-rgb), 0.62);
+}
+
+.dx-ov-promo .dx-btn {
+  padding: 13px 22px;
+}
+
+/* ── running right now (v3 §3.1.10) ── */
+
+.dx-ov-running-head {
+  padding: 20px 24px 4px;
+  border-bottom: 1px solid var(--dx-soft);
+}
+
+.dx-ov-quota {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: rgba(var(--dx-mint-rgb), 0.18);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--dx-deep);
+}
+
+.dx-ov-quota[data-out='true'] {
+  background: var(--dx-soft);
+  color: var(--dx-muted);
+}
+
+.dx-ov-running .dx-ov-notices-empty {
+  padding-top: 18px;
+}
+
+.dx-ov-run {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--dx-soft);
+}
+
+.dx-ov-run:last-child {
+  border-bottom: 0;
+}
+
+.dx-ov-kind {
+  flex: none;
+  min-width: 82px;
+  padding: 5px 8px;
+  border-radius: var(--dx-r-chip);
+  background: var(--dx-soft);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--dx-ink);
+}
+
+.dx-ov-kind[data-kind='campaign'] {
+  background: rgba(var(--dx-mint-rgb), 0.22);
+  color: var(--dx-deep);
+}
+
+.dx-ov-kind[data-kind='vouchers'] {
+  background: rgba(var(--dx-gold-rgb), 0.22);
+  color: var(--dx-warn);
+}
+
+/*
+ * A pass wears its own accent — the five keys the server sends, mapped to the
+ * dashboard's tokens here because the server deliberately carries no colours.
+ * The label is light on paper; in dark the accents are light, so it inverts.
+ */
+.dx-ov-kind[data-kind='pass'] {
+  --dx-ov-accent: var(--dx-deep);
+  background: var(--dx-ov-accent);
+  color: var(--dx-ink-card-fg);
+}
+
+.dx-ov-kind[data-kind='pass'][data-accent='deep_green'] {
+  --dx-ov-accent: var(--dx-ink2);
+}
+
+.dx-ov-kind[data-kind='pass'][data-accent='purple'] {
+  --dx-ov-accent: var(--dx-purple);
+}
+
+.dx-ov-kind[data-kind='pass'][data-accent='terracotta'] {
+  --dx-ov-accent: var(--dx-down);
+}
+
+.dx-ov-kind[data-kind='pass'][data-accent='ink'] {
+  --dx-ov-accent: var(--dx-ink);
+}
+
+:root:not([data-theme='light']) .dx-ov-kind[data-kind='pass'] {
+  color: var(--dx-on-mint);
+}
+
+.dx-ov-run-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.dx-ov-run-name b {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.dx-ov-run-name > span {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 12.5px;
+  color: var(--dx-muted);
+}
+
+.dx-ov-tag {
+  padding: 2px 8px;
+  border-radius: var(--dx-r-chip);
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: rgba(var(--dx-blue-rgb), 0.12);
+  color: var(--dx-blue-ink);
+}
+
+.dx-ov-tag[data-tone='sent'] {
+  background: rgba(var(--dx-mint-rgb), 0.2);
+  color: var(--dx-deep);
+}
+
+.dx-ov-run-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 104px;
+  text-align: right;
+}
+
+.dx-ov-run-stat b {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-ov-run-stat i {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--dx-faint);
+}
+
+/* ── phones ── */
+
+@media (max-width: 46rem) {
+  .dx-ov-counted b {
+    font-size: 44px;
+  }
+
+  .dx-ov-notice,
+  .dx-ov-run {
+    padding-inline: 18px;
+  }
+
+  .dx-ov-notice {
+    padding-left: 22px;
+  }
+
+  .dx-ov-running-head,
+  .dx-ov-notices-head {
+    padding-inline: 18px;
+  }
+
+  .dx-ov-notices-empty {
+    padding-inline: 18px;
+  }
+
+  /* The figure and the presses share a row under the name on a phone, the
+     figure leading — the order a hand reads it in before pressing. */
+  .dx-ov-run-stat {
+    align-items: flex-start;
+    min-width: 0;
+    text-align: left;
+    margin-right: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-chart-cursor,
+  .dx-chart-tip {
+    transition: none;
+  }
+}

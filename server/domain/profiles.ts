@@ -43,6 +43,13 @@ export interface CustomerRow {
   stamps: number;
   vouchersHeld: number;
   /**
+   * Vouchers bought for this venue in any state but cancelled, and how many of
+   * those were spent at the counter: the roster's "7/9". Two counts rather than
+   * a ratio, so "none used" and "none bought" stay different answers.
+   */
+  vouchersIssued: number;
+  vouchersUsed: number;
+  /**
    * The highest discount this customer has bought a voucher for *here*, in any
    * state but cancelled. **Absent, not null, when they never have** — the key
    * is left off rather than sent empty, so a client cannot read "no voucher"
@@ -224,6 +231,7 @@ export async function customerTable(db: Db, venueId: string, query: TableQuery =
             WHERE user_id = $u AND venue_id = $v AND status = 'active'`,
           { u: row.user_id, v: venueId },
         ))?.n ?? 0,
+      ...(await voucherCounts(db, venueId, row.user_id)),
       /* Spread so an unknown is a missing key, which is what the wire promises. */
       ...(tier?.pct !== null && tier?.pct !== undefined ? { tierPct: tier.pct } : {}),
       ...(trend ? { spendTrend: trend } : {}),
@@ -245,6 +253,18 @@ export async function customerTable(db: Db, venueId: string, query: TableQuery =
     sharedCustomers: shared,
     rows,
   };
+}
+
+/** Vouchers bought here in any state but cancelled, and how many of them were spent. */
+async function voucherCounts(db: Db, venueId: string, userId: string) {
+  const counts = await db.get<{ issued: number | null; used: number | null }>(
+    `SELECT COUNT(*) AS issued,
+            SUM(CASE WHEN status = 'redeemed' THEN 1 ELSE 0 END) AS used
+       FROM issued_vouchers
+      WHERE user_id = $u AND venue_id = $v AND status <> 'cancelled'`,
+    { u: userId, v: venueId },
+  );
+  return { vouchersIssued: Number(counts?.issued ?? 0), vouchersUsed: Number(counts?.used ?? 0) };
 }
 
 /**
@@ -312,6 +332,16 @@ export async function customerDetail(db: Db, venueId: string, userId: string, at
       { v: venueId },
     ))?.avg ?? 0;
 
+  /* The earliest grant still standing. A grant revoked and given again starts
+     the clock again: "sharing since" is about this stretch of trust, and an
+     owner told "since April" about somebody who withdrew in May and came back
+     in August would be told something untrue. */
+  const sharing = await db.get<{ since: string | null }>(
+    `SELECT MIN(granted_at) AS since FROM data_sharing_consents
+      WHERE user_id = $u AND venue_id = $v AND revoked_at IS NULL`,
+    { u: userId, v: venueId },
+  );
+
   return {
     userId,
     name: identity?.name || 'Customer',
@@ -332,6 +362,9 @@ export async function customerDetail(db: Db, venueId: string, userId: string, at
       averageSpend,
       at,
     ),
+    ...(await voucherCounts(db, venueId, userId)),
+    /** When this venue was first allowed to see them, for the current grant. */
+    sharingSince: sharing?.since ?? null,
     trend,
     visitPattern: pattern,
     deals,

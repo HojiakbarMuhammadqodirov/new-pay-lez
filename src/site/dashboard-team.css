@@ -1,0 +1,565 @@
+/*
+ * The Team screen — `dashboardTeam.tsx`. v3 §3.10 / §4, measured off the
+ * mock's inline styles; every colour is a `--dx-*` token, so dark mode is the
+ * dark dashboard rather than v3 inverted.
+ *
+ * Scoped under `.dx-team` (the screen) or a `dx-team-` class (the drawer and
+ * the code panel, which portal into the frame's overlay root and so are not
+ * inside `.dx-team`).
+ */
+
+.dx-team {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dx-gap);
+}
+
+.dx-team-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ── the "who runs your counters" card ── */
+
+.dx-team .dx-team-intro {
+  padding: 22px 24px;
+}
+
+.dx-team .dx-team-intro .dx-card-head {
+  margin-bottom: 0;
+  gap: 18px;
+}
+
+.dx-team .dx-team-intro .dx-card-head > div {
+  max-width: 640px;
+}
+
+.dx-team .dx-team-intro h2 {
+  margin-bottom: 6px;
+}
+
+.dx-team .dx-team-intro .dx-card-sub {
+  margin: 0;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* ── role legend ── */
+
+.dx-team-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.dx-team-legend-card {
+  padding: 15px 16px;
+  border: 1px solid var(--dx-line);
+  border-radius: var(--dx-r-panel);
+  background: var(--dx-card);
+  backdrop-filter: var(--dx-card-blur);
+  -webkit-backdrop-filter: var(--dx-card-blur);
+}
+
+.dx-team-legend-card p {
+  margin: 9px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dx-muted);
+  text-wrap: pretty;
+}
+
+/* ── role pill and avatar: owner ink, manager deep, the counter roles mint, custom quiet ── */
+
+.dx-team-role {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.22);
+}
+
+.dx-team-role[data-role='owner'] {
+  color: var(--dx-press-fg);
+  background: var(--dx-press-bg);
+}
+
+/* On black the press is the mint, which is also what deep is — so the owner
+   steps back to an outline there, and the two stay different marks. */
+:root:not([data-theme='light']) .dx-team-role[data-role='owner'],
+:root:not([data-theme='light']) .dx-team-avatar[data-role='owner'] {
+  color: var(--dx-mint);
+  background: var(--dx-bone);
+  box-shadow: inset 0 0 0 1px var(--dx-mint);
+}
+
+.dx-team-role[data-role='manager'] {
+  color: var(--dx-on-deep);
+  background: var(--dx-deep);
+}
+
+.dx-team-role[data-role='custom'] {
+  color: var(--dx-muted);
+  background: var(--dx-soft);
+}
+
+.dx-team-member {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dx-team-member > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.dx-team-member b {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--dx-ink);
+}
+
+.dx-team-member > div > span {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--dx-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dx-team-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-deep-rgb), 0.14);
+}
+
+.dx-team-avatar[data-role='owner'] {
+  color: var(--dx-press-fg);
+  background: var(--dx-press-bg);
+}
+
+.dx-team-avatar[data-role='manager'] {
+  color: var(--dx-on-deep);
+  background: var(--dx-deep);
+}
+
+/* ── the table ── */
+
+.dx-team .dx-table th {
+  padding: 13px 16px;
+  color: var(--dx-faint);
+}
+
+.dx-team .dx-table :is(th, td).dx-team-edge {
+  padding-inline: 20px;
+}
+
+.dx-team-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dx-team .dx-team-venue {
+  font-size: 13px;
+  color: var(--dx-ink);
+}
+
+.dx-team .dx-team-last {
+  font-size: 12.5px;
+  color: var(--dx-muted);
+  white-space: nowrap;
+}
+
+.dx-team-signin {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--dx-muted);
+  white-space: nowrap;
+}
+
+.dx-team-signin[data-tone='warn'] {
+  color: var(--dx-warn);
+}
+
+.dx-team-signin[data-tone='down'] {
+  color: var(--dx-down);
+}
+
+.dx-team-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.2);
+}
+
+.dx-team-status[data-tone='invited'] {
+  color: var(--dx-warn);
+  background: rgba(var(--dx-gold-rgb), 0.2);
+}
+
+/* On shift is the one state that is happening *now*, so it carries a dot. */
+.dx-team-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dx-team-acts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.dx-team-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dx-faint);
+  white-space: nowrap;
+}
+
+.dx-team-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-control-bg);
+  color: var(--dx-muted);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.dx-team-act[data-danger='true'] {
+  color: var(--dx-down);
+}
+
+.dx-team-act:hover {
+  border-color: var(--dx-deep);
+}
+
+.dx-team-act:focus-visible {
+  outline: 2px solid var(--dx-deep);
+  outline-offset: 2px;
+}
+
+/* ── empty state (v3's dashed card, not the kit's: centred, 52px bone tile) ── */
+
+.dx-team-empty {
+  padding: 46px 30px;
+  border: 1px dashed var(--dx-dash);
+  border-radius: var(--dx-r-card);
+  background: var(--dx-card);
+  text-align: center;
+}
+
+.dx-team-empty-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 16px;
+  border-radius: 14px;
+  background: var(--dx-bone);
+  color: var(--dx-deep);
+}
+
+.dx-team-empty h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.dx-team-empty p {
+  margin: 0 auto 20px;
+  max-width: 400px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+  text-wrap: pretty;
+}
+
+/* ═══════════════════════════════════════════════════════════ drawer ══ */
+
+.dx-team-label {
+  margin-bottom: 13px;
+}
+
+.dx-team-help {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dx-faint);
+}
+
+.dx-team-who {
+  padding: 14px 15px;
+  border-radius: 12px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+}
+
+.dx-team-roles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dx-team-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 14px 15px;
+  border-radius: 13px;
+  border: 1.5px solid var(--dx-line);
+  background: var(--dx-control-bg);
+  color: var(--dx-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dx-team-option:hover {
+  border-color: var(--dx-rule);
+}
+
+.dx-team-option[aria-checked='true'] {
+  border-color: var(--dx-ink);
+  background: var(--dx-bone);
+}
+
+.dx-team-option:focus-visible {
+  outline: 2px solid var(--dx-deep);
+  outline-offset: 2px;
+}
+
+/* v3's radio dot: a 15px ring that fills to a 5px deep border when chosen. */
+.dx-team-option > i {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 1.5px solid var(--dx-rule);
+  transition: border 0.15s;
+}
+
+.dx-team-option[aria-checked='true'] > i {
+  border: 5px solid var(--dx-deep);
+}
+
+.dx-team-option > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dx-team-option b {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.dx-team-option > span > span {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dx-muted);
+}
+
+.dx-team-perms {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dx-line);
+  border-radius: 13px;
+  overflow: hidden;
+}
+
+.dx-team-perm {
+  padding: 13px 15px;
+}
+
+.dx-team-perm + .dx-team-perm {
+  border-top: 1px solid var(--dx-soft);
+}
+
+/* The kit's switch puts its label after the track; here the words lead and
+   the switch sits at the row's end, the way a settings list reads. */
+.dx-team-perm .dx-toggle {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+
+.dx-team-perm-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dx-team-perm-text b {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--dx-ink);
+}
+
+.dx-team-perm-text > span {
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--dx-muted);
+}
+
+.dx-team-box {
+  padding: 14px 15px;
+  border-radius: 12px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+}
+
+.dx-team-box b {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dx-ink);
+}
+
+.dx-team-box p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+  text-wrap: pretty;
+}
+
+.dx-team-box-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dx-team-line {
+  padding: 18px 20px;
+  border-radius: var(--dx-r-panel);
+  background: var(--dx-ink-card);
+  color: var(--dx-ink-card-fg);
+}
+
+:root:not([data-theme='light']) .dx-team-line {
+  border: 1px solid var(--dx-line);
+}
+
+.dx-team-line .dx-eyebrow {
+  margin-bottom: 10px;
+  letter-spacing: 0.1em;
+}
+
+.dx-team-line p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  text-wrap: pretty;
+}
+
+/* ═════════════════════════════════════════════════════════════ code ══ */
+
+.dx-team-code {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dx-team-digits {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dx-team-digits span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 64px;
+  border-radius: 12px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-bone);
+  font-family: var(--dx-mono);
+  font-size: 28px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-ink);
+  user-select: all;
+}
+
+.dx-team-code-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+@media (max-width: 46rem) {
+  .dx-team-roles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dx-team-digits span {
+    height: 52px;
+    font-size: 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-team-act,
+  .dx-team-option,
+  .dx-team-option > i {
+    transition: none;
+  }
+}

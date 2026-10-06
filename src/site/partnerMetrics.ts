@@ -1064,6 +1064,11 @@ export interface ScanRow {
   points: number;
   /** The till's own short code, as printed on the customer's receipt. */
   receipt: string;
+  /**
+   * Who on the team confirmed it, by name; `null` for the owner, and
+   * `undefined` when the server did not say (one that predates teams).
+   */
+  confirmedBy?: string | null;
   site: { name: string; address: string | null; lat: number | null; lng: number | null };
   /**
    * How close this scan left them to a reward, or `null` when it counted
@@ -1088,6 +1093,7 @@ export function scanFromApi(row: ScanRowResponse, toEuro: (minor: number) => num
     discount: toEuro(row.discountMinor),
     points: row.points,
     receipt: row.receipt,
+    confirmedBy: row.confirmedBy === undefined ? undefined : row.confirmedBy?.trim() || null,
     site: {
       name: row.site.name,
       address: row.site.address,

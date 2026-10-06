@@ -1,377 +1,156 @@
 /**
- * The partner dashboard's **Issued vouchers** screen — the register.
+ * The partner dashboard's **Voucher activity** screen — the register, in v3's
+ * dress (spec §3.9). Styles are `dashboard-vlog.css`, `dx-vlog-*` plus the kit.
  *
  * ## Why this is a second voucher screen and not more panels on the first
  *
  * `dashboardVouchers.tsx` is the **ladder**: what is on offer, what each rung
- * costs a customer in points, and the pool behind it. It answers "what am I
+ * costs in points, the pool behind it and the caps on it. It answers "what am I
  * selling". This screen answers "what was taken" — every voucher that exists,
- * who holds it, when it lapses, whether it was spent — and until it existed
- * that question had no screen at all. An owner could configure a discount and
- * then had no way to see one being used.
+ * who holds it, when it lapses, whether it was spent. The caps used to live
+ * here and moved to the ladder with v3, which draws this screen as a plain log;
+ * "Voucher settings" in the head is the way there.
  *
- * They are not one screen because they are not one job. The ladder is a form
- * somebody edits on the day they set their prices; the register is a list they
- * read on the day a customer asks "is this code still good". Folding the second
- * into the first would put a two-hundred-row table under a pricing form.
+ * ## Three figures, and where each comes from
  *
- * ## The caps live here, beside the count they bound
+ * The three cards are the server's **lifetime** totals, counted in one query
+ * rather than summed off the page — the page is capped at two hundred rows, and
+ * a total computed from a page is a total that changes when the list grows. The
+ * sums under them (set aside, given away, returned) come from the same query;
+ * an API that predates them sends none, and the card then says the count alone.
+ * The filter chips count the rows **in hand**, because they filter the rows in
+ * hand: a chip promising 401 over a list showing nine would be the lie. When the
+ * page is shorter than the total, the line on the right says "latest n of m".
  *
- * `redeem_limit` and `per_user_limit` are the other half of item 21, and the
- * control for them is on this screen rather than on the ladder for one reason:
- * a cap is only meaningful next to how much of it is used. "20" in a field
- * tells an owner nothing; "18 of 20" with a bar under it tells them the offer
- * stops this week. `.pd-limit` is the component that already says exactly that
- * for a hot deal's claim cap — the same fact one table over, so the same
- * component rather than a second one that looks like it.
+ * ## What is drawn as neither a figure nor a gap
  *
- * **`null` is a value here, and it is the whole reason the fields behave oddly.**
- * Three states have to be distinguishable and the API keeps them apart:
- * `undefined` is a server that predates the columns (the em-dash case every
- * optional field on `BudgetBody` describes), `null` is a rung nobody has
- * capped, and a number is a cap. Emptying a field means `null` — remove the cap
- * — and it is sent as null explicitly, because a rung sent *without* the key
- * keeps whatever cap it has. That asymmetry is deliberate on the server
- * (`setVoucherTiers` upserts the whole row), and it is what lets the ladder
- * editor on the other screen save a price without silently clearing a cap.
- *
- * ## What is a fact and what is a field
- *
- * Every figure except the two caps is a fact, and the honesty rule this
- * dashboard states elsewhere is why: nothing on the server sets a voucher's
- * status, its code, its window or its holder from here. A voucher is cancelled
- * by nobody — the status exists in the schema and no endpoint writes it — so
- * there is no bin at the head of a row. A control with nothing behind it is not
- * drawn.
- *
- * The one thing drawn as neither is `holder === null`, which is **"we are not
- * telling you"** rather than "an anonymous customer": it is the §1.4 sharing
- * grant, which the customer gives on the venue's own sheet and can withdraw
- * afterwards. It takes `.pd-withheld`, the same faint em dash a suppressed
- * metric takes, because the one thing a withheld value must not look like is a
- * real one.
+ * `holder === null` is **"we are not telling you"** rather than "an anonymous
+ * customer": it is the §1.4 sharing grant, which the customer gives on the
+ * venue's own sheet and can withdraw afterwards. It is written as such, with
+ * the reason in its `title`, because the one thing a withheld value must not
+ * look like is a real one.
  *
  * ## The status a row shows is the stored one
  *
  * An `active` voucher whose `expiresAt` is in the past is possible and is drawn
  * that way. `expireVouchers` is a scheduled sweep, not a read-time derivation,
  * and the difference is money: until the sweep runs, that voucher's reserve is
- * still set aside in the pool. A screen that quietly relabelled it "expired"
- * would be disagreeing with the budget on the screen before it.
+ * still set aside in the pool. Relabelling it "expired" here would disagree
+ * with the budget on the screen next door.
+ *
+ * Nothing on a row is a control: no endpoint cancels, extends or reassigns a
+ * voucher, so there is no bin at the head of one.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from 'react';
 
+import { ApiError } from './api/client';
 import {
-  setVoucherTiers,
+  exportCsv,
+  minorToEuro,
   usePartnerVenue,
-  usePartnerVenueId,
   usePartnerVouchers,
   type PartnerVoucher,
-  type TierDraft,
   type VoucherRegister,
-} from "./api/partner";
-import { DEMO_REGISTER } from "./dashboardDemo";
-import { useNum, useVenueDates } from "./dashboardFormat";
-import { Screen } from "./dashboardScreens";
-import { useDashboard } from "./dashboardShell";
-import { NumberWell } from "./dashboardControls";
-import { useCopy } from "./i18n/context";
-import { fill } from "./i18n/currency";
+} from './api/partner';
+import { DEMO_REGISTER } from './dashboardDemo';
+import { useNum, useVenueDates } from './dashboardFormat';
+import { Button, Callout, Card, EmptyState, PageHead, Pill } from './dashboardKit';
+import { initialsOf } from './dashboardKitHooks';
+import { Screen } from './dashboardScreens';
+import { useDashboard } from './dashboardShell';
+import { useCopy, useMoney } from './i18n/context';
+import { fill } from './i18n/currency';
+
+import './dashboard-vlog.css';
 
 /** The four `issued_vouchers` statuses, plus the word for "do not filter". */
-const FILTERS = ["all", "active", "redeemed", "expired", "cancelled"] as const;
+const FILTERS = ['all', 'active', 'redeemed', 'expired', 'cancelled'] as const;
 type Filter = (typeof FILTERS)[number];
 
-/**
- * A rung's cap as it is being edited.
- *
- * `undefined` is "not touched", which is what keeps a save from writing a cap
- * onto a rung the owner did not edit — the route reads absent as "leave it
- * alone". `null` is an emptied field, which removes the cap.
- */
-type CapDraft = Record<
-  string,
-  { redeemLimit?: number | null; perUserLimit?: number | null }
->;
+const PILL: Record<PartnerVoucher['status'], 'active' | 'ended' | 'down'> = {
+  active: 'active',
+  redeemed: 'ended',
+  expired: 'down',
+  cancelled: 'ended',
+};
 
 /**
- * One cap: a number, and a way to take it off again.
- *
- * The second half is why this is a component rather than a bare `NumberWell`.
- * That control deliberately does **not** report an empty box — "", a lone minus
- * and a trailing point are all halfway to a number rather than a number, and
- * `Number` turns two of the three into 0 silently, which on the budget editor
- * it also serves would be a venue setting its month to nothing by
- * backspacing. So an emptied field cannot be the "no limit" gesture, and
- * without a control of its own a cap could be set and never removed.
- *
- * It is a link rather than a switch, and it is drawn **only when there is a cap
- * to remove** — a control whose only outcome is the state already on screen is
- * a control that exists to fail. Zero is not the gesture either: the route
- * refuses a cap of zero by name, because a rung nobody may buy from is
- * `active: false` and says so on the screen.
+ * Export the month, the frame's own button for a screen that draws its own
+ * head. The same three endings as the frame's: the file, a plan that does not
+ * include it, and a server that is not there.
  */
-function Cap({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number | null;
-  onChange: (next: number | null) => void;
-}) {
-  const copy = useCopy().dashboard.register;
+function ExportButton() {
+  const copy = useCopy().dashboard;
+  const { toast, venueId } = useDashboard();
+  const [busy, setBusy] = useState(false);
+
+  const download = async () => {
+    if (busy) return;
+    if (venueId === null) {
+      toast(copy.drawer.deal.needsSession);
+      return;
+    }
+    setBusy(true);
+    try {
+      const file = await exportCsv(venueId);
+      /* A blob and a synthetic click: the CSV arrives in the body, not at a URL. */
+      const url = URL.createObjectURL(new Blob([file.csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast(copy.actions.exported);
+    } catch (cause) {
+      toast(
+        cause instanceof ApiError && cause.status === 403
+          ? copy.acts.exportLocked
+          : cause instanceof ApiError && cause.status === 0
+            ? copy.acts.offline
+            : fill(copy.acts.refused, { why: cause instanceof Error ? cause.message : String(cause) }),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div className="pd-progress">
-      <NumberWell
-        label={label}
-        unit={copy.caps.unit}
-        min={1}
-        step={1}
-        value={value}
-        onChange={(next) =>
-          onChange(Number.isFinite(next) && next > 0 ? next : null)
-        }
-      />
-      {value === null ? (
-        <span className="pd-fine">{copy.caps.noLimit}</span>
-      ) : (
-        <button type="button" className="link-btn" onClick={() => onChange(null)}>
-          {copy.caps.remove}
-        </button>
-      )}
-    </div>
+    <Button variant="secondary" icon="download" disabled={busy} onClick={() => void download()}>
+      {copy.actions.exportCsv}
+    </Button>
   );
 }
 
-/** Totals across the venue's whole life — not the page, which is capped. */
-function Totals({ totals }: { totals: VoucherRegister["totals"] }) {
-  const copy = useCopy().dashboard.register;
+/** The three v3 stat cards, each with its 34×3 rule in the colour of its status. */
+function Stats({ totals, toMoney }: { totals: VoucherRegister['totals']; toMoney: (minor: number) => string | null }) {
+  const copy = useCopy().dashboard.register.log;
   const num = useNum();
 
-  const tiles: Array<[string, number]> = [
-    [copy.totals.issued, totals.issued],
-    [copy.totals.active, totals.active],
-    [copy.totals.redeemed, totals.redeemed],
-    [copy.totals.expired, totals.expired],
+  /* A sum is drawn only when both the server sent it and there is a currency
+     to read it in; otherwise the card says the count and stops. */
+  const note = (minor: number | undefined, sentence: string) => {
+    if (minor === undefined) return null;
+    const amount = toMoney(minor);
+    return amount === null ? null : fill(sentence, { amount });
+  };
+
+  const cards: Array<{ tone: 'active' | 'redeemed' | 'expired'; label: string; value: number; note: string | null }> = [
+    { tone: 'active', label: copy.active, value: totals.active, note: note(totals.activeReservedMinor, copy.activeNote) },
+    { tone: 'redeemed', label: copy.redeemed, value: totals.redeemed, note: note(totals.redeemedSpentMinor, copy.redeemedNote) },
+    { tone: 'expired', label: copy.expired, value: totals.expired, note: note(totals.expiredReleasedMinor, copy.expiredNote) },
   ];
 
   return (
-    <div className="pd-glass pd-panel" data-reveal>
-      <div className="pd-tiles">
-        {tiles.map(([label, value]) => (
-          <div className="pd-tile" key={label}>
-            <span>{label}</span>
-            <div className="pd-tile-body">
-              <div>
-                <b>{num(value)}</b>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      {/* The one actionable figure, and it is a sentence rather than a fifth
-          tile because it is only worth saying when it is not zero: a reminder
-          can still reach the people holding these, and cannot reach anybody
-          whose voucher has already lapsed. */}
-      {totals.lapsing > 0 && (
-        <p className="pd-fine">
-          {fill(copy.totals.lapsing, { n: num(totals.lapsing) })}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/**
- * The caps, one row per rung, with how much of each is used.
- *
- * Saved as one write rather than one per rung: `PUT …/tiers` takes the list,
- * and two rungs edited in one sitting are one decision about an offer.
- */
-function Caps({
-  tiers,
-  reload,
-}: {
-  tiers: VoucherRegister["tiers"];
-  reload: () => void;
-}) {
-  const copy = useCopy().dashboard.register;
-  const dashboard = useCopy().dashboard;
-  const num = useNum();
-  const venueId = usePartnerVenueId();
-  const { toast } = useDashboard();
-  const [draft, setDraft] = useState<CapDraft>({});
-  const [saving, setSaving] = useState(false);
-
-  const id = venueId.state.status === "ready" ? venueId.state.data : null;
-
-  /* A retired rung is listed by the server while vouchers bought on it are
-     still out, and its caps must not be editable: saving one would send
-     `active` and put it back on sale. It is shown, read-only, because the
-     vouchers it issued are in the register below. */
-  const editable = tiers.filter((tier) => tier.active !== false);
-
-  const capOf = (
-    tierId: string,
-    which: "redeemLimit" | "perUserLimit",
-    stored: number | null,
-  ) => {
-    const touched = draft[tierId]?.[which];
-    return touched === undefined ? stored : touched;
-  };
-
-  const edit = (
-    tierId: string,
-    which: "redeemLimit" | "perUserLimit",
-    next: number | null,
-  ) =>
-    setDraft((current) => ({
-      ...current,
-      [tierId]: { ...current[tierId], [which]: next },
-    }));
-
-  const dirty = Object.keys(draft).length > 0;
-
-  const save = useCallback(() => {
-    if (id === null || !dirty) return;
-    setSaving(true);
-    /* Only the rungs that were touched, and on each of those only the fields
-       that were: a rung sent without a cap key keeps the cap it has, which is
-       what stops this write from being an edit of the whole ladder. */
-    const rungs: TierDraft[] = editable
-      .filter((tier) => draft[tier.id] !== undefined)
-      .map((tier) => ({
-        discountPct: tier.discountPct,
-        pointsCost: tier.pointsCost,
-        maxDiscountMinor: tier.maxDiscountMinor,
-        ...draft[tier.id],
-      }));
-    setVoucherTiers(id, rungs)
-      .then(() => {
-        setDraft({});
-        toast(copy.caps.saved);
-        reload();
-      })
-      .catch((error: unknown) =>
-        toast(
-          fill(dashboard.acts.refused, {
-            why: error instanceof Error ? error.message : String(error),
-          }),
-        ),
-      )
-      .finally(() => setSaving(false));
-  }, [
-    id,
-    dirty,
-    editable,
-    draft,
-    toast,
-    copy.caps.saved,
-    dashboard.acts.refused,
-    reload,
-  ]);
-
-  return (
-    <div className="pd-glass pd-panel" data-reveal>
-      <div className="pd-panel-head">
-        <div>
-          <span className="pd-kicker">{copy.caps.kicker}</span>
-          <h2>{copy.caps.title}</h2>
-        </div>
-      </div>
-      <p className="pd-fine">{copy.caps.lede}</p>
-
-      {tiers.map((tier) => {
-        const total = capOf(tier.id, "redeemLimit", tier.redeemLimit ?? null);
-        const perUser = capOf(
-          tier.id,
-          "perUserLimit",
-          tier.perUserLimit ?? null,
-        );
-        /* The lifetime count, which is what a cap is measured against — not
-           `issuedCount`, which is this month's and sits under this month's
-           pool. Absent means an API that predates the column, so the count is
-           withheld rather than shown as nought. */
-        const taken = tier.issuedTotal;
-        const locked = tier.active === false;
-
-        return (
-          <div className="pd-rung" key={tier.id}>
-            <div>
-              <b>{fill(copy.caps.rung, { pct: String(tier.discountPct) })}</b>
-              {/* "18 of 20" and a bar, or the count on its own when there is no
-                  cap to fill — the same distinction `.pd-limit` draws for a hot
-                  deal, whose comment in `site.css` says why. */}
-              {taken === undefined ? (
-                <em
-                  className="pd-withheld"
-                  title={dashboard.unmeasured.withheld}
-                >
-                  —
-                </em>
-              ) : total === null ? (
-                <em>{fill(copy.caps.takenNoCap, { n: num(taken) })}</em>
-              ) : (
-                <span className="pd-limit">
-                  <i>
-                    {/* `em` and not `b`: `.pd-limit` had two fill rules in
-                        `site.css`, one per element, so a new caller was picking
-                        by coin flip. The deals table's claim bar is the other
-                        caller and it writes `em`, so that is the one that
-                        stayed. */}
-                    <em
-                      style={{
-                        width: `${Math.min(100, (taken / total) * 100)}%`,
-                      }}
-                    />
-                  </i>
-                  <span className="pd-fine">
-                    {fill(copy.caps.taken, {
-                      n: num(taken),
-                      total: num(total),
-                    })}
-                  </span>
-                </span>
-              )}
-            </div>
-
-            {locked ? (
-              <span className="pd-state-pill" data-state="paused">
-                {copy.caps.retired}
-              </span>
-            ) : (
-              <>
-                <Cap
-                  label={copy.caps.total}
-                  value={total}
-                  onChange={(next) => edit(tier.id, "redeemLimit", next)}
-                />
-                <Cap
-                  label={copy.caps.perUser}
-                  value={perUser}
-                  onChange={(next) => edit(tier.id, "perUserLimit", next)}
-                />
-              </>
-            )}
-          </div>
-        );
-      })}
-
-      <p className="pd-fine">{copy.caps.noLimitNote}</p>
-
-      <div className="pd-actions">
-        <button
-          type="button"
-          className="btn btn-solid"
-          disabled={!dirty || saving || id === null}
-          onClick={save}
-        >
-          {saving ? copy.caps.saving : copy.caps.save}
-        </button>
-      </div>
+    <div className="dx-vlog-stats">
+      {cards.map((card) => (
+        <Card key={card.tone} className="dx-vlog-stat">
+          <i data-tone={card.tone} aria-hidden />
+          <span>{card.label}</span>
+          <b>{num(card.value)}</b>
+          {card.note !== null && <p>{card.note}</p>}
+        </Card>
+      ))}
     </div>
   );
 }
@@ -380,207 +159,250 @@ function Caps({
 function Row({
   voucher,
   day,
+  toMoney,
 }: {
   voucher: PartnerVoucher;
-  /* Handed in rather than made here: one formatter for the whole table, on the
-     venue's clock — see `IssuedVouchers`. */
   day: (iso: string) => string;
+  toMoney: (minor: number) => string | null;
 }) {
-  const copy = useCopy().dashboard.register;
+  const register = useCopy().dashboard.register;
+  const copy = register.log;
+
+  /* What the row is worth, by what happened to it: an unused voucher may take
+     *up to* its reserve off a bill, a redeemed one took what it took, an expired
+     one handed its reserve back. A cancelled voucher was neither, and nothing
+     writes that status today, so it shows no figure. */
+  const value =
+    voucher.status === 'active'
+      ? toMoney(voucher.reservedMinor)
+      : voucher.status === 'redeemed'
+        ? toMoney(voucher.spentMinor)
+        : voucher.status === 'expired'
+          ? toMoney(voucher.reservedMinor)
+          : null;
+
+  const closed =
+    voucher.status === 'active'
+      ? fill(copy.expires, { date: day(voucher.expiresAt) })
+      : voucher.status === 'redeemed'
+        ? fill(copy.used, { date: day(voucher.redeemedAt ?? voucher.expiresAt) })
+        : voucher.status === 'expired'
+          ? fill(copy.expiredOn, { date: day(voucher.expiresAt) })
+          : copy.cancelled;
 
   return (
     <tr>
       <td>
-        <span className="pd-code">{voucher.code}</span>
+        <code className="dx-vlog-code">{voucher.code}</code>
+        <span className="dx-vlog-sub">{copy.kind}</span>
       </td>
       <td>
-        <b>{fill(copy.caps.rung, { pct: String(voucher.discountPct) })}</b>
-      </td>
-      <td>
-        {voucher.holder === null ? (
-          <span className="pd-withheld" title={copy.table.withheld}>
-            —
+        <span className="dx-vlog-who">
+          <span className="dx-vlog-avatar" aria-hidden>
+            {voucher.holder === null ? '—' : initialsOf(voucher.holder)}
           </span>
-        ) : (
-          voucher.holder
-        )}
-      </td>
-      {/* The window, both ends, because either one alone answers half the
-          question a cashier is asking. */}
-      <td data-quiet="true">{day(voucher.issuedAt)}</td>
-      <td data-quiet="true">{day(voucher.expiresAt)}</td>
-      <td>
-        <span className="pd-state-pill" data-state={voucher.status}>
-          {copy.status[voucher.status]}
+          {voucher.holder === null ? (
+            <span className="dx-vlog-withheld" title={register.table.withheld}>
+              {copy.notShared}
+            </span>
+          ) : (
+            <b>{voucher.holder}</b>
+          )}
         </span>
       </td>
-      {/* The redemption itself — the date it was spent, or nothing, because a
-          voucher nobody has used has no history to show and an em dash here
-          would read as a figure we failed to read. */}
-      <td data-align="right" data-quiet="true">
-        {voucher.redeemedAt === null ? (
-          <span className="pd-fine">{copy.table.notRedeemed}</span>
+      <td>
+        <span className="dx-vlog-reward">{fill(register.caps.rung, { pct: String(voucher.discountPct) })}</span>
+      </td>
+      <td>
+        <Pill tone={PILL[voucher.status]} size="sm">
+          {register.status[voucher.status]}
+        </Pill>
+      </td>
+      <td data-align="right">
+        {value === null ? (
+          <span className="dx-vlog-none">—</span>
+        ) : voucher.status === 'active' ? (
+          fill(copy.upTo, { amount: value })
         ) : (
-          day(voucher.redeemedAt)
+          value
         )}
+      </td>
+      <td>
+        <span className="dx-vlog-date">{fill(copy.issued, { date: day(voucher.issuedAt) })}</span>
+        <span className="dx-vlog-date" data-tone={voucher.status === 'expired' ? 'down' : undefined}>
+          {closed}
+        </span>
       </td>
     </tr>
   );
 }
 
 /**
- * The list itself — and it takes its rows as a **prop**.
- *
- * Not a `useMemo` over the hook's state inside the page, which is what this was
- * and which was wrong in exactly one case: under `?demo=1` the real call has
- * failed, so `state.status` is `'error'` and `Screen` substitutes the demo body
- * — a filter reading the hook saw no rows and drew an empty table under a
- * populated pair of panels. The data the render function is handed is the only
- * thing on this screen that is true in both cases.
+ * The list — and it takes its rows as a **prop**, the data `Screen` handed
+ * over, which is the only thing true both for a live venue and under `?demo=1`
+ * (where the hook's own state is the failed call the demo stands in for).
  */
 function Register({
-  vouchers,
+  register,
   day,
+  toMoney,
 }: {
-  vouchers: PartnerVoucher[];
+  register: VoucherRegister;
   day: (iso: string) => string;
+  toMoney: (minor: number) => string | null;
 }) {
   const copy = useCopy().dashboard.register;
   const num = useNum();
-  const [filter, setFilter] = useState<Filter>("all");
-  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<Filter>('all');
 
-  /* Filtered here rather than by re-asking the server: the register is one page
-     of at most two hundred rows and it is already in hand, so a status press
-     that went back to the API would be a spinner over a list that has not
-     changed. The endpoint takes both filters for the same reason it takes a
-     limit — a venue with thousands of vouchers is a different screen. */
-  const shown = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return vouchers.filter(
-      (voucher) =>
-        (filter === "all" || voucher.status === filter) &&
-        (needle === "" ||
-          voucher.code.toLowerCase().includes(needle) ||
-          (voucher.holder ?? "").toLowerCase().includes(needle)),
-    );
-  }, [vouchers, filter, search]);
+  /* Newest first, as the server sends them; sorted again so the order is the
+     screen's promise rather than the payload's. */
+  const rows = useMemo(
+    () => [...register.vouchers].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt)),
+    [register.vouchers],
+  );
+  const counts = useMemo(() => {
+    const out: Record<Filter, number> = { all: rows.length, active: 0, redeemed: 0, expired: 0, cancelled: 0 };
+    for (const row of rows) out[row.status] += 1;
+    return out;
+  }, [rows]);
+  const shown = filter === 'all' ? rows : rows.filter((row) => row.status === filter);
+
+  /* Cancelled is a status the schema holds and nothing writes, so its chip only
+     appears on the day a row carries it. */
+  const filters = FILTERS.filter((which) => which !== 'cancelled' || counts.cancelled > 0);
+  const lifetime = register.totals.issued + counts.cancelled;
 
   return (
-    <div className="pd-glass pd-panel" data-solid="true" data-reveal>
-      <div className="pd-panel-head">
-        <div>
-          <span className="pd-kicker">{copy.list.kicker}</span>
-          <h2>{copy.list.title}</h2>
-        </div>
-      </div>
-
-      <div className="pd-toolbar">
-        <label className="pd-search">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            aria-hidden="true"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-          <input
-            type="search"
-            value={search}
-            placeholder={copy.list.search}
-            aria-label={copy.list.search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
-
-        <div className="pd-seg">
-          {FILTERS.map((which) => (
+    <Card pad="none" className="dx-vlog-card">
+      <div className="dx-vlog-bar">
+        <div className="dx-vlog-chips" role="group" aria-label={copy.log.filter}>
+          {filters.map((which) => (
             <button
               key={which}
               type="button"
-              data-on={which === filter ? "true" : undefined}
+              aria-pressed={which === filter}
               onClick={() => setFilter(which)}
             >
-              {which === "all" ? copy.status.all : copy.status[which]}
+              {copy.status[which]}
+              <span>{num(counts[which])}</span>
             </button>
           ))}
         </div>
-
-        <span className="pd-count">
-          {fill(copy.list.count, {
-            n: num(shown.length),
-            total: num(vouchers.length),
-          })}
+        <span className="dx-vlog-count">
+          {rows.length < lifetime
+            ? fill(copy.log.latest, { n: num(rows.length), total: num(lifetime) })
+            : fill(copy.log.count, { n: num(shown.length) })}
         </span>
       </div>
 
-      {vouchers.length === 0 ? (
-        /* Two different nothings, and they are two sentences. A venue
-                 whose customers have never bought a voucher needs to be told
-                 what would make one appear; a filter that matches nothing needs
-                 to be told it is the filter. */
-        <p className="pd-fine">{copy.list.empty}</p>
-      ) : shown.length === 0 ? (
-        <p className="pd-fine">{copy.list.emptyFiltered}</p>
+      {shown.length === 0 ? (
+        <p className="dx-vlog-empty">{copy.list.emptyFiltered}</p>
       ) : (
-        <div className="pd-table-wrap">
-          <table className="pd-table">
+        <div className="dx-vlog-scroll">
+          <table className="dx-vlog-table" aria-label={copy.list.title}>
             <thead>
               <tr>
-                <th>{copy.table.code}</th>
-                <th>{copy.table.rung}</th>
-                <th>{copy.table.holder}</th>
-                <th>{copy.table.issued}</th>
-                <th>{copy.table.expires}</th>
-                <th>{copy.table.status}</th>
-                <th data-align="right">{copy.table.redeemed}</th>
+                <th scope="col">{copy.log.columns.voucher}</th>
+                <th scope="col">{copy.log.columns.customer}</th>
+                <th scope="col">{copy.log.columns.reward}</th>
+                <th scope="col">{copy.log.columns.status}</th>
+                <th scope="col" data-align="right">
+                  {copy.log.columns.value}
+                </th>
+                <th scope="col">{copy.log.columns.closed}</th>
               </tr>
             </thead>
             <tbody>
               {shown.map((voucher) => (
-                <Row key={voucher.id} voucher={voucher} day={day} />
+                <Row key={voucher.id} voucher={voucher} day={day} toMoney={toMoney} />
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      <p className="dx-vlog-foot">{copy.log.foot}</p>
+    </Card>
+  );
+}
+
+function Activity({ register }: { register: VoucherRegister }) {
+  const copy = useCopy().dashboard;
+  const { venue, goTo } = useDashboard();
+  const money = useMoney();
+  const num = useNum();
+  /* One date formatter for the table, on the **venue's** clock: which day a
+     voucher is "good until" depends on whose midnight, and the answer is the
+     counter that honours it rather than the browser reading the report. */
+  const dates = useVenueDates(venue?.timezone ?? null);
+
+  /* Minor units of the venue's currency into the reader's. The register says
+     which currency it counted in; an older API does not, and then the venue
+     row does; with neither there is nothing honest to convert and the figure is
+     left out rather than guessed. */
+  const currency = register.currency ?? venue?.currency ?? null;
+  const toMoney = (minor: number) => (currency === null ? null : money(minorToEuro(minor, currency), 'exact'));
+
+  if (register.vouchers.length === 0) {
+    const empty = copy.empty.voucherActivity;
+    /* The one press is a real destination: nothing appears here until the
+       ladder is open, and the ladder is the Vouchers screen. */
+    return (
+      <EmptyState
+        icon="receipt"
+        title={empty.title}
+        body={empty.body}
+        action={{ label: empty.action, onClick: () => goTo('vouchers') }}
+      />
+    );
+  }
+
+  return (
+    <div className="dx-vlog">
+      <Stats totals={register.totals} toMoney={toMoney} />
+      {/* The one figure here anybody can act on, and only worth saying when it
+          is not zero: a reminder can still reach these holders. */}
+      {register.totals.lapsing > 0 && (
+        <Callout tone="mint">
+          <p className="dx-vlog-lapsing">{fill(copy.register.totals.lapsing, { n: num(register.totals.lapsing) })}</p>
+        </Callout>
+      )}
+      <Register register={register} day={dates.day} toMoney={toMoney} />
     </div>
   );
 }
 
 export function IssuedVouchers() {
+  const copy = useCopy().dashboard;
+  const { goTo } = useDashboard();
   const venueApi = usePartnerVenue();
-  const venue = venueApi.state.status === "ready" ? venueApi.state.data : null;
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
   const register = usePartnerVouchers(venue?.id ?? null);
-  /*
-   * One date formatter for the table, on the **venue's** clock.
-   *
-   * `useVenueDates` rather than an `Intl.DateTimeFormat` of this screen's own,
-   * which is what this had and which is exactly the formatting inconsistency
-   * item 22 is about: the same kind of value written two ways in one product.
-   * The zone matters here for the reason it matters in the till log — which day
-   * a voucher is "good until" depends on whose midnight, and the answer is the
-   * counter that honours it rather than the browser reading the report.
-   */
-  const dates = useVenueDates(venue?.timezone ?? null);
+  const screen = copy.screens.voucherActivity;
 
   return (
-    /* `demo` is the same fallback every other report screen carries, and it
-       carries the same three conditions: the real call is made and allowed to
-       fail first, the failure has to be *no session*, and `?demo=1` has to have
-       been passed. A venue with a listing never reaches it. */
-    <Screen state={register.state} index={4} demo={DEMO_REGISTER}>
-      {(data) => (
-        <div className="pd-stack">
-          <Totals totals={data.totals} />
-          <Caps tiers={data.tiers} reload={register.reload} />
-          <Register vouchers={data.vouchers} day={dates.day} />
-        </div>
-      )}
-    </Screen>
+    <>
+      <PageHead
+        title={screen.name}
+        subtitle={screen.lede}
+        actions={
+          <>
+            <ExportButton />
+            {/* v3's primary here goes to the Vouchers screen, where the budget,
+                the ladder and the caps are — a navigation, so it always works. */}
+            <Button variant="primary" icon="plus" onClick={() => goTo('vouchers')}>
+              {copy.register.log.settings}
+            </Button>
+          </>
+        }
+      />
+      {/* `demo` carries the same three conditions every report screen's does:
+          the real call fails first, the failure is *no session*, and `?demo=1`
+          was passed. A venue with a listing never reaches it. */}
+      <Screen state={register.state} id="voucherActivity" demo={DEMO_REGISTER}>
+        {(data) => <Activity register={data} />}
+      </Screen>
+    </>
   );
 }

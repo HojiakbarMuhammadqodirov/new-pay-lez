@@ -994,6 +994,25 @@ console.log('\naccess control');
     ),
   );
 
+  /*
+   * A venue's manager owns nothing and runs somebody else's venue — a
+   * `team_members` row the server reports through `GET /v1/me/workspaces`,
+   * folded in as `manages`. The dashboard opens for them; nothing else that
+   * belongs to a business does, and an individual who is merely *not known*
+   * to manage anything (`undefined`) is still sent home.
+   */
+  const manager: Account = { ...person, manages: true };
+  const ownerManaging: Account = { ...ownerNew, manages: true };
+  check('a manager reaches the dashboard', resolveRoute('dashboard', manager) === 'dashboard');
+  check('…and still not business setup', resolveRoute('business-setup', manager) === 'landing');
+  check('…nor the business pitch', resolveRoute('business', manager) === 'landing');
+  check('an individual not known to manage stays out', resolveRoute('dashboard', { ...person, manages: false }) === 'landing');
+  check(
+    'an owner with no listing who manages a venue opens the dashboard',
+    resolveRoute('dashboard', ownerManaging) === 'dashboard',
+  );
+  check('an admin is never routed in by a team row', resolveRoute('dashboard', { ...admin, manages: true }) === 'admin');
+
   check('an owner with no listing is sent to setup', resolveRoute('dashboard', ownerNew) === 'business-setup');
   check('an owner with a listing reaches the dashboard', resolveRoute('dashboard', ownerSet) === 'dashboard');
   check('an owner keeps business', resolveRoute('business', ownerSet) === 'business');
@@ -1077,6 +1096,7 @@ console.log('\naccess control');
   const accounts = [
     anon, undecided, { ...undecided, onboardedAt: null },
     person, newPlayer, ownerNew, ownerSet, ownerRaw, admin, adminRaw,
+    manager, ownerManaging, { ...newPlayer, manages: true },
   ];
   let unstable = '';
   for (const account of accounts) {
@@ -4550,19 +4570,23 @@ console.log('\nthe partner dashboard');
      they are the steps on a chooser, and a chooser with no steps is a broken
      control rather than an honest one. Checked just above.
 
-     And the panel needs something to say instead of a draft. `empty` is
-     index-aligned with the rail's screens minus the profile — the one screen
-     that is a form rather than a report — and the assistant reads index 5, so a
-     short array renders `undefined` here rather than throwing. */
-  check(
-    'every screen but the profile says what would fill it',
-    en.dashboard.empty.length === en.dashboard.screens.length - 1,
-    `${en.dashboard.empty.length} of ${en.dashboard.screens.length}`,
-  );
-  check(
-    '…including the one the assistant falls back to',
-    en.dashboard.empty.every((e) => e.title.trim() !== '' && e.body.trim() !== ''),
-  );
+     And the panel needs something to say instead of a draft. `empty` is keyed
+     by screen id now rather than index-aligned, so the type already refuses a
+     *missing* key in a language; what it cannot refuse is a key `DASH_SCREENS`
+     has that the English block forgot to add, or a blank string — and the
+     profile is the one screen that is a form rather than a report, so the
+     only one allowed to have no entry. */
+  {
+    const reportIds = DASH_SCREENS.map((entry) => entry.id).filter((id) => id !== 'profile');
+    for (const code of LANGUAGE_ORDER) {
+      const empty = LANGUAGES[code].dashboard.empty as Record<string, { title: string; body: string } | undefined>;
+      const missing = reportIds.filter((id) => !empty[id] || empty[id].title.trim() === '' || empty[id].body.trim() === '');
+      check(`${code}: every screen but the profile says what would fill it`, missing.length === 0, missing.join(', ') || 'all');
+      const screens = LANGUAGES[code].dashboard.screens as Record<string, { name: string } | undefined>;
+      const unnamed = DASH_SCREENS.filter((entry) => !screens[entry.id]?.name.trim()).map((entry) => entry.id);
+      check(`${code}: every screen in the rail has a name`, unnamed.length === 0, unnamed.join(', ') || 'all');
+    }
+  }
 
   /*
    * Item 22: **grouping follows the reader, and it is read rather than
@@ -4622,50 +4646,67 @@ console.log('\nthe partner dashboard');
   }
 
   /*
-   * The dashboard is glass, and its text still reads on the glass.
+   * Nothing in `site.css` styles the dashboard any more.
    *
-   * It was flat for a while: a block late in `site.css` re-pointed every token
-   * inside `.pd-app` to the white-card export and switched the wash, the blur
-   * and the sheet's opacity off. The owner asked for the glass back, so these
-   * checks hold the restored state — no rule may make the sheet opaque or take
-   * the aurora away — and then measure the text the way item 25 did, against
-   * the worst ground it can now land on.
-   *
-   * The worst ground is a light glass card over `--bg-2`: white at the light
-   * `--pd-glass` opacity, composited over the darker of the page's two greys.
-   * Dark is not measured, for item 25's reason — its ramp is light ink on
-   * near-black and clears 7:1 everywhere.
+   * The old screens' `.pd-*` / `.pl-*` / `.pc-*` / `.ps-*` / `.vch-*` rules
+   * went with the v3 rebuild: the frame and every screen are `dashboard.css` and
+   * `dashboard-<screen>.css`. A rule creeping back into the shared sheet styles
+   * the frame from outside its token blocks, which is how the flat-white
+   * override that once switched the glass off happened.
    */
   {
     const css = readFileSync(new URL('../src/site/site.css', import.meta.url), 'utf8');
     const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    const stray = /\.(pd|pl|pc|ps|vch|pas)-[\w-]+|\.pa-chart|\.rail\b/.exec(bare);
+    check('site.css carries no dashboard rule', stray === null, stray?.[0] ?? 'none');
+  }
 
-    check(
-      'no rule hides the dashboard aurora',
-      !/\.pd-app::before\s*\{\s*display:\s*none/.test(bare),
-    );
-    check(
-      'no rule takes the blur off a glass panel',
-      /* Unindented rules only: the reduced-transparency media query takes the
-         blur off on purpose, for the reader who asked for exactly that. */
-      !/^\.pd-glass\s*\{[^}]*backdrop-filter:\s*none/m.test(bare) &&
-        /^\.pd-glass\s*\{[^}]*backdrop-filter:\s*blur\(/m.test(bare),
-    );
-    check(
-      'no .pd-app rule makes the glass opaque or flat',
-      !/\.pd-app\s*\{[^}]*--pd-(glass:\s*1;|blur:\s*0)/.test(bare),
-    );
+  /*
+   * The v3 frame (`dashboard.css`): glass is dark's, paper is v3's.
+   *
+   * The decision lives in the frame's own token blocks: dark keeps the translucent sheet, the
+   * blur and the aurora (today's dark dashboard, unchanged by the owner's
+   * decision), and light is v3's solid white card on bone with neither. Both
+   * halves are checked, because each is the one a later tidy-up would "fix"
+   * into the other. Then the light ramp is measured against v3's own grounds —
+   * the palette is v3's by decision, and the decision is about hue, not
+   * about contrast.
+   */
+  {
+    const css = readFileSync(new URL('../src/site/dashboard.css', import.meta.url), 'utf8');
+    const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    const block = (selector: string): string => {
+      const open = bare.indexOf(`${selector} {`);
+      return open < 0 ? '' : bare.slice(open, bare.indexOf('\n}', open));
+    };
+    const dark = block('\n.pd-app.dx-app');
+    const light = block(":root[data-theme='light'] .pd-app.dx-app");
+    const read = (body: string, prop: string): string | null =>
+      new RegExp(`--${prop}:\\s*([^;]+);`).exec(body)?.[1].trim() ?? null;
 
-    /* The light block that carries the sheet — the selector opens more than once. */
-    const lightOpen = bare.search(/:root\[data-theme='light'\] \.pd-app \{\s*--pd-glass/);
-    const lightBody = bare.slice(lightOpen, bare.indexOf('}', lightOpen));
-    const glass = /--pd-glass:\s*(0\.\d+)/.exec(lightBody);
-    check('the light dashboard sets a translucent sheet', glass !== null && Number(glass[1]) < 1, glass?.[1] ?? 'none');
+    check('the dark frame keeps the glass sheet', /--dx-glass\b/.test(read(dark, 'dx-card') ?? ''), read(dark, 'dx-card') ?? 'none');
+    const sheet = Number(read(dark, 'dx-glass'));
+    check('…and the sheet is translucent', sheet > 0 && sheet < 1, read(dark, 'dx-glass') ?? 'none');
+    check(
+      '…over the aurora',
+      /\.pd-app\.dx-app::before\s*\{[^}]*position:\s*fixed[^}]*radial-gradient/.test(bare),
+    );
+    check('…and its blur', /blur\(/.test(read(dark, 'dx-card-blur') ?? ''));
+    check(
+      'the aurora is turned off for light only',
+      /:root\[data-theme='light'\] \.pd-app\.dx-app::before\s*\{\s*content:\s*none/.test(bare) &&
+        !/^\.pd-app(\.dx-app)?::before\s*\{[^}]*(content:\s*none|display:\s*none)/m.test(bare),
+    );
+    check('the light card is v3’s solid white', read(light, 'dx-card') === '#ffffff');
+    check('…with no blur behind it', read(light, 'dx-card-blur') === 'none');
 
-    const root = bare.slice(bare.indexOf(":root[data-theme='light'] {"));
-    const rootBody = root.slice(0, root.indexOf('}'));
-    const read = (prop: string): string | null =>
-      new RegExp(`--${prop}:\s*([^;]+);`).exec(rootBody)?.[1].trim() ?? null;
+    /* After the two token blocks, no rule names a colour — the repo's mechanics,
+       kept even where the palette is v3's. Scrims and shadows are tokens too. */
+    const lightEnd = bare.indexOf('\n}', bare.indexOf(":root[data-theme='light'] .pd-app.dx-app {"));
+    const rules = bare.slice(lightEnd);
+    const literal = /#[0-9a-f]{3,8}\b|rgba?\(\s*\d/i.exec(rules);
+    check('no dashboard rule below the tokens names a colour', literal === null, literal?.[0] ?? 'none');
+
     const hex = (value: string): number[] => {
       const n = Number.parseInt(value.slice(1), 16);
       return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -4679,171 +4720,81 @@ console.log('\nthe partner dashboard');
       const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
       return (hi + 0.05) / (lo + 0.05);
     };
-    const over = (top: number[], alpha: number, ground: number[]): number[] =>
-      top.map((c, i) => c * alpha + ground[i] * (1 - alpha));
-
-    const bg2 = read('bg-2');
-    const inkRgb = /--ink-rgb:\s*(\d+),\s*(\d+),\s*(\d+)/.exec(bare);
-    check('the light page ground and the ink are readable', bg2 !== null && inkRgb !== null);
-    if (bg2 && inkRgb && glass) {
-      const ink = inkRgb.slice(1, 4).map(Number);
-      const card = over([255, 255, 255], Number(glass[1]), hex(bg2));
-      /* Text tokens are the ink at an alpha, so each is composited onto the
-         card before it is measured — the colour a reader actually sees. */
-      for (const name of ['text-mut', 'text-fnt']) {
-        const value = read(name);
-        const alpha = value ? /,\s*(0?\.\d+)\)\s*$/.exec(value) : null;
-        check(`--${name} is the ink at an alpha`, alpha !== null, value ?? 'none');
-        if (!alpha) continue;
-        const seen = over(ink, Number(alpha[1]), card);
-        const r = ratio(seen, card);
-        check(`--${name} clears 4.5:1 on a light glass card`, r >= 4.5 - 0.005, `${r.toFixed(2)}:1`);
+    const card = read(light, 'dx-card');
+    const bone = read(light, 'dx-bone');
+    /* `--dx-faint` is left out on purpose: v3 spends it on captions and axis
+       labels at 2.5:1, which is the design's call and below AA by its own
+       admission. Everything that carries a sentence is measured. */
+    const MEASURED: Array<[string, number]> = [
+      ['dx-ink', 7],
+      ['dx-muted', 4.5],
+      ['dx-deep', 4.5],
+      ['dx-down', 4.5],
+      ['dx-warn', 4.5],
+    ];
+    if (card && bone) {
+      for (const [prop, floor] of MEASURED) {
+        const value = read(light, prop);
+        if (!value || !/^#[0-9a-f]{6}$/i.test(value)) {
+          check(`--${prop} is a hex in light`, false, value ?? 'none');
+          continue;
+        }
+        const r = ratio(hex(value), hex(card));
+        check(`--${prop} clears ${floor}:1 on a light card`, r >= floor - 0.005, `${r.toFixed(2)}:1`);
       }
-      const accentInk = read('accent-ink');
-      check('--accent-ink is a hex', accentInk !== null && /^#[0-9a-f]{6}$/i.test(accentInk), accentInk ?? 'none');
-      if (accentInk) {
-        const r = ratio(hex(accentInk), card);
-        check('--accent-ink clears 4.5:1 on a light glass card', r >= 4.5 - 0.005, `${r.toFixed(2)}:1`);
-      }
+      const inkOnBone = ratio(hex(read(light, 'dx-ink') ?? '#000000'), hex(bone));
+      check('--dx-ink clears 7:1 on the bone page', inkOnBone >= 7, `${inkOnBone.toFixed(2)}:1`);
     }
   }
 
   /*
-   * The two sanctioned hues clear AA on paper (item 25).
+   * The warm hues clear AA on paper, and dark keeps its own.
    *
-   * `CLAUDE.md` licenses a warm red and an amber outside the palette, and that
-   * licence is about the palette rather than about contrast -- both draw words
-   * and figures, so both owe 4.5:1. Checked here because they are the two
-   * colours in the sheet nobody thinks of as tokens: they are declared inside
-   * the component that spends them, which is exactly why they were left at the
-   * value dark mode uses.
-   *
-   * **Each is its own ground**, which is the trap this repeats from the accent
-   * chip. A paused card washes itself in the amber at 0.05 and then puts the
-   * amber on it at 0.18, so the ink sits on a surface tinted toward the ink and
-   * a value that clears every flat ground can still fail by a mile.
+   * v3's warm red (`--dx-down`) and its amber ink (`--dx-warn`) draw words and
+   * figures — a delta that fell, a customer slipping away, a paused campaign —
+   * so both owe 4.5:1 on the two grounds a row sits on, the card and the bone
+   * page, not only on the card. Dark is checked as the presence of its
+   * originals, because contrast is directional: the darkening that fixes paper
+   * moves these toward a near-black ground rather than away from it.
    */
   {
-    const css = readFileSync(new URL('../src/site/site.css', import.meta.url), 'utf8');
-
-    const channel = (v: number): number => {
-      const c = v / 255;
-      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    const bare = readFileSync(new URL('../src/site/dashboard.css', import.meta.url), 'utf8').replace(
+      /\/\*[\s\S]*?\*\//g,
+      '',
+    );
+    const block = (selector: string): string => {
+      const open = bare.indexOf(`${selector} {`);
+      return open < 0 ? '' : bare.slice(open, bare.indexOf('\n}', open));
     };
-    const lum = ([r, g, b]: number[]): number =>
-      0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-    const ratio = (a: number[], b: number[]): number => {
-      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
-      return (hi + 0.05) / (lo + 0.05);
-    };
+    const dark = block('\n.pd-app.dx-app');
+    const light = block(":root[data-theme='light'] .pd-app.dx-app");
+    const read = (body: string, prop: string): string | null =>
+      new RegExp(`--${prop}:\\s*([^;]+);`).exec(body)?.[1].trim() ?? null;
     const hex = (value: string): number[] => {
       const n = Number.parseInt(value.slice(1), 16);
       return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
     };
-    const over = (top: number[], alpha: number, ground: number[]): number[] =>
-      top.map((c, i) => c * alpha + ground[i] * (1 - alpha));
-
-    /* The light dashboard's grounds, restated rather than shared: this block
-       reads its own values so a rename in the block above cannot silently stop
-       it checking anything. */
-    const FLATS = ['#ffffff', '#eef1f0', '#e6e9e8'].map(hex);
-
-    /* Read a declaration out of one light-scoped rule. Anchored on the selector
-       so it cannot pick up the dark value of the same property name -- which is
-       the whole point of these being scoped. */
-    const scoped = (selector: string, prop: string): string | null => {
-      const open = css.indexOf(`:root[data-theme='light'] ${selector} {`);
-      if (open < 0) return null;
-      const body = css.slice(open, css.indexOf('\n}', open));
-      /* `\\s` and not `\s`: inside a template literal the single
-         backslash is dropped, so this read `--prop:s*(...)` and matched only
-         because `.trim()` tidied the space it failed to consume. */
-      const hit = new RegExp(`--${prop}:\\s*([^;]+);`).exec(body);
-      return hit ? hit[1].trim() : null;
+    const channel = (v: number): number => {
+      const c = v / 255;
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
     };
-
-    /*
-     * The warm red. One value, three rules -- a custom property does not escape
-     * the selector that declares it, so `.pd-danger`, `.pc-roster` and
-     * `.pl-total` each restate it, and all three have to move together. That is
-     * the failure this checks: two of three darkened reads as a theme bug on
-     * whichever screen kept the old one.
-     */
-    const reds: Array<[string, string]> = [
-      ['.pd-danger', 'danger'],
-      ['.pc-roster', 'pc-risk'],
-      [".pl-total[data-gap='true'] b", 'pl-gap'],
-    ];
-    const seen = new Set<string>();
-    for (const [selector, prop] of reds) {
-      const value = scoped(selector, prop);
-      check(`${selector} scopes its warm red to light`, value !== null, selector);
-      if (!value) continue;
-      seen.add(value);
-      const worst = Math.min(...FLATS.map((ground) => ratio(hex(value), ground)));
-      check(
-        `…and it clears 4.5:1 on paper`,
-        worst >= 4.5 - 0.005,
-        `${value} is ${worst.toFixed(2)}:1 at worst`,
-      );
-    }
-    check('all three warm reds are the same value', seen.size === 1, [...seen].join(', '));
-
-    /*
-     * The amber, against its own tint. `0.05` is the paused card's wash and
-     * `0.18` the pill on it, both read from the sheet rather than restated, so a
-     * chip made stronger fails here instead of on paper.
-     */
-    const amber = scoped(".pl-card[data-live='false']", 'pl-amber-rgb');
-    check('the paused card scopes its amber to light', amber !== null);
-    if (amber) {
-      const ink = amber.split(',').map((one) => Number(one.trim()));
-      check('…as three channels', ink.length === 3 && ink.every(Number.isFinite), amber);
-      /*
-       * Only the alphas that are a **ground behind amber text**, which is a
-       * narrower set than "every amber alpha in the sheet" and the difference
-       * matters: a first pass swept up `0.34` (a border-color) and `0.38` (a
-       * gradient stop) and failed at 3.30:1 against grounds no text is ever
-       * drawn on. A check that fails on a combination the product cannot render
-       * teaches the next person to darken a token for no reason.
-       *
-       * So the pairing is read: a rule that sets `background: rgba(amber, a)`
-       * *and* `color: rgb(amber)` is a chip, and its `a` is a real ground. Today
-       * that is `.pl-pill` at 0.18 and `.pl-chip` at 0.14.
-       */
-      const alphas: number[] = [];
-      for (const body of css.split('}')) {
-        if (!body.includes('color: rgb(var(--pl-amber-rgb))')) continue;
-        const bg = /background:\s*rgba\(var\(--pl-amber-rgb\),\s*(0\.\d+)\)/.exec(body);
-        if (bg) alphas.push(Number(bg[1]));
+    const lum = ([r, g, b]: number[]): number => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    const ratio = (a: number[], b: number[]): number => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    const grounds = ['dx-card', 'dx-bone'].map((prop) => read(light, prop));
+    for (const prop of ['dx-down', 'dx-warn']) {
+      const value = read(light, prop);
+      if (!value || grounds.some((g) => !g)) {
+        check(`--${prop} and its grounds are hexes in light`, false, value ?? 'none');
+        continue;
       }
-      check('the amber chips are still amber-on-amber', alphas.length >= 2, alphas.join(', '));
-      let worst = Infinity;
-      for (const flat of FLATS) {
-        const card = over(ink, 0.05, flat);
-        worst = Math.min(worst, ratio(ink, card));
-        for (const alpha of alphas) worst = Math.min(worst, ratio(ink, over(ink, alpha, card)));
-      }
-      check(
-        '…and the amber clears 4.5:1 on its own chip',
-        worst >= 4.5 - 0.005,
-        `rgb(${amber}) is ${worst.toFixed(2)}:1 at worst`,
-      );
+      const worst = Math.min(...grounds.map((g) => ratio(hex(value), hex(g as string))));
+      check(`--${prop} clears 4.5:1 on the card and the page`, worst >= 4.5 - 0.005, `${value} is ${worst.toFixed(2)}:1 at worst`);
     }
-
-    /*
-     * And dark is untouched. Checked as the presence of the originals, because
-     * contrast is directional: the same darkening that fixes paper moves these
-     * toward a near-black ground rather than away from it.
-     */
-    check(
-      "the dark dashboard keeps its own warm red",
-      css.includes('--danger: #d9483b') && css.includes('--pc-risk: #d9483b'),
-    );
-    check(
-      '…and its own amber',
-      css.includes('--pl-amber-rgb: 226, 170, 90'),
-    );
+    check('the dark dashboard keeps its own warm red', read(dark, 'dx-down') === '#d9483b', read(dark, 'dx-down') ?? 'none');
+    check('…and its own amber', read(dark, 'dx-amber-rgb') === '226, 170, 90', read(dark, 'dx-amber-rgb') ?? 'none');
   }
 
   /*
@@ -5022,12 +4973,13 @@ console.log('\nthe partner dashboard');
    * Three things it has to be true of, and each has already been the failure
    * mode of adding a screen to this rail:
    *
-   *  - The **index**. `DASH_SCREENS`, `copy.dashboard.screens`, the `SCREENS`
-   *    table in `dashboardScreens.tsx` and every hard-coded `empty[n]` are four
-   *    lists held together by position alone. The length check above catches a
-   *    short array and says nothing about the *order*, so the register is
-   *    pinned where it is: immediately after the ladder it is the other half
-   *    of, which is also where the rail draws it.
+   *  - The **order**. It used to be four lists held together by position
+   *    alone (`DASH_SCREENS`, `copy.dashboard.screens`, the component table and
+   *    every hard-coded `empty[n]`), so this pinned the register's index. Since
+   *    the v3 redesign every one of those is keyed by screen id, the type
+   *    system owns their completeness, and the only positional fact left is
+   *    the rail's order itself — v3's, pinned whole below, with each id named
+   *    exactly once. The register is `voucherActivity` now, in WORKSPACE.
    *  - Every **status** is named. `copy.register.status` is indexed by the
    *    column's own vocabulary, so a fifth status added to `issued_vouchers`
    *    would render its raw id — the lookup-that-misses failure this dashboard
@@ -5037,22 +4989,31 @@ console.log('\nthe partner dashboard');
    *    against a limit cannot do.
    */
   {
+    /* v3's rail, top to bottom: GROW then WORKSPACE. */
+    const V3_RAIL = [
+      'overview', 'deals', 'campaigns', 'vouchers', 'passes', 'customers', 'assistant',
+      'scans', 'voucherActivity', 'team', 'profile',
+    ];
+    const order = DASH_SCREENS.map((entry) => entry.id as string);
+    check('the rail is in v3 order', order.join(',') === V3_RAIL.join(','), order.join(', '));
+    check('…and names every screen exactly once', new Set(order).size === order.length);
     check(
-      'the register sits straight after the ladder',
-      DASH_SCREENS[4].id === 'issued',
-      DASH_SCREENS[4].id,
+      '…with GROW before WORKSPACE, never interleaved',
+      DASH_SCREENS.findIndex((entry) => entry.group === 'workspace') ===
+        DASH_SCREENS.filter((entry) => entry.group === 'grow').length,
     );
-    check('…and the ladder is still where it was', DASH_SCREENS[3].id === 'vouchers');
-    /* The profile stays last: `DashboardPage` renders it from
-       `DASH_SCREENS.length - 1` rather than by id. */
     check(
-      '…and the profile is still last',
-      DASH_SCREENS[DASH_SCREENS.length - 1].id === 'profile',
+      'the register is Voucher activity, under WORKSPACE',
+      DASH_SCREENS.find((entry) => entry.id === 'voucherActivity')?.group === 'workspace',
     );
     check(
-      'its icon is not one the rail already uses twice',
-      DASH_SCREENS.filter((entry) => entry.icon === DASH_SCREENS[4].icon).length === 1,
-      DASH_SCREENS[4].icon,
+      'no two screens in the rail share an icon',
+      new Set(DASH_SCREENS.map((entry) => entry.icon)).size === DASH_SCREENS.length,
+    );
+    /* The assistant is v3's one screen with no page head — a full-height chat. */
+    check(
+      'the assistant draws no page head',
+      DASH_SCREENS.find((entry) => entry.id === 'assistant')?.head === 'none',
     );
 
     /* The four statuses `issued_vouchers.status` can hold, plus the filter's
@@ -5070,8 +5031,8 @@ console.log('\nthe partner dashboard');
           register.status[status],
         );
       }
-      check(`${code} names the screen`, LANGUAGES[code].dashboard.screens[4].name.trim() !== '');
-      check(`${code} says what would fill it`, LANGUAGES[code].dashboard.empty[4].body.trim() !== '');
+      check(`${code} names the screen`, LANGUAGES[code].dashboard.screens.voucherActivity.name.trim() !== '');
+      check(`${code} says what would fill it`, LANGUAGES[code].dashboard.empty.voucherActivity.body.trim() !== '');
       /* The holes, by the sentence that needs them. */
       check(`${code}: the rung names its percentage`, register.caps.rung.includes('{pct}'));
       check(
@@ -5504,8 +5465,42 @@ console.log('\nhydration — what the server says an account is');
   check('an owner with nothing on the server still goes to setup',
     resolveRoute('signin', unlisted) === 'business-setup');
 
+  /*
+   * A manager comes home as what the server's workspaces say. The player
+   * answers above carried no `workspaces`, and must keep whatever was held —
+   * an unasked question is not a "no".
+   */
+  const managingPlayer = foldServer(
+    { ...blank, onboardedAt: '2026-03-02' },
+    {
+      ...answers(me({ onboardedAt: '2026-03-02T10:00:00Z' })),
+      workspaces: {
+        workspaces: [
+          { kind: 'personal', venueId: null, venueName: null, memberId: null, role: null, perms: null },
+          { kind: 'manager', venueId: 'ven_x', venueName: 'Café X', memberId: 'm1', role: 'manager', perms: {} },
+        ],
+      },
+    },
+    'en',
+  );
+  check('a manager comes home able to open the dashboard', managingPlayer.manages === true);
+  check('…and opens it', resolveRoute('dashboard', managingPlayer) === 'dashboard');
+  const staffOnly = foldServer({ ...blank, onboardedAt: '2026-03-02' }, {
+    ...answers(me({ onboardedAt: '2026-03-02T10:00:00Z' })),
+    workspaces: {
+      workspaces: [
+        { kind: 'staff', venueId: 'ven_x', venueName: 'Café X', memberId: 'm2', role: 'cashier', perms: {} },
+      ],
+    },
+  }, 'en');
+  check('staff are not managers — the counter is the phone’s', staffOnly.manages === false);
+  check('an unasked workspace question keeps what was held', player.manages === undefined);
+  check('a manager this browser never saw waits before being sent away from the dashboard',
+    awaitsServer({ ...blank, type: 'individual', onboardedAt: '2026-03-02' }, 'dashboard'));
+  check('…and one already known waits for nothing', !awaitsServer(managingPlayer, 'dashboard'));
+
   let unstable = '';
-  for (const account of [player, owner, unlisted, foldServer(blank, answers(me()), 'en')]) {
+  for (const account of [player, owner, unlisted, managingPlayer, staffOnly, foldServer(blank, answers(me()), 'en')]) {
     for (const route of Object.keys(PATHS) as Route[]) {
       const once = resolveRoute(route, account);
       if (resolveRoute(once, account) !== once) unstable = `${account.type}: ${route} → ${once}`;

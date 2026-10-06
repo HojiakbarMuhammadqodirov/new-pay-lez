@@ -36,6 +36,11 @@ export type ErrorCode =
   | 'daily_cap'
   | 'quota_exceeded'
   | 'quiet_hours'
+  /* The feature exists and this deployment cannot do it — today only a pass
+     subscription, which needs a payment rail nobody has built. 409 rather than
+     501: a client that treats 5xx as "the server is down" would say the wrong
+     thing, and this is a fact about the world, not a fault. */
+  | 'not_available'
   /* 422 — the trigger did not survive validation (§3.2, §3.3) */
   | 'invalid_trigger'
   | 'replay_detected'
@@ -65,6 +70,7 @@ const STATUS: Record<ErrorCode, number> = {
   daily_cap: 409,
   quota_exceeded: 409,
   quiet_hours: 409,
+  not_available: 409,
   invalid_trigger: 422,
   replay_detected: 422,
   rate_limited: 429,

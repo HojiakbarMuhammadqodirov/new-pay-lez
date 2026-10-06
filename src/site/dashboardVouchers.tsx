@@ -1,60 +1,47 @@
 /**
- * The partner dashboard's Vouchers screen.
+ * The partner dashboard's Vouchers screen, in v3's dress (spec §3.4,
+ * `b2b/dashboard-design/Paylez Partner Dashboard v3.dc.html`).
  *
- * Split out of `dashboardScreens.tsx` because it is the one screen whose layout
- * is not the file's shared vocabulary of panels and rows: it opens on a **dark
- * slab in both themes**, and everything under that slab is sized against it.
- * Reference: `b2b/uploads/vouchers1.png` and `vouchers2.png`.
- *
- * ── the slab, and why it is not a rule per child ──────────────────────────
- *
- * `data-ink='on'` re-points the tokens *inside* the panel — text to white at
- * three alphas, the accent to the mint, surfaces and borders to white at low
- * alpha — so a kicker that already reads `--accent-ink` and a figure that
- * already reads `--text` invert without knowing the scope exists. That is the
- * `[data-ink]` block in `site.css`, and it is the reason nothing below sets a
- * white anywhere. `'on'` rather than `'paper'` because this panel is dark in
- * **both** themes, which is the design's whole gesture; `'paper'` is for the
- * slabs that are already dark when the page is.
+ * Top to bottom: the alert (only when the pool runs dry before the month ends,
+ * or already has), the ink budget card, the ladder, where the money went beside
+ * what came back, and the caps. Styles are `dashboard-vouchers.css`, `dx-vch-*`
+ * plus the kit; nothing here names a colour.
  *
  * ── three states, and none of them is a zero ──────────────────────────────
  *
  * `Screen` folds `loading | ready | error` the same way every other screen
  * does. Inside `ready` there is a second kind of missing, and it is the one
- * this screen is full of: a column the server does not return yet. **Those are
- * em dashes, never 0** — "nobody has counted this" and "the count is zero" are
- * different findings and a venue owner acts differently on each. The take-up
- * fields on a ladder rung — `issuedCount`, `redeemedCount`, `activeCount`,
- * `spentMinor` — are counted by the server now and still optional, so a site
- * built against this shape renders against an API that predates them; every
- * cell that reads one branches on `undefined`.
+ * this screen is full of: a field an older API does not return. **Those are em
+ * dashes, never 0** — "nobody has counted this" and "the count is zero" are
+ * different findings and a venue owner acts differently on each. Every take-up
+ * field on a rung, `returnedMinor` and `averageCheck.source` are optional for
+ * that reason, and every cell reading one branches on `undefined`.
  *
  * ── what is a field and what is a fact ────────────────────────────────────
  *
- * The reference design draws three number wells. Two of them are facts here,
- * and that is the honesty rule this dashboard states one file over — a figure
- * the screen cannot honestly make editable is shown as a fact rather than a
- * field:
+ * v3 draws four wells. Two of them are facts here — a figure the screen cannot
+ * honestly make editable is shown as a fact rather than a field:
  *
  *  - **Total discount budget** is a field. `PUT …/budget` takes it, and the
  *    loyalty split rides along so resizing the total cannot silently
  *    reallocate the other pool.
- *  - **Average transaction** is a fact. It is the median of the venue's own
- *    confirmed scans, computed by `averageCheck` on the server, and there is no
- *    endpoint that sets it. A well over it would be a control with nothing
- *    behind it.
- *  - **Most off one voucher** is a fact. It is `max_discount_minor` and it is
- *    stored **per rung**; one well over the three would flatten a 10/25/40
- *    ladder to 25 with nothing in the response saying so. That is the silent
- *    kind of wrong, which is the kind this repo keeps paying for.
+ *  - **Points needed** is a field per rung. `PUT …/tiers` upserts on the
+ *    percentage, so one rung is sent and the others are left alone.
+ *  - **Average transaction** is a fact: the median of the venue's own confirmed
+ *    scans (`averageCheck` on the server), and no endpoint sets it. v3's "your
+ *    own figure" override has nothing behind it, so it is not drawn.
+ *  - **Most off one voucher** is a fact: `max_discount_minor` is stored **per
+ *    rung**, and one well over three of them would flatten a 10/25/40 ladder to
+ *    25 on the first blur with nothing in the response saying so.
  *
- * Money typed into the one field is in the **reader's** currency and goes back
- * through the rate on the way out (`minorToEuro` / `euroToMinor` × the reader's
- * rate), because the site stores euros and converts on the way out — right for
- * a figure being shown and wrong for one being typed.
+ * Money typed into a field is in the **reader's** currency and goes back
+ * through the rate on the way out, because the site stores euros and converts
+ * on the way out — right for a figure being shown, wrong for one being typed.
+ * Every `…Minor` crossing into `partnerMetrics.ts` goes through `toEuro`, the
+ * seam whose absence once printed "about 192,847 more vouchers".
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 
 import { ApiError } from './api/client';
 import {
@@ -66,115 +53,116 @@ import {
   usePartnerBudget,
   usePartnerVenue,
   type BudgetBody,
+  type TierDraft,
 } from './api/partner';
 import { DEMO_BUDGET } from './dashboardDemo';
-import { NumberWell } from './dashboardControls';
-/* Split from `dashboardScreens` because a module that exports a hook *and*
-   components breaks React fast refresh — the same split `theme/` and `i18n/`
-   already make. `Screen` is a component and stays where it is. */
 import { useNum } from './dashboardFormat';
+import { Button, Card, CardHead, DxIcon, EmptyState, Eyebrow, Progress, UnitField } from './dashboardKit';
 import { Screen } from './dashboardScreens';
 import { useDashboard } from './dashboardShell';
-import { Icon } from './icons';
 import { useCopy, useCurrency, useLanguage, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import { voucherModelFrom, type TierRow } from './partnerMetrics';
 
+import './dashboard-vouchers.css';
+
 /* ─────────────────────────────────────────────────────────────── the data ── */
 
 /**
- * One rung of the ladder, named for what this screen calls it.
- *
- * An alias and **not** a second declaration of the shape. The take-up fields
- * are optional on `BudgetBody['tiers']` for older APIs, and restating them here
- * would be two places to keep in step. Every cell that reads one branches on
- * `undefined` and draws an em dash: "nobody has counted this" and "the count is
- * zero" are different findings, and a 0 would report the second when the first
- * is true.
+ * One rung of the ladder. An alias and **not** a second declaration: the
+ * take-up fields are optional on `BudgetBody['tiers']` for older APIs, and
+ * restating them here would be two places to keep in step.
  */
 type Rung = BudgetBody['tiers'][number];
 
-/** The three parts of the pool, in the order the bar draws them. */
-type Part = 'spent' | 'held' | 'free';
+/**
+ * v3's three tier tints — 5% the mint at a third, 10% the mint, 15% the deep
+ * green — keyed by the percentage as v3 keys them, so a ladder of 5/10/15 draws
+ * exactly the mock and a ladder of 8/12/20 still reads shallow-to-deep. One
+ * hue at three strengths, never three hues.
+ */
+const stepOf = (pct: number): 1 | 2 | 3 => (pct >= 15 ? 3 : pct >= 10 ? 2 : 1);
+
+/** Rungs in the order the table draws them: shallowest discount first. */
+const byDepth = (rungs: readonly Rung[]) => [...rungs].sort((a, b) => a.discountPct - b.discountPct);
 
 /* ──────────────────────────────────────────────────────────────── writing ── */
 
 /**
  * A write, its two endings, and the re-read after it.
  *
- * The same three obligations `useAction` owns on the other screens — lock the
- * control that is working, name a failure by *kind*, and re-read rather than
- * patch — narrowed to the one shape this screen needs. A press that could not
- * reach the server must not look like a press that worked, and "the server is
- * not there" and "the server looked at this and refused" have different fixes.
+ * Lock the control that is working, name a failure by *kind*, and re-read
+ * rather than patch. A press that could not reach the server must not look like
+ * a press that worked, and "the server is not there" and "the server looked at
+ * this and refused" have different fixes — the second is printed in its own
+ * words, because the budget's refusal names the committed floor.
  */
 function useCommit(reload: () => void) {
-  const copy = useCopy().dashboard.acts;
+  const acts = useCopy().dashboard.acts;
   const { toast } = useDashboard();
   const [busy, setBusy] = useState(false);
 
   const commit = useCallback(
-    async (done: string, work: () => Promise<unknown>) => {
+    async (done: string, work: () => Promise<unknown>): Promise<boolean> => {
       setBusy(true);
       try {
         await work();
         toast(done);
         reload();
+        return true;
       } catch (cause) {
         toast(
           cause instanceof ApiError && cause.status === 0
-            ? copy.offline
-            : fill(copy.refused, {
-                why: cause instanceof Error ? cause.message : String(cause),
-              }),
+            ? acts.offline
+            : fill(acts.refused, { why: cause instanceof Error ? cause.message : String(cause) }),
         );
+        return false;
       } finally {
         setBusy(false);
       }
     },
-    [copy, reload, toast],
+    [acts, reload, toast],
   );
 
   return { busy, commit };
 }
 
+/** Enter commits a well the way leaving it does — by leaving it. */
+const blurOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
+  if (event.key === 'Enter') event.currentTarget.blur();
+};
+
 /* ─────────────────────────────────────────────────────────────── the maths ── */
 
-/** What the period's month is, given `YYYY-MM` — or this month if it is not. */
+/** The budget period's month, given `YYYY-MM` — or the reader's own month if it is not. */
 function monthOf(period: string, now: Date): { year: number; month: number; own: boolean } {
   const parsed = /^(\d{4})-(\d{2})$/.exec(period);
   if (parsed === null) {
-    /* `period` is a month on the server (`localMonth`), but the demo payload
-       carries `'30d'` and a screen that threw on it would be unviewable in the
-       one mode built for looking at it. Fall back to the reader's own month. */
+    /* The server's period is a month (`localMonth`); a payload that carried
+       anything else would make the screen unviewable if this threw. */
     return { year: now.getUTCFullYear(), month: now.getUTCMonth(), own: true };
   }
   const year = Number(parsed[1]);
   const month = Number(parsed[2]) - 1;
-  return {
-    year,
-    month,
-    own: now.getUTCFullYear() === year && now.getUTCMonth() === month,
-  };
+  return { year, month, own: now.getUTCFullYear() === year && now.getUTCMonth() === month };
 }
-
-type Forecast =
-  | { kind: 'out' }
-  | { kind: 'safe'; at: Date }
-  | { kind: 'date'; at: Date };
 
 /**
  * When the pool runs dry, at the rate it has been going out.
  *
- * Straight-line from the spend so far over the days of the period that have
- * actually happened — which is why `own` matters: a budget being read back for
- * a month that has ended has *all* of its days behind it, and dividing by
- * today's date would price a finished month as though it were a fortnight in.
+ *  - `out` — nothing is available now.
+ *  - `low` — it runs out on a day *inside* the period: the alert's case.
+ *  - `ok` with a date — it outlasts the month, and v3 still names the day.
+ *  - `ok` with `null` — nothing has gone out yet, so there is no rate to
+ *    extrapolate and no day to name; the sentence says the month instead.
  *
- * Three endings rather than one, because the copy has three: the pool is
- * already gone, the pool outlasts the month, or here is the day. A rate of zero
- * is the second of those and not a division by zero.
+ * Straight-line from the spend so far over the days of the period that have
+ * actually happened — which is why `own` matters: a month that has ended has
+ * all of its days behind it, and dividing by today's date would price a
+ * finished month as though it were a fortnight in.
  */
+type Forecast = { kind: 'out' } | { kind: 'low'; at: Date } | { kind: 'ok'; at: Date | null; last: Date };
+
 function forecastOf(period: string, spent: number, available: number, now: Date): Forecast {
   const { year, month, own } = monthOf(period, now);
   const days = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
@@ -183,686 +171,688 @@ function forecastOf(period: string, spent: number, available: number, now: Date)
 
   const elapsed = own ? Math.max(1, now.getUTCDate()) : days;
   const perDay = spent / elapsed;
-  if (perDay <= 0) return { kind: 'safe', at: last };
+  if (perDay <= 0) return { kind: 'ok', at: null, last };
 
   const lasts = elapsed + available / perDay;
-  if (lasts >= days) return { kind: 'safe', at: last };
-  return { kind: 'date', at: new Date(Date.UTC(year, month, Math.max(1, Math.ceil(lasts)))) };
+  const at = new Date(Date.UTC(year, month, Math.max(1, Math.ceil(lasts))));
+  return lasts >= days ? { kind: 'ok', at, last } : { kind: 'low', at };
 }
+
+/**
+ * A day written out in full — "3 September". Long because it sits in prose;
+ * the register's table uses the short month. Not `useVenueDates`: a forecast is
+ * computed from `new Date()` and a budget period is a calendar month, neither
+ * of which happened at the venue's till.
+ */
+const dayFormatOf = (language: string) => new Intl.DateTimeFormat(language, { day: 'numeric', month: 'long' });
 
 /* ─────────────────────────────────────────────────────────────── the parts ── */
 
-/**
- * A figure the server has not reported.
- *
- * Not `Figure`, which is the min-cohort em dash and carries that explanation in
- * its `title` — "too few people for this to be reported without identifying
- * them" is a *finding about privacy* and none of these cells is withheld for
- * that reason. Same mark, the true sentence behind it.
- */
+/** A figure the server has not reported — the dash, with the true sentence behind it. */
 function Missing() {
-  const dashboard = useCopy().dashboard;
+  const unmeasured = useCopy().dashboard.unmeasured;
   return (
-    <b className="vch-missing" title={dashboard.unmeasured.noSource}>
+    <b className="dx-vch-missing" title={unmeasured.noSource}>
       —
     </b>
   );
 }
 
-/** One of the three pool columns: a swatch, a label, the money, the sentence. */
-function PoolColumn({
-  part,
-  label,
-  amount,
-  note,
-}: {
-  part: Part;
-  label: string;
-  amount: string;
-  note: string;
-}) {
+/** The tier chip: "10% off" on its own strength of the one accent. */
+function TierChip({ pct, size }: { pct: number; size?: 'sm' }) {
+  const copy = useCopy().dashboard.vouchers;
   return (
-    <div className="vch-col">
-      <span className="vch-col-head">
-        <i className="vch-swatch" data-part={part} />
-        <em>{label}</em>
-      </span>
-      <b>{amount}</b>
-      <p>{note}</p>
-    </div>
+    <span className="dx-vch-chip" data-step={stepOf(pct)} data-size={size}>
+      {fill(copy.tier, { n: String(pct) })}
+    </span>
   );
 }
 
 /**
- * A day written out in full — "16 September".
+ * The alert above the ink card, in its two v3 readings: amber when the pool
+ * runs out before the month does, red when it already has.
  *
- * Two components on this screen format one, the budget editor and the forecast
- * banner, and they built the same formatter twice with the same options. That is
- * the cheap half of the mistake `day` in `adminFormat.ts` made four times over:
- * the format was identical both times, so the duplication was invisible until
- * one of them needed changing.
- *
- * `month: 'long'` and not `'short'`, and that distinction is deliberate across
- * this dashboard rather than drift. **Long is prose and short is tabular** — a
- * sentence has room for September and a chart axis and a table column do not, so
- * `useDates().tick` in `dashboardScreens.tsx` is short for an axis label while
- * `full` is long for the tooltip over it. Do not unify them.
- *
- * Not `useVenueDates` either, and that is the other distinction worth keeping:
- * that hook stamps the **venue's** zone, which is right for an instant the till
- * recorded and wrong here — a forecast date is computed from `new Date()` and a
- * budget period is a calendar month, neither of which happened anywhere.
+ * "Increase the budget" is a real destination rather than v3's fixed +500: the
+ * total is a field one card down, and this scrolls to it and puts the caret in
+ * it. Adding an amount nobody chose would be the screen spending money.
  */
-const dayFormatOf = (language: string) =>
-  new Intl.DateTimeFormat(language, { day: 'numeric', month: 'long' });
+function Alert({ forecast, onRaise }: { forecast: Forecast; onRaise: () => void }) {
+  const copy = useCopy().dashboard.vouchers;
+  const [language] = useLanguage();
+  if (forecast.kind === 'ok') return null;
+  const out = forecast.kind === 'out';
 
+  return (
+    <div className="dx-vch-alert" data-tone={out ? 'down' : 'warn'} role="status">
+      <DxIcon name="warn" size={20} strokeWidth={1.9} />
+      <div>
+        <b>{out ? copy.outTitle : fill(copy.alertTitle, { date: dayFormatOf(language).format(forecast.at) })}</b>
+        <p>{out ? copy.outBody : copy.alertBody}</p>
+      </div>
+      <Button variant="primary" onClick={onRaise}>
+        {copy.alertAction}
+      </Button>
+    </div>
+  );
+}
 
-/* ───────────────────────────────────────────────────────────────── screens ── */
+/* ──────────────────────────────────────────────────────── the ink card ── */
 
-/**
- * The dark slab: the pool, where it went, and what is left buys.
- *
- * Its own component rather than a block inside the board because the total is a
- * draft that lives across renders and the render prop `Screen` takes cannot
- * hold a hook.
- */
-function BudgetSlab({
+function BudgetCard({
   budget,
-  rungs,
+  forecast,
   moreVouchers,
+  totalRef,
+  autoFocus,
   reload,
 }: {
   budget: BudgetBody;
-  rungs: Rung[];
+  forecast: Forecast;
   /** Null when no rung reports a take-up, which is what a dash is drawn for. */
   moreVouchers: number | null;
+  totalRef: RefObject<HTMLInputElement | null>;
+  autoFocus: boolean;
   reload: () => void;
 }) {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.vouchers;
-  const acts = dashboard.acts;
   const [language] = useLanguage();
   const currency = useCurrency();
   const money = useMoney();
   const num = useNum();
   const { busy, commit } = useCommit(reload);
 
-  const toEuro = useCallback(
-    (minor: number) => minorToEuro(minor, budget.currency),
-    [budget.currency],
-  );
+  const toEuro = (minor: number) => minorToEuro(minor, budget.currency);
   const toReader = (minor: number) => toEuro(minor) * currency.rate;
-  const toMinor = (reader: number) => euroToMinor(reader / currency.rate, budget.currency);
 
-  /* `null` is "nobody has typed", which is not the same as "the field is empty"
-     and is what lets the well fall back to the server's figure after a reload
-     without a second effect to copy it across. A failed save keeps the draft,
-     because the number on screen is still the one the owner asked for. */
-  const [draft, setDraft] = useState<number | null>(null);
+  /* `null` is "nobody has typed", which is what lets the well fall back to the
+     server's figure after a reload without an effect to copy it across. A
+     failed save keeps the draft: the number on screen is the one asked for. */
+  const [draft, setDraft] = useState<string | null>(null);
   const server = Math.round(toReader(budget.total));
-  const total = draft ?? server;
 
-  const pool = budget.voucher;
-  const dates = useMemo(
-    () => ({
-      day: dayFormatOf(language),
-      month: new Intl.DateTimeFormat(language, { month: 'long' }),
-    }),
-    [language],
-  );
-  const forecast = useMemo(
-    () => forecastOf(budget.period, pool.spent, pool.available, new Date()),
-    [budget.period, pool.spent, pool.available],
-  );
-
-  /* Four readings, and the first is the one a straight forecast gets wrong. A
-     pool of nothing resolves to "out" — `available` is 0 — and "the budget is
-     spent" says money left, which is a different month from the one a venue
-     that has never set a budget has had. Its own sentence, and it is the
-     remedy: the field that fixes it is the one directly above this line. */
-  const forecastLine =
-    pool.base <= 0
-      ? dashboard.empty[3].title
-      : forecast.kind === 'out'
-        ? copy.forecastOut
-        : forecast.kind === 'safe'
-          ? fill(copy.forecastSafe, { month: dates.month.format(forecast.at) })
-          : fill(copy.forecast, { date: dates.day.format(forecast.at) });
-
-  /* The largest cap on the ladder, which is the number `maxNote` is about. A
-     venue with no ladder has no cap — not a cap of zero. */
-  const caps = rungs.map((rung) => toEuro(rung.maxDiscountMinor));
-  const avgSpend = toEuro(budget.averageCheck.minor);
-
-  /* Widths, as percentages of the pool. `base` and not the three added up: the
-     three states *exhaust* the pool by construction, so anything that does not
-     reach 100 is the available slice and drawing it against a different total
-     would hide exactly the disagreement worth seeing. */
-  const share = (value: number) =>
-    pool.base > 0 ? `${Math.max(0, Math.min(100, (value / pool.base) * 100))}%` : '0%';
-
-  const saveTotal = () => {
-    if (draft === null || draft === server || !(draft >= 0)) return;
-    void commit(acts.budgetSaved, async () => {
+  const save = () => {
+    if (draft === null) return;
+    const next = Number(draft);
+    if (draft.trim() === '' || !Number.isFinite(next) || next < 0 || Math.round(next) === server) {
+      setDraft(null);
+      return;
+    }
+    void commit(dashboard.acts.budgetSaved, async () => {
       /* The split rides along. `PUT …/budget` takes a total and a share of it,
          and omitting the share lets the server keep whatever default it had —
          so resizing the pool would quietly move money between the two. */
       await setBudget(
         budget.venueId,
-        toMinor(draft),
+        euroToMinor(Math.round(next) / currency.rate, budget.currency),
         budget.total > 0 ? Math.round((budget.loyalty.base / budget.total) * 10_000) : undefined,
       );
       setDraft(null);
     });
   };
 
+  const pool = budget.voucher;
+  const caps = budget.tiers.map((rung) => toEuro(rung.maxDiscountMinor));
+  const day = dayFormatOf(language);
+  const monthName = new Intl.DateTimeFormat(language, { month: 'long' });
+
+  /* v3's forecast chip. With no spend yet there is no rate and so no day; the
+     month is the honest thing to name. */
+  const runsOut = forecast.kind === 'out' ? null : forecast.at;
+  const forecastLine =
+    forecast.kind === 'out'
+      ? copy.forecastOut
+      : runsOut !== null
+        ? fill(copy.forecast, { date: day.format(runsOut) })
+        : forecast.kind === 'ok'
+          ? fill(copy.forecastSafe, { month: monthName.format(forecast.last) })
+          : copy.forecastOut;
+
+  const avg = budget.averageCheck.minor > 0 ? money(toEuro(budget.averageCheck.minor), 'unit') : null;
+
   return (
-    <div className="pd-glass pd-panel vch-slab" data-ink="on" data-reveal>
-      <div className="vch-slab-top">
-        <div className="vch-slab-copy">
-          <h3>{copy.budgetTitle}</h3>
+    <Card tone="ink" className="dx-vch-budget" aria-label={copy.budgetTitle}>
+      <div className="dx-vch-budget-top">
+        <div>
+          <h2>{copy.budgetTitle}</h2>
           <p>{copy.budgetLede}</p>
         </div>
-        {/* The pool is the largest number on the panel and it stays that size
-            when it becomes typeable — a four-figure sum in a 0.85rem well reads
-            as a setting somebody tucked away rather than as the headline it is.
-            `onBlur` on the wrapper rather than on the input: React's blur is
-            `focusout` and bubbles, and `NumberWell` owns the input's own
-            handler for its draft string. */}
-        <div className="vch-total" onBlur={saveTotal}>
-          <span className="vch-foot-label">{copy.budgetLabel}</span>
-          <NumberWell
-            value={total}
-            onChange={setDraft}
-            unit={currency.symbol}
-            label={copy.budgetLabel}
-            min={0}
-            wide
-          />
-        </div>
+        <label className="dx-vch-total">
+          <span>{copy.budgetLabel}</span>
+          <span className="dx-vch-total-well">
+            <input
+              ref={totalRef}
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={100}
+              autoFocus={autoFocus}
+              disabled={busy}
+              value={draft ?? String(server)}
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={save}
+              onKeyDown={blurOnEnter}
+            />
+            <em>{currency.symbol}</em>
+          </span>
+        </label>
       </div>
 
-      <p className="vch-split">
-        {fill(acts.budgetShareNote, {
-          loyalty: money(toEuro(budget.loyalty.base), 'exact'),
+      <p className="dx-vch-split">
+        {fill(copy.allocSplit, {
           voucher: money(toEuro(pool.base), 'exact'),
+          loyalty: money(toEuro(budget.loyalty.base), 'exact'),
         })}
       </p>
 
       {/* One bar in three parts rather than three bars, because the three are
           one quantity split up: spent, set aside and available exhaust the pool
           by construction, and stacking them is the only drawing that says so.
-          `role="img"` with the sentence as its label, since the parts carry no
-          text of their own and a screen reader gets three empty spans. */}
-      <div className="vch-bar" role="img" aria-label={copy.allocNote}>
-        <i data-part="spent" style={{ width: share(pool.spent) }} />
-        <i data-part="held" style={{ width: share(pool.reserved) }} />
+          The kit clamps the set-aside part into what spent left. */}
+      <Progress
+        spent={pool.spent}
+        aside={pool.reserved}
+        total={pool.base}
+        tone="fill"
+        height={18}
+        label={copy.allocNote}
+      />
+
+      <div className="dx-vch-legend">
+        <div>
+          <span className="dx-vch-key">
+            <i data-part="spent" />
+            {copy.spent}
+          </span>
+          <b>{money(toEuro(pool.spent), 'exact')}</b>
+          <p>{copy.spentNote}</p>
+        </div>
+        <div>
+          <span className="dx-vch-key">
+            <i data-part="aside" />
+            {copy.held}
+          </span>
+          <b>{money(toEuro(pool.reserved), 'exact')}</b>
+          <p>{copy.heldNote}</p>
+        </div>
+        <div>
+          <span className="dx-vch-key">
+            <i data-part="free" />
+            {copy.free}
+          </span>
+          <b data-empty={pool.available <= 0 ? 'true' : undefined}>
+            {money(toEuro(Math.max(0, pool.available)), 'exact')}
+          </b>
+          <p>{copy.freeNote}</p>
+        </div>
       </div>
 
-      <div className="vch-cols">
-        <PoolColumn
-          part="spent"
-          label={copy.spent}
-          amount={money(toEuro(pool.spent), 'exact')}
-          note={copy.spentNote}
-        />
-        <PoolColumn
-          part="held"
-          label={copy.held}
-          amount={money(toEuro(pool.reserved), 'exact')}
-          note={copy.heldNote}
-        />
-        <PoolColumn
-          part="free"
-          label={copy.free}
-          amount={money(toEuro(Math.max(0, pool.available)), 'exact')}
-          note={copy.freeNote}
-        />
-      </div>
-
-      <p className="vch-callout">
-        <Icon name="clock" size={16} />
+      <p className="dx-vch-forecast" data-tone={forecast.kind === 'ok' ? undefined : 'warn'}>
+        <DxIcon name="clock" size={16} strokeWidth={2} />
         <span>{forecastLine}</span>
       </p>
 
-      <div className="vch-foot">
-        <div className="vch-foot-col">
-          <span className="vch-foot-label">{copy.buysTitle}</span>
+      <div className="dx-vch-foot">
+        <div>
+          <span className="dx-vch-foot-label">{copy.buysTitle}</span>
           {moreVouchers === null ? (
             <Missing />
           ) : (
-            <b className="vch-foot-figure">{fill(copy.buys, { n: num(moreVouchers) })}</b>
+            <b className="dx-vch-foot-big">{fill(copy.buys, { n: num(moreVouchers) })}</b>
           )}
-          <p>{copy.buysNote}</p>
+          {avg !== null && <p>{fill(copy.buysNote, { amount: avg })}</p>}
         </div>
 
-        {/* A fact, not a field. The median check is the venue's own trading,
-            computed by `averageCheck` from confirmed scans, and no endpoint
-            sets it — a well over it would be a picture of a control. Zero is a
-            venue that has never had a scan confirmed, which is a dash. */}
-        <div className="vch-foot-col">
-          <span className="vch-foot-label">{copy.avgTitle}</span>
-          {budget.averageCheck.minor > 0 ? (
-            <b className="vch-foot-figure">{money(avgSpend, 'unit')}</b>
-          ) : (
-            <Missing />
+        {/* A fact, not a field: the median check is the venue's own trading,
+            and no endpoint sets it. Zero is a venue the server has nothing for,
+            which is a dash. */}
+        <div>
+          <span className="dx-vch-foot-label">{copy.avgTitle}</span>
+          {avg === null ? <Missing /> : <b className="dx-vch-foot-fact">{avg}</b>}
+          {budget.averageCheck.source !== undefined && (
+            <p>{budget.averageCheck.source === 'computed' ? copy.avgNote : copy.avgCategory}</p>
           )}
-          <p>{copy.avgNote}</p>
         </div>
 
-        {/* Also a fact, and for the harder reason. The cap is stored per rung,
-            so one well over three of them would flatten the ladder on the first
-            blur with nothing in the response saying it had — the silent kind of
-            wrong. The ladder below is where a rung is changed. */}
-        <div className="vch-foot-col">
-          <span className="vch-foot-label">{copy.maxTitle}</span>
-          {caps.length > 0 ? (
-            <b className="vch-foot-figure">{money(Math.max(...caps), 'unit')}</b>
-          ) : (
-            <Missing />
-          )}
+        {/* Also a fact, and for the harder reason: the cap is per rung. The
+            largest is the number "however large the order" is true of. */}
+        <div>
+          <span className="dx-vch-foot-label">{copy.maxTitle}</span>
+          {caps.length > 0 ? <b className="dx-vch-foot-fact">{money(Math.max(...caps), 'unit')}</b> : <Missing />}
           <p>{copy.maxNote}</p>
         </div>
       </div>
-
-      {busy && <span className="vch-saving" aria-hidden="true" />}
-    </div>
+    </Card>
   );
 }
 
+/* ─────────────────────────────────────────────────────────── the ladder ── */
+
 /**
- * Who reaches each tier, and what it has cost.
- *
- * The one editable number is the threshold, because it is the one the lede is
- * about: points decide who gets there, so raising a number sends less of the
- * budget that way. `PUT …/tiers` is an upsert keyed on the percentage, so one
- * rung is sent and the others are left alone.
+ * Who reaches each tier, and what it has cost. The one editable number is the
+ * threshold, because it is the one the sentence is about: points decide who
+ * gets there, so raising a number sends less of the budget that way.
  */
-function Ladder({
-  budget,
-  rungs,
-  units,
-  reload,
-}: {
-  budget: BudgetBody;
-  rungs: Rung[];
-  /**
-   * What one voucher at each rung takes off a bill.
-   *
-   * Index-aligned with `rungs` **sorted by discount**, which is the order the
-   * table draws — not with `rungs` as handed over. Both ends sort the same way
-   * and the caller says so; an ordering agreed in two places is a trap, but the
-   * alternative is passing the figure per row and this one comes out of the
-   * shared model in one pass.
-   */
-  units: number[];
-  reload: () => void;
-}) {
+function Ladder({ budget, reload }: { budget: BudgetBody; reload: () => void }) {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.vouchers;
-  const acts = dashboard.acts;
   const money = useMoney();
   const num = useNum();
   const { busy, commit } = useCommit(reload);
 
-  /* Keyed by percentage, which is the rung's identity on the server too — an
-     index would be wrong the moment a rung is added or retired under the
-     draft. `undefined` is "not typed", the same `null` the total field uses. */
-  const [drafts, setDrafts] = useState<Record<number, number>>({});
-
+  /* Keyed by percentage, the rung's identity on the server too — an index would
+     be wrong the moment a rung is added or retired under the draft. */
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const ordered = byDepth(budget.tiers);
   const toEuro = (minor: number) => minorToEuro(minor, budget.currency);
 
-  /* The ladder must climb: a deeper discount cannot cost fewer points than a
-     shallower one. Checked on the *drafts* rather than on the saved rows, so it
-     appears while the number is being typed rather than after the save that
-     would be refused. */
-  const ordered = [...rungs].sort((a, b) => a.discountPct - b.discountPct);
-  const pointsOf = (rung: Rung) => drafts[rung.discountPct] ?? rung.pointsCost;
-  /* Only the rungs on sale have to climb. A retired rung is listed for the
-     vouchers still out at it, and its points are history rather than a price. */
+  const pointsOf = (rung: Rung) => {
+    const typed = drafts[rung.discountPct];
+    return typed === undefined || typed.trim() === '' ? rung.pointsCost : Number(typed);
+  };
+  /* The ladder must climb, among the rungs on sale: a retired rung is listed for
+     the vouchers still out at it, and its points are history rather than a
+     price. Checked on the drafts, so it shows while typing. */
   const onSale = ordered.filter((rung) => rung.active !== false);
-  const outOfOrder = onSale.some(
-    (rung, index) => index > 0 && pointsOf(rung) < pointsOf(onSale[index - 1]),
-  );
+  const outOfOrder = onSale.some((rung, index) => index > 0 && pointsOf(rung) < pointsOf(onSale[index - 1]));
+
+  const drop = (pct: number) =>
+    setDrafts((current) => {
+      const { [pct]: _gone, ...rest } = current;
+      return rest;
+    });
 
   const save = (rung: Rung) => {
-    const next = drafts[rung.discountPct];
-    if (next === undefined || next === rung.pointsCost || !(next > 0)) return;
-    void commit(acts.tiersSaved, async () => {
+    const typed = drafts[rung.discountPct];
+    if (typed === undefined) return;
+    const next = Math.round(Number(typed));
+    if (typed.trim() === '' || !(next > 0) || next === rung.pointsCost) {
+      drop(rung.discountPct);
+      return;
+    }
+    void commit(dashboard.acts.tiersSaved, async () => {
+      /* No cap keys: a rung sent without them keeps the caps it has, so saving
+         a price never clears a limit set on the card below. */
       await setVoucherTiers(budget.venueId, [
-        {
-          discountPct: rung.discountPct,
-          pointsCost: Math.round(next),
-          maxDiscountMinor: rung.maxDiscountMinor,
-          active: true,
-        },
+        { discountPct: rung.discountPct, pointsCost: next, maxDiscountMinor: rung.maxDiscountMinor, active: true },
       ]);
-      setDrafts((current) => {
-        const { [rung.discountPct]: _saved, ...rest } = current;
-        return rest;
-      });
+      drop(rung.discountPct);
     });
   };
 
-  if (rungs.length === 0) {
-    return (
-      <div className="pd-glass pd-panel" data-solid="true" data-reveal>
-        <div className="pd-panel-head">
-          <div>
-            <span className="console-label">{copy.tiersTitle}</span>
-            <p className="pd-fine">{copy.tiersLede}</p>
-          </div>
-        </div>
-        <p className="pd-fine">{dashboard.empty[3].body}</p>
-      </div>
-    );
-  }
+  /* v3's three notes, by place on the ladder rather than by percentage. */
+  const noteOf = (index: number) =>
+    index === 0 ? copy.steps.first : index === ordered.length - 1 ? copy.steps.last : copy.steps.middle;
 
   return (
-    <div className="pd-glass pd-panel vch-ladder" data-solid="true" data-reveal>
-      <div className="pd-panel-head">
+    <Card pad="none" className="dx-vch-ladder">
+      <div className="dx-vch-ladder-head">
         <div>
-          <span className="console-label">{copy.tiersTitle}</span>
-          <p className="pd-fine">{copy.tiersLede}</p>
+          <h2>{copy.tiersTitle}</h2>
+          <p>{copy.tiersLede}</p>
         </div>
+        {onSale.length > 0 && <span>{copy.savesOnBlur}</span>}
       </div>
 
-      <div className="vch-scroll">
-        <table className="vch-table">
-          <thead>
-            <tr>
-              {/* Left-aligned, including the three count columns, which is what
-                  the reference draws — the figures still line up because they
-                  are `tabular-nums`, and a heading and its figure that share an
-                  edge are read as one thing. */}
-              {copy.columns.map((column) => (
-                <th key={column}>{column}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ordered.map((rung, index) => (
-              <tr key={rung.discountPct} data-retired={rung.active === false ? 'true' : undefined}>
-                <td>
-                  <div className="vch-tier">
-                    {/* Three alphas of the one accent, never three hues — the
-                        deepest rung is the fill itself, so its label flips to
-                        `--on-accent` the way every other solid mark here does. */}
-                    <span className="vch-pill" data-step={Math.min(2, index)}>
-                      {fill(copy.tier, { n: String(rung.discountPct) })}
-                    </span>
-                    {rung.active === false && (
-                      <span className="vch-retired" title={acts.tierRetired}>
-                        {copy.retired}
-                      </span>
-                    )}
-                    <span className="vch-tier-note">
-                      {rung.spentMinor === undefined
-                        ? fill(dashboard.unmeasured.tierUnit, {
-                            unit: money(units[index] ?? 0, 'unit'),
-                          })
-                        : fill(copy.tierDetail, {
-                            unit: money(units[index] ?? 0, 'unit'),
-                            pct: String(
-                              Math.round(
-                                (rung.spentMinor / Math.max(1, budget.voucher.spent)) * 100,
-                              ),
-                            ),
-                          })}
-                    </span>
-                  </div>
-                </td>
-                <td>
-                  {rung.active === false ? (
-                    /* A fact, not a field: `PUT …/tiers` sends `active: true`, so
-                       saving a retired rung's points would put it back on sale
-                       with nothing on the screen saying it had. */
-                    <b className="vch-points-fact">{fill(copy.points, { n: num(rung.pointsCost) })}</b>
-                  ) : (
-                    /* `onBlur` on the cell, which is what "changes save when you
-                       leave the field" means mechanically: focusout bubbles, and
-                       the well below owns only its own draft string. */
-                    <div className="vch-points" onBlur={() => save(rung)}>
-                      <NumberWell
-                        value={pointsOf(rung)}
-                        onChange={(next) =>
-                          setDrafts((current) => ({ ...current, [rung.discountPct]: next }))
-                        }
-                        unit={copy.pointsUnit}
-                        label={copy.columns[1]}
-                        min={1}
-                      />
-                    </div>
-                  )}
-                </td>
-                <td>
-                  {rung.issuedCount === undefined ? (
-                    <Missing />
-                  ) : (
-                    <span className="vch-given">
-                      <b>{num(rung.issuedCount)}</b>
-                      {/* Still in somebody's wallet — the part of "given out"
-                          the pool is still holding money for. */}
-                      {rung.activeCount !== undefined && rung.activeCount > 0 && (
-                        <i>{fill(copy.stillOut, { n: num(rung.activeCount) })}</i>
-                      )}
-                    </span>
-                  )}
-                </td>
-                <td>
-                  {rung.redeemedCount === undefined ? (
-                    <Missing />
-                  ) : (
-                    <b>{num(rung.redeemedCount)}</b>
-                  )}
-                </td>
-                <td>
-                  {rung.spentMinor === undefined ? (
-                    <Missing />
-                  ) : (
-                    <span className="vch-cost">{money(toEuro(rung.spentMinor), 'exact')}</span>
-                  )}
-                </td>
+      {ordered.length === 0 ? (
+        <p className="dx-vch-none">{dashboard.empty.vouchers.body}</p>
+      ) : (
+        <div className="dx-vch-scroll">
+          <table className="dx-vch-tiers" aria-label={copy.tiersTitle}>
+            <thead>
+              <tr>
+                {copy.columns.map((column) => (
+                  <th key={column} scope="col">
+                    {column}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {ordered.map((rung, index) => (
+                <tr key={rung.discountPct} data-retired={rung.active === false ? 'true' : undefined}>
+                  <td>
+                    <span className="dx-vch-tier">
+                      <TierChip pct={rung.discountPct} />
+                      <span>{rung.active === false ? copy.retired : noteOf(index)}</span>
+                    </span>
+                  </td>
+                  <td>
+                    {rung.active === false ? (
+                      /* A fact: `PUT …/tiers` sends `active: true`, so saving a
+                         retired rung's points would put it back on sale. */
+                      <b className="dx-vch-points-fact" title={dashboard.acts.tierRetired}>
+                        {fill(copy.points, { n: num(rung.pointsCost) })}
+                      </b>
+                    ) : (
+                      <UnitField
+                        unit={copy.pointsUnit}
+                        min={1}
+                        step={10}
+                        inputMode="numeric"
+                        aria-label={fill(copy.pointsFor, { tier: fill(copy.tier, { n: String(rung.discountPct) }) })}
+                        disabled={busy}
+                        value={drafts[rung.discountPct] ?? String(rung.pointsCost)}
+                        invalid={outOfOrder && drafts[rung.discountPct] !== undefined}
+                        onChange={(event) =>
+                          setDrafts((current) => ({ ...current, [rung.discountPct]: event.target.value }))
+                        }
+                        onBlur={() => save(rung)}
+                        onKeyDown={blurOnEnter}
+                      />
+                    )}
+                  </td>
+                  <td>{rung.issuedCount === undefined ? <Missing /> : <b>{num(rung.issuedCount)}</b>}</td>
+                  <td>{rung.redeemedCount === undefined ? <Missing /> : <b>{num(rung.redeemedCount)}</b>}</td>
+                  <td data-quiet="true">
+                    {rung.spentMinor === undefined ? <Missing /> : money(toEuro(rung.spentMinor), 'exact')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {outOfOrder && (
-        <p className="field-error" role="alert">
+        <p className="dx-vch-error" role="alert">
           {copy.pointsOrder}
         </p>
       )}
-      <p className="pd-fine">{copy.buysNote}</p>
-      {busy && <span className="vch-saving" aria-hidden="true" />}
-    </div>
+    </Card>
   );
 }
 
+/* ──────────────────────────────────────────────── where it went, and back ── */
+
 /**
- * Where the money went, and what came back.
+ * Where the money went, what came back, and the one suggestion.
  *
- * The mix is per-rung spend off the budget body. With nothing spent it says so
- * in words rather than drawing an empty bar, because an empty stacked bar and a
- * budget nobody has spent are the same picture. "Money returned" stays an em
- * dash: nothing counts voucher expiries.
+ * The mix is per-rung spend off the budget body. Its headline is the *sum of
+ * the legend*, not the pool's own `spent` — they are the same quantity, and a
+ * panel whose parts do not add up to its own headline is the bug the metrics
+ * module exists to prevent. With nothing spent it says so in words rather than
+ * drawing an empty bar, because an empty stacked bar and a budget nobody has
+ * spent are the same picture.
  */
-function Aftermath({ budget, rungs }: { budget: BudgetBody; rungs: Rung[] }) {
+function Aftermath({ budget }: { budget: BudgetBody }) {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.vouchers;
   const money = useMoney();
 
   const toEuro = (minor: number) => minorToEuro(minor, budget.currency);
-  const ordered = [...rungs].sort((a, b) => a.discountPct - b.discountPct);
-  const costed = ordered.filter((rung): rung is Rung & { spentMinor: number } =>
-    rung.spentMinor !== undefined,
+  const costed = byDepth(budget.tiers).filter(
+    (rung): rung is Rung & { spentMinor: number } => rung.spentMinor !== undefined,
   );
-  /* The header total is the *sum of the legend*, not the pool's own `spent`.
-     They are the same quantity, and a panel whose parts do not add up to its
-     own headline is the bug this dashboard's metrics module exists to prevent —
-     a figure shown twice is computed once. */
   const totalMinor = costed.reduce((sum, rung) => sum + rung.spentMinor, 0);
+  const pct = (minor: number) => Math.round((minor / totalMinor) * 100);
 
-  /* The rung carrying most of the pool, which is what the suggestion is about.
-     Derived from the measured spend rather than from `voucherModelFor`'s
-     estimate, because the sentence names a percentage the owner can check. */
-  const biggest = costed.reduce<(Rung & { spentMinor: number }) | null>(
-    (best, rung) => (best === null || rung.spentMinor > best.spentMinor ? rung : best),
-    null,
-  );
+  /* The rung carrying most of the spend, which is what the suggestion names.
+     From measured spend, because the sentence names a tier the owner can check. */
+  const biggest =
+    totalMinor > 0
+      ? costed.reduce((best, rung) => (rung.spentMinor > best.spentMinor ? rung : best), costed[0])
+      : null;
 
   return (
-    <div className="vch-pair">
-      <div className="pd-glass pd-panel vch-mix" data-reveal>
-        <div className="vch-mix-head">
-          <span className="console-label">{copy.mixTitle}</span>
-          {costed.length > 0 && <b>{money(toEuro(totalMinor), 'exact')}</b>}
+    <div className="dx-vch-pair">
+      <Card className="dx-vch-mix">
+        <div className="dx-vch-mix-head">
+          <h2>{copy.mixTitle}</h2>
+          {totalMinor > 0 && <b>{money(toEuro(totalMinor), 'exact')}</b>}
         </div>
-
-        {costed.length === 0 || totalMinor <= 0 ? (
-          <p className="pd-fine">{dashboard.unmeasured.noSource}</p>
+        {totalMinor <= 0 ? (
+          <p className="dx-vch-quiet">{costed.length === 0 ? dashboard.unmeasured.noSource : copy.insightNone}</p>
         ) : (
           <>
-            <div className="vch-mixbar" role="img" aria-label={copy.mixTitle}>
-              {costed.map((rung, index) => (
+            <div className="dx-vch-mixbar" role="img" aria-label={copy.mixTitle}>
+              {costed.map((rung) => (
                 <i
                   key={rung.discountPct}
-                  data-step={Math.min(2, index)}
-                  style={{ width: `${(rung.spentMinor / totalMinor) * 100}%` }}
+                  data-step={stepOf(rung.discountPct)}
+                  style={{ width: `${((rung.spentMinor / totalMinor) * 100).toFixed(1)}%` }}
                 />
               ))}
             </div>
-            <ul className="vch-legend">
-              {costed.map((rung, index) => (
+            <ul className="dx-vch-mixrows">
+              {costed.map((rung) => (
                 <li key={rung.discountPct}>
-                  <i className="vch-swatch" data-step={Math.min(2, index)} />
-                  <em>{fill(copy.tier, { n: String(rung.discountPct) })}</em>
-                  <span>{money(toEuro(rung.spentMinor), 'exact')}</span>
-                  <b>{Math.round((rung.spentMinor / totalMinor) * 100)}%</b>
+                  <i data-step={stepOf(rung.discountPct)} />
+                  <span>{fill(copy.tier, { n: String(rung.discountPct) })}</span>
+                  <em>{money(toEuro(rung.spentMinor), 'exact')}</em>
+                  <b>{pct(rung.spentMinor)}%</b>
                 </li>
               ))}
             </ul>
           </>
         )}
-      </div>
+      </Card>
 
-      <div className="vch-side">
-        <div className="pd-glass pd-panel vch-returned" data-reveal>
-          <span className="console-label">{copy.returnedTitle}</span>
-          {/* Nothing on the budget response counts what expired unused, so this
-              is a dash for now and must not become a 0 — "no voucher expired"
-              and "nobody counted expiries" are opposite readings of the same
-              glyph, and only one of them is true. */}
-          <Missing />
-          <p className="pd-fine">{copy.returnedNote}</p>
+      <div className="dx-vch-side">
+        <Card className="dx-vch-returned">
+          <span className="dx-vch-returned-label">{copy.returnedTitle}</span>
+          {/* Released into this month's pool by expiries, counted by the server.
+              An API that predates the field is a dash, never a 0 — "nothing
+              expired" and "nobody counted" are opposite readings of one glyph. */}
+          {budget.returnedMinor === undefined ? (
+            <Missing />
+          ) : (
+            <b>{money(toEuro(budget.returnedMinor), 'exact')}</b>
+          )}
+          <p>{copy.returnedNote}</p>
+        </Card>
+
+        <div className="dx-vch-suggest">
+          <span>
+            <DxIcon name="bulb" size={15} strokeWidth={1.9} />
+            <Eyebrow>{copy.suggestion}</Eyebrow>
+          </span>
+          <p>{biggest === null ? copy.insightNone : fill(copy.insight, { n: String(biggest.discountPct) })}</p>
         </div>
-
-        {/* The suggestion needs a rung to name, and the rung comes from measured
-            spend. With nothing counted there is no advice to give, and a
-            suggestion with a guessed number in it is the one thing this
-            dashboard promises never to show. */}
-        {biggest !== null && (
-          <div className="vch-suggest" data-reveal>
-            <span className="vch-suggest-head">
-              <Icon name="bulb" size={15} />
-              {copy.suggestion}
-            </span>
-            <p>{fill(copy.insight, { n: String(biggest.discountPct) })}</p>
-          </div>
-        )}
       </div>
     </div>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────── the caps ── */
+
+/**
+ * How many of each are given out — `redeem_limit` and `per_user_limit`.
+ *
+ * Not on v3's page, and kept because it is a real write: it moved here from
+ * the old register screen, which v3 turns into a plain log, and it belongs
+ * beside the ladder it limits. A cap is only meaningful next to how much of it
+ * is used, so each rung reads "18 of 20 taken" over a bar.
+ *
+ * **`null` is a value.** `undefined` is an API that predates the columns (the
+ * card is not drawn at all then), `null` is a rung nobody has capped, and a
+ * number is a cap. Emptying a field sends `null` explicitly, because a rung
+ * sent *without* the key keeps whatever cap it has — which is also what lets
+ * the ladder above save a price without clearing a cap.
+ */
+function Limits({ budget, reload }: { budget: BudgetBody; reload: () => void }) {
+  const dashboard = useCopy().dashboard;
+  const copy = dashboard.register.caps;
+  const num = useNum();
+  const { busy, commit } = useCommit(reload);
+  type Which = 'redeemLimit' | 'perUserLimit';
+  const [draft, setDraft] = useState<Record<string, Partial<Record<Which, string>>>>({});
+
+  const rungs = byDepth(budget.tiers);
+  if (rungs.every((rung) => rung.redeemLimit === undefined && rung.perUserLimit === undefined)) return null;
+
+  /* What the field shows: the typed string, else the stored cap, else empty. */
+  const shown = (rung: Rung, which: Which) => {
+    const typed = draft[rung.id]?.[which];
+    if (typed !== undefined) return typed;
+    const stored = rung[which];
+    return stored === null || stored === undefined ? '' : String(stored);
+  };
+  /* What it means: an empty or non-positive field is "no limit" — zero is not
+     the gesture, because the route refuses a cap of zero by name. */
+  const meant = (rung: Rung, which: Which): number | null => {
+    const value = Number(shown(rung, which));
+    return shown(rung, which).trim() === '' || !(value > 0) ? null : Math.round(value);
+  };
+  const edit = (rung: Rung, which: Which, value: string) =>
+    setDraft((current) => ({ ...current, [rung.id]: { ...current[rung.id], [which]: value } }));
+
+  const editable = rungs.filter((rung) => rung.active !== false);
+  const touched = editable.filter((rung) => draft[rung.id] !== undefined);
+
+  const save = () => {
+    if (touched.length === 0) return;
+    void commit(copy.saved, async () => {
+      /* Only the rungs that were touched, and on each only the fields that
+         were: an untouched key is left out so its cap stands. */
+      const sent: TierDraft[] = touched.map((rung) => {
+        const fields = draft[rung.id] ?? {};
+        return {
+          discountPct: rung.discountPct,
+          pointsCost: rung.pointsCost,
+          maxDiscountMinor: rung.maxDiscountMinor,
+          ...('redeemLimit' in fields ? { redeemLimit: meant(rung, 'redeemLimit') } : {}),
+          ...('perUserLimit' in fields ? { perUserLimit: meant(rung, 'perUserLimit') } : {}),
+        };
+      });
+      await setVoucherTiers(budget.venueId, sent);
+      setDraft({});
+    });
+  };
+
+  return (
+    <Card className="dx-vch-limits">
+      <CardHead title={copy.title} sub={copy.lede} />
+      <div className="dx-vch-limit-rows">
+        {rungs.map((rung) => {
+          const cap = meant(rung, 'redeemLimit');
+          const taken = rung.issuedTotal;
+          const locked = rung.active === false;
+          return (
+            <div className="dx-vch-limit" key={rung.id}>
+              <div className="dx-vch-limit-use">
+                <TierChip pct={rung.discountPct} size="sm" />
+                {/* The lifetime count a cap is measured against — not this
+                    month's `issuedCount` in the table above. */}
+                {taken === undefined ? (
+                  <Missing />
+                ) : cap === null ? (
+                  <span>{fill(copy.takenNoCap, { n: num(taken) })}</span>
+                ) : (
+                  <span className="dx-vch-limit-bar">
+                    <Progress spent={taken} total={cap} height={6} track="soft" />
+                    <span>{fill(copy.taken, { n: num(taken), total: num(cap) })}</span>
+                  </span>
+                )}
+              </div>
+              {locked ? (
+                <span className="dx-vch-retired">{copy.retired}</span>
+              ) : (
+                (['redeemLimit', 'perUserLimit'] as const).map((which) => (
+                  <label className="dx-vch-cap" key={which}>
+                    <span>{which === 'redeemLimit' ? copy.total : copy.perUser}</span>
+                    <UnitField
+                      unit={copy.unit}
+                      min={1}
+                      step={1}
+                      inputMode="numeric"
+                      placeholder={copy.noLimit}
+                      disabled={busy}
+                      value={shown(rung, which)}
+                      onChange={(event) => edit(rung, which, event.target.value)}
+                    />
+                  </label>
+                ))
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="dx-vch-limits-foot">
+        <p>{copy.noLimitNote}</p>
+        <Button variant="primary" disabled={touched.length === 0 || busy} onClick={save}>
+          {busy ? copy.saving : copy.save}
+        </Button>
+      </div>
+    </Card>
   );
 }
 
 /* ─────────────────────────────────────────────────────────────── the board ── */
 
 function Board({ budget, reload }: { budget: BudgetBody; reload: () => void }) {
-  const dashboard = useCopy().dashboard;
-  const copy = dashboard.vouchers;
-  const [language] = useLanguage();
+  const empty = useCopy().dashboard.empty.vouchers;
+  const totalRef = useRef<HTMLInputElement | null>(null);
 
-  const rungs: Rung[] = budget.tiers;
+  /* v3's "unset" state: a pool of nothing that nothing has touched. A pool that
+     was set and then spent is "out", which is a different month. */
+  const pool = budget.voucher;
+  const unset = budget.total <= 0 && pool.spent <= 0 && pool.reserved <= 0;
+  const [opened, setOpened] = useState(false);
 
-  /* One model, and it is the shared one. `voucherModelFrom` prices a rung at
+  /* One model, and it is the shared one: `voucherModelFrom` prices a rung at
      `min(check × pct, cap)` and weights "what is left buys" by how the rungs
-     actually land — deriving either of those here would be the same figure
-     computed twice, which is the thing `partnerMetrics.ts` exists to stop. */
+     actually land. `toEuro` is passed because `Pool` is minor units. */
   const model = useMemo(() => {
-    const rows: TierRow[] = budget.tiers.map((rung: Rung) => ({
+    const toEuro = (minor: number) => minorToEuro(minor, budget.currency);
+    const rows: TierRow[] = budget.tiers.map((rung) => ({
       pct: rung.discountPct,
       points: rung.pointsCost,
       issued: rung.issuedCount ?? 0,
       redeemed: rung.redeemedCount ?? 0,
-      cap: minorToEuro(rung.maxDiscountMinor, budget.currency),
+      cap: toEuro(rung.maxDiscountMinor),
       remaining: rung.estimatedRemaining,
     }));
     return voucherModelFrom(
       budget.voucher,
       rows,
-      minorToEuro(budget.averageCheck.minor, budget.currency),
+      toEuro(budget.averageCheck.minor),
       Math.max(0, ...rows.map((row) => row.cap)),
-      (minor: number) => minorToEuro(minor, budget.currency),
+      toEuro,
     );
   }, [budget]);
+  /* Priced at the mix actually being issued, so with no issue counts there is
+     no mix and the figure is a dash rather than a 0. */
+  const moreVouchers = budget.tiers.some((rung) => rung.issuedCount !== undefined) ? model.moreVouchers : null;
 
-  /* "About n more vouchers" is priced at the mix actually being issued, so with
-     no issue counts there is no mix and the figure is a dash rather than a 0 —
-     the unweighted mean of three rungs would price a mix nobody issues. */
-  const anyIssued = rungs.some((rung) => rung.issuedCount !== undefined);
-  const moreVouchers = anyIssued ? model.moreVouchers : null;
-
-  /* The alert is the forecast again, said louder, and **only** when the
-     forecast lands on a day inside the period. A pool that outlasts the month
-     is not running low, and one that is already gone is not running low either
-     — it has run out, which the callout on the slab says in its own words. A
-     banner repeating the sentence one panel below it is two voices on one fact.
-     It sits above the slab because it is about the whole screen, and its one
-     press goes to the field that fixes it. */
   const forecast = useMemo(
-    () => forecastOf(budget.period, budget.voucher.spent, budget.voucher.available, new Date()),
-    [budget.period, budget.voucher.spent, budget.voucher.available],
+    () => forecastOf(budget.period, pool.spent, pool.available, new Date()),
+    [budget.period, pool.spent, pool.available],
   );
-  const dayFormat = useMemo(() => dayFormatOf(language), [language]);
+
+  if (unset && !opened) {
+    /* No suggested figure: v3 offers "1 500 zł for a café your size", and
+       nothing here knows what a venue this size gives away. The press opens the
+       budget card with its field focused — the real control, not a preset. */
+    return (
+      <EmptyState
+        icon="vouchers"
+        title={empty.title}
+        body={empty.body}
+        action={{ label: empty.action, onClick: () => setOpened(true) }}
+      />
+    );
+  }
+
+  const raise = () => {
+    totalRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    totalRef.current?.focus({ preventScroll: true });
+  };
 
   return (
-    <div className="pd-stack">
-      {forecast.kind === 'date' && (
-        <div className="vch-alert" data-reveal>
-          <Icon name="warn" size={17} />
-          <div>
-            <b>{copy.alertTitle}</b>
-            <p>{fill(copy.alertBody, { date: dayFormat.format(forecast.at) })}</p>
-          </div>
-          {/* A real destination, not a second copy of the control: the total is
-              a field one panel down, and this scrolls to it and puts the caret
-              in it. A button whose only outcome is the sentence already on
-              screen is a button that exists to fail. */}
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => {
-              const well = document.querySelector<HTMLInputElement>('.vch-total input');
-              well?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-              well?.focus();
-            }}
-          >
-            {copy.alertAction}
-          </button>
-        </div>
-      )}
-
-      <BudgetSlab budget={budget} rungs={rungs} moreVouchers={moreVouchers} reload={reload} />
-      <Ladder
+    <div className="dx-vch">
+      {!unset && <Alert forecast={forecast} onRaise={raise} />}
+      <BudgetCard
         budget={budget}
-        rungs={rungs}
-        units={[...rungs]
-          .sort((a, b) => a.discountPct - b.discountPct)
-          .map((rung) => model.tiers.find((tier) => tier.pct === rung.discountPct)?.unit ?? 0)}
+        forecast={forecast}
+        moreVouchers={moreVouchers}
+        totalRef={totalRef}
+        autoFocus={opened}
         reload={reload}
       />
-      <Aftermath budget={budget} rungs={rungs} />
+      <Ladder budget={budget} reload={reload} />
+      <Aftermath budget={budget} />
+      <Limits budget={budget} reload={reload} />
     </div>
   );
 }
@@ -870,21 +860,19 @@ function Board({ budget, reload }: { budget: BudgetBody; reload: () => void }) {
 /**
  * The voucher pool, the ladder that spends it, and what that bought.
  *
- * `SCREENS[3]` on the partner dashboard. The venue is read first because the
- * budget is addressed by venue id, and `chain` folds the two requests into one
- * state so a screen cannot draw half of itself while the other half is still in
- * flight.
+ * The venue is read first because the budget is addressed by venue id, and
+ * `chain` folds the two requests into one state so the screen cannot draw half
+ * of itself while the other half is in flight. `usePartnerVenue` follows the
+ * frame's venue switcher.
  */
 export function Vouchers() {
   const venueApi = usePartnerVenue();
-  /* The live venue's id or nothing: under the demo there is nobody to address a
-     request to, and `Screen` swaps in `DEMO_BUDGET` for the missing session. */
   const liveId = venueApi.state.status === 'ready' ? (venueApi.state.data?.id ?? null) : null;
   const budgetApi = usePartnerBudget(liveId);
   const state = chain(venueApi, budgetApi);
 
   return (
-    <Screen state={state} index={3} demo={DEMO_BUDGET}>
+    <Screen state={state} id="vouchers" demo={DEMO_BUDGET}>
       {(budget) => <Board budget={budget} reload={budgetApi.reload} />}
     </Screen>
   );

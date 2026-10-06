@@ -675,13 +675,25 @@ export async function partnerVoucherTotals(
   db: Db,
   venueId: string,
   at: Iso = now(),
-): Promise<{ issued: number; active: number; redeemed: number; expired: number; lapsing: number }> {
+): Promise<{
+  issued: number;
+  active: number;
+  redeemed: number;
+  expired: number;
+  lapsing: number;
+  activeReservedMinor: number;
+  redeemedSpentMinor: number;
+  expiredReleasedMinor: number;
+}> {
   const row = await db.get<{
     issued: number;
     active: number;
     redeemed: number;
     expired: number;
     lapsing: number;
+    active_reserved: number | null;
+    redeemed_spent: number | null;
+    expired_released: number | null;
   }>(
     `SELECT SUM(CASE WHEN status <> 'cancelled' THEN 1 ELSE 0 END) AS issued,
             SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
@@ -690,7 +702,16 @@ export async function partnerVoucherTotals(
             /* Live now and gone within the week — the one figure here that is
                actionable, because it is the set a reminder can still reach. */
             SUM(CASE WHEN status = 'active' AND expires_at > $at AND expires_at <= $soon
-                     THEN 1 ELSE 0 END) AS lapsing
+                     THEN 1 ELSE 0 END) AS lapsing,
+            /* The three money figures beside the three counts, in the venue's
+               minor units, and each is the column the pool itself moved by:
+               what an active voucher still holds set aside, what a redeemed one
+               actually took off a bill, and what an expired one handed back —
+               expireVouchers releases exactly reserved_minor. Summed here
+               rather than over the page for the reason the counts are. */
+            SUM(CASE WHEN status = 'active' THEN reserved_minor ELSE 0 END) AS active_reserved,
+            SUM(CASE WHEN status = 'redeemed' THEN spent_minor ELSE 0 END) AS redeemed_spent,
+            SUM(CASE WHEN status = 'expired' THEN reserved_minor ELSE 0 END) AS expired_released
        FROM issued_vouchers WHERE venue_id = $v`,
     { v: venueId, at, soon: plusDays(at, 7) },
   );
@@ -700,7 +721,29 @@ export async function partnerVoucherTotals(
     redeemed: row?.redeemed ?? 0,
     expired: row?.expired ?? 0,
     lapsing: row?.lapsing ?? 0,
+    activeReservedMinor: row?.active_reserved ?? 0,
+    redeemedSpentMinor: row?.redeemed_spent ?? 0,
+    expiredReleasedMinor: row?.expired_released ?? 0,
   };
+}
+
+/**
+ * What expired vouchers handed back to one month's pool.
+ *
+ * The Vouchers screen's "money returned", which stood as an em dash on the
+ * argument that nothing counted voucher expiries. The row does count it:
+ * `expireVouchers` releases exactly `reserved_minor` into the voucher's own
+ * `budget_id`, and leaves the status at `expired` beside it. So this is the
+ * sum of what was released into **this** budget — a voucher issued under last
+ * month's pool and expiring today gave its money back to last month, and is
+ * not counted here, which is the same month the screen's bar is drawn for.
+ */
+export async function returnedToBudget(db: Db, budgetId: string): Promise<number> {
+  const row = await db.get<{ n: number | null }>(
+    `SELECT SUM(reserved_minor) AS n FROM issued_vouchers WHERE budget_id = $b AND status = 'expired'`,
+    { b: budgetId },
+  );
+  return row?.n ?? 0;
 }
 
 /* ─────────────────────────────────────────────────────────────── gift cards ── */

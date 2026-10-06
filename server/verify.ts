@@ -57,6 +57,7 @@ import * as merge from './domain/merge2048.ts';
 import * as food from './domain/foodCross.ts';
 import * as ninja from './domain/foodNinja.ts';
 import * as vouchers from './domain/vouchers.ts';
+import * as passes from './domain/passes.ts';
 import { mulberry32 } from './domain/engines/prng.ts';
 import { ReplayError } from './domain/engines/replay.ts';
 import * as game2048 from './domain/engines/game2048.ts';
@@ -890,6 +891,14 @@ async function voucherCaps(): Promise<void> {
   eq('the totals are counted over the whole life, not the page', totals.issued, 2);
   eq('…and say how many are live', totals.active, 2);
   eq('…and how many lapse this week', totals.lapsing, 0);
+  const held = await w.db.get<{ n: number }>(
+    `SELECT SUM(reserved_minor) AS n FROM issued_vouchers WHERE venue_id = $v AND status = 'active'`,
+    { v: w.venueId },
+  );
+  check('…and what the live ones hold set aside, from the rows', held!.n > 0 && totals.activeReservedMinor === held!.n);
+  eq('…with nothing spent or handed back yet', totals.redeemedSpentMinor + totals.expiredReleasedMinor, 0);
+  const pool = await budget.budgetFor(w.db, w.venueId, at);
+  eq('nothing expired, so nothing was returned to the pool', await vouchers.returnedToBudget(w.db, pool.id), 0);
 
   await w.db.close();
   await w2.db.close();
@@ -8839,6 +8848,17 @@ async function dashboardReports(fixture: DashboardWorld): Promise<void> {
   eq('the shared customers, by spend', table.rows.map((row) => row.userId), [c[4], c[1], c[2], c[5]]);
   eq('a customer’s highest voucher tier here, whatever became of the voucher', [rowOf(c[4])?.tierPct, rowOf(c[2])?.tierPct], [10, 5]);
   check('…and the key is absent, not zero, for somebody who never bought one', rowOf(c[1]) !== undefined && !('tierPct' in rowOf(c[1])!));
+  eq('somebody who never bought a voucher here has none issued and none used', [rowOf(c[1])?.vouchersIssued, rowOf(c[1])?.vouchersUsed], [0, 0]);
+  check(
+    '…a tier implies at least one voucher issued, and used never exceeds issued',
+    (rowOf(c[4])?.vouchersIssued ?? 0) >= 1 && (rowOf(c[4])?.vouchersUsed ?? 99) <= (rowOf(c[4])?.vouchersIssued ?? 0),
+    rowOf(c[4]),
+  );
+  {
+    const one = await profiles.customerDetail(d.db, d.venueId, c[4], T);
+    eq('the detail carries the same voucher counts as the row', [one.vouchersIssued, one.vouchersUsed], [rowOf(c[4])?.vouchersIssued, rowOf(c[4])?.vouchersUsed]);
+    eq('…and when this grant began', one.sharingSince, T);
+  }
   eq('spend that grew from nothing is up', rowOf(c[4])?.spendTrend, 'up');
   eq('spend that fell by more than a tenth is down', rowOf(c[2])?.spendTrend, 'down');
   /* The fix: the filter used to run on the page, so "new" among the top one
@@ -10072,6 +10092,346 @@ async function teamRules(): Promise<void> {
   await w.db.close();
 }
 
+/**
+ * Subscription passes (`domain/passes.ts`) — the lifecycle, the allowance
+ * under its windows, the price and terms locked per period across a renewal,
+ * what closing does, the consent gate on the subscriber list, who may press
+ * what, and the four stat cards' arithmetic.
+ *
+ * Every instant is pinned to the 5th of the current venue-local month at
+ * 09:00 UTC so a day, a week and a month are knowable without reading the
+ * clock; the HTTP half runs on the real clock because the server stamps it.
+ */
+async function passRules(): Promise<void> {
+  describe('subscription passes — lifecycle, allowance, price lock, close, consent, permissions, stats');
+  const w = await world();
+  const month = localMonth(now(), VENUE_TZ);
+  const base = `${month}-05T09:00:00.000Z`;
+  const later = (minutes: number) => plusMinutes(base, minutes);
+
+  const person = async (name: string) => {
+    const id = newId('usr');
+    await w.db.run(
+      `INSERT INTO users (id, email, email_norm, display_name, auth_provider, language, city,
+                          status, email_verified_at, created_at, updated_at)
+       VALUES ($i, $e, $e, $n, 'email', 'en', 'Krakow', 'active', $t, $t, $t)`,
+      { i: id, e: `${id}@passes.verify.test`, n: name, t: base },
+    );
+    await w.db.run(`INSERT INTO user_roles (user_id, role, granted_at) VALUES ($u, 'consumer', $t)`, { u: id, t: base });
+    return id;
+  };
+
+  /* ── the plan: "Included in Growth" ── */
+  const draft = await passes.createPass(w.db, {
+    venueId: w.venueId,
+    actorId: w.ownerId,
+    pass: { template: 'daily' },
+    at: base,
+  });
+  eq('a new pass is a draft with the template’s rule', [draft.status, draft.accent, draft.capKind, draft.capCount], ['draft', 'teal', 'per_day', 1]);
+  eq('…and says what publishing still needs', draft.missing, ['name', 'benefit', 'price']);
+  eq('…and borrows the venue’s currency', draft.currency, 'PLN');
+  await rejects('a starter venue cannot publish a pass', () =>
+    passes.setStatus(w.db, { venueId: w.venueId, passId: draft.id, action: 'publish', actorId: w.ownerId, at: base }), 'entitlement_required');
+  await entitlements.startSubscription(w.db, { subject: { venueId: w.venueId }, planCode: 'growth', source: 'manual', at: base });
+  await rejects('an incomplete pass does not publish', () =>
+    passes.setStatus(w.db, { venueId: w.venueId, passId: draft.id, action: 'publish', actorId: w.ownerId, at: base }), 'validation_failed');
+
+  const daily = await passes.updatePass(w.db, {
+    venueId: w.venueId,
+    passId: draft.id,
+    actorId: w.ownerId,
+    patch: { name: 'Daily Brew', benefitItem: 'Any filter coffee', priceMinor: 4900, maxValueMinor: 1200 },
+    at: base,
+  });
+  eq('a complete draft has nothing missing', daily.missing, []);
+  eq('publishing makes it live', (await passes.setStatus(w.db, { venueId: w.venueId, passId: daily.id, action: 'publish', actorId: w.ownerId, at: base })).status, 'live');
+  eq('publishing twice is answered, not refused', (await passes.setStatus(w.db, { venueId: w.venueId, passId: daily.id, action: 'publish', actorId: w.ownerId, at: base })).status, 'live');
+  await rejects('a live pass cannot be edited into a blank name', () =>
+    passes.updatePass(w.db, { venueId: w.venueId, passId: daily.id, actorId: w.ownerId, patch: { name: '' }, at: base }), 'validation_failed');
+  await rejects('a pass is not found through another venue', () => passes.getPass(w.db, newId('ven'), daily.id, base), 'not_found');
+
+  const unlimitedItem = await passes.createPass(w.db, {
+    venueId: w.venueId,
+    actorId: w.ownerId,
+    pass: { template: 'custom', name: 'Bottomless', benefitItem: 'Coffee', capKind: 'unlimited', priceMinor: 9900 },
+    at: base,
+  });
+  eq('an unlimited item waits on "Keep it unlimited"', unlimitedItem.missing, ['unlimitedOk']);
+  const vip = await passes.createPass(w.db, {
+    venueId: w.venueId,
+    actorId: w.ownerId,
+    pass: { template: 'vip', name: 'VIP club', priceMinor: 12000, billingPeriod: 'annual', perks: ['skip_line'] },
+    at: base,
+  });
+  eq('the VIP template is a 15% discount with no cap', [vip.discountPct, vip.capKind, vip.missing], [15, 'unlimited', []]);
+  await passes.setStatus(w.db, { venueId: w.venueId, passId: vip.id, action: 'publish', actorId: w.ownerId, at: base });
+  await throws('a day list must not be empty', 'validation_failed', () =>
+    passes.createPass(w.db, { venueId: w.venueId, actorId: w.ownerId, pass: { allowedDays: [] }, at: base }));
+  await throws('a seat count past three is refused', 'validation_failed', () =>
+    passes.createPass(w.db, { venueId: w.venueId, actorId: w.ownerId, pass: { seats: 4 }, at: base }));
+
+  /* ── pause stops sign-ups and nothing else ── */
+  await passes.setStatus(w.db, { venueId: w.venueId, passId: daily.id, action: 'pause', actorId: w.ownerId, at: base });
+  await rejects('a paused pass takes no sign-ups', () => passes.subscribe(w.db, { passId: daily.id, userId: w.customerId, at: base }), 'invalid_state');
+  await passes.setStatus(w.db, { venueId: w.venueId, passId: daily.id, action: 'resume', actorId: w.ownerId, at: base });
+
+  const sub = await passes.subscribe(w.db, { passId: daily.id, userId: w.customerId, at: base });
+  eq('a subscription starts active at the list price', [sub.status, sub.priceMinor, sub.periodKind], ['active', 4900, 'full']);
+  eq('…for one month', sub.periodEnd, plusMonths(base, 1));
+  check('…with a code the counter can read', /^PS-[A-Z2-9]{6}$/.test(sub.code), sub.code);
+  eq('…and nothing was charged — there is no rail', sub.charged, false);
+  await rejects('a second sign-up to the same pass is refused', () => passes.subscribe(w.db, { passId: daily.id, userId: w.customerId, at: base }), 'conflict');
+
+  await passes.setStatus(w.db, { venueId: w.venueId, passId: daily.id, action: 'pause', actorId: w.ownerId, at: base });
+  eq('a paused pass is still usable by a subscriber',
+    (await passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: sub.code, at: later(1) })).allowance.remaining, 0);
+  await passes.setStatus(w.db, { venueId: w.venueId, passId: daily.id, action: 'resume', actorId: w.ownerId, at: base });
+
+  /* ── the allowance, per day ── */
+  await rejects('the second coffee of the day is refused', () =>
+    passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: sub.code, at: later(60) }), 'cap_reached');
+  const lookedUp = await passes.lookup(w.db, { venueId: w.venueId, code: sub.code.toLowerCase(), via: 'owner', at: later(60) });
+  eq('the lookup says why, in a word, and finds a lower-cased code', [lookedUp.usable.ok, lookedUp.usable.reason], [false, 'used_up']);
+  eq('…and names nobody who has not shared', lookedUp.customer.name, null);
+  const tomorrow = await passes.redeem(w.db, {
+    venueId: w.venueId, actorId: w.ownerId, code: sub.code, billMinor: 2000, at: plusDays(base, 1),
+  });
+  eq('the next local day has its own coffee', tomorrow.allowance.used, 1);
+  eq('a bill is split into what the pass covered and the rest', [tomorrow.redemption.billMinor, tomorrow.redemption.coveredMinor], [2000, 1200]);
+  await rejects('two at once on a one-seat pass is refused', () =>
+    passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: sub.code, quantity: 2, at: plusDays(base, 2) }), 'validation_failed');
+  await rejects('an unknown code is one 404', () => passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: 'PS-NOPE22', at: base }), 'not_found');
+
+  /* ── the allowance, per week on chosen days, and per month ── */
+  const weekday = local(base, VENUE_TZ).weekday;
+  const weekend = await passes.createPass(w.db, {
+    venueId: w.venueId,
+    actorId: w.ownerId,
+    pass: { template: 'weekend', name: 'Weekend', benefitItem: 'Coffee', priceMinor: 2900, allowedDays: [(weekday + 3) % 7] },
+    at: base,
+  });
+  await passes.setStatus(w.db, { venueId: w.venueId, passId: weekend.id, action: 'publish', actorId: w.ownerId, at: base });
+  const wsub = await passes.subscribe(w.db, { passId: weekend.id, userId: w.customerId, at: base });
+  const refusedDay = await refusal(() => passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: wsub.code, at: base }));
+  eq('a pass is refused on a day it does not cover', [refusedDay?.code, refusedDay?.detail.reason], ['conflict', 'wrong_day']);
+  const onDay = plusDays(base, 3);
+  await passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: wsub.code, at: onDay });
+  eq('a weekly allowance counts in the ISO week', (await passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: wsub.code, at: plusMinutes(onDay, 5) })).allowance.remaining, 0);
+
+  const bundle = await passes.createPass(w.db, {
+    venueId: w.venueId, actorId: w.ownerId, pass: { template: 'bundle', name: 'Ten', benefitItem: 'Coffee', priceMinor: 7900, capCount: 2 }, at: base,
+  });
+  eq('the bundle template is a monthly count', bundle.capKind, 'per_month');
+  await passes.setStatus(w.db, { venueId: w.venueId, passId: bundle.id, action: 'publish', actorId: w.ownerId, at: base });
+  const second = await person('Second Customer');
+  const bsub = await passes.subscribe(w.db, { passId: bundle.id, userId: second, at: base });
+  await passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: bsub.code, at: later(1) });
+  await passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: bsub.code, at: plusDays(base, 9) });
+  await rejects('a month’s count is a month’s, across days', () =>
+    passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: bsub.code, at: plusDays(base, 10) }), 'cap_reached');
+
+  /* ── capacity: sold out is derived ── */
+  const capped = await passes.updatePass(w.db, { venueId: w.venueId, passId: bundle.id, actorId: w.ownerId, patch: { subscriberCap: 1 }, at: base });
+  eq('a cap reached reads as sold out', capped.soldOut, true);
+  const third = await person('Third Customer');
+  await rejects('…and refuses the next sign-up', () => passes.subscribe(w.db, { passId: bundle.id, userId: third, at: base }), 'cap_reached');
+  eq('0 means no limit', (await passes.updatePass(w.db, { venueId: w.venueId, passId: bundle.id, actorId: w.ownerId, patch: { subscriberCap: 0 }, at: base })).subscriberCap, null);
+
+  /* ── stats, before anything renews ── */
+  await passes.subscribe(w.db, { passId: vip.id, userId: third, at: base });
+  const list = await passes.listForVenue(w.db, w.venueId, plusDays(base, 3));
+  eq('active subscribers are every current holder', list.stats.activeSubscribers, 4);
+  eq('recurring is each active price spread over its billing period', list.stats.recurringMinor, 4900 + 2900 + 7900 + 1000);
+  eq('redemptions this month count uses', list.stats.redemptionsThisMonth, 6);
+  eq('upsell is measured on the uses with a bill, and says how many', [list.stats.upsell.minor, list.stats.upsell.measured, list.stats.upsell.redemptions], [800, 1, 6]);
+  eq('the venue cannot take the money, and says so', [list.payouts.connected, list.subscribeAvailable], [false, false]);
+  const vipDetail = await passes.detail(w.db, w.venueId, vip.id, base);
+  eq('a pass with no uses has no upsell to estimate — null, with the reason', [vipDetail.stats.upsell.minor, vipDetail.stats.upsell.reason], [null, 'no_redemptions']);
+  eq('…and a rate over its one holder is 0, not null', vipDetail.stats.perActiveSubscriber, 0);
+  const weekendDetail = await passes.detail(w.db, w.venueId, weekend.id, plusDays(base, 3));
+  eq('uses with no bill leave upsell unmeasured', weekendDetail.stats.upsell.reason, 'no_bills_recorded');
+  eq('per active subscriber is uses over holders', weekendDetail.stats.perActiveSubscriber, 2);
+  eq('new this month counts sign-ups in the venue’s month', weekendDetail.stats.newThisMonth, 1);
+
+  /* ── a price and terms change lock until renewal ── */
+  await passes.updatePass(w.db, { venueId: w.venueId, passId: daily.id, actorId: w.ownerId, patch: { priceMinor: 5900, capCount: 2 }, at: plusDays(base, 4) });
+  await passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: sub.code, at: plusDays(base, 4) });
+  await rejects('a raised allowance waits for the next period', () =>
+    passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: sub.code, at: plusMinutes(plusDays(base, 4), 1) }), 'cap_reached');
+  const held = (await passes.mine(w.db, w.customerId, plusDays(base, 4))).find((m) => m.id === sub.id)!;
+  eq('the current period keeps its price', held.priceMinor, 4900);
+
+  const renewAt = plusMinutes(sub.periodEnd, 1);
+  const rolled = await passes.runRenewals(w.db, renewAt);
+  check('the renewal job rolls the ended periods', rolled.renewed >= 1, rolled);
+  const after = (await passes.mine(w.db, w.customerId, renewAt)).find((m) => m.id === sub.id)!;
+  eq('the next period is at the new price, with the new terms', [after.priceMinor, after.terms.capCount, after.periodStart], [5900, 2, sub.periodEnd]);
+  const periods = await w.db.all<{ price_minor: number; charge_status: string }>(
+    `SELECT price_minor, charge_status FROM pass_periods WHERE subscription_id = $s ORDER BY starts_at`, { s: sub.id },
+  );
+  eq('both periods are on the record, each at its own price, neither charged', periods, [
+    { price_minor: 4900, charge_status: 'not_charged' },
+    { price_minor: 5900, charge_status: 'not_charged' },
+  ]);
+  eq('a second run renews nothing twice', (await passes.runRenewals(w.db, renewAt)).renewed, 0);
+
+  /* ── cancel and close: kept to the end of the period, then expired ── */
+  const cancelled = await passes.cancel(w.db, { subscriptionId: bsub.id, userId: second, at: plusDays(base, 11) });
+  eq('a cancelled subscription is still held', cancelled.status, 'cancelled');
+  await rejects('somebody else cannot cancel it', () => passes.cancel(w.db, { subscriptionId: bsub.id, userId: third, at: base }), 'not_found');
+
+  const closed = await passes.setStatus(w.db, { venueId: w.venueId, passId: daily.id, action: 'close', actorId: w.ownerId, at: renewAt });
+  eq('closing a pass closes it', closed.status, 'closed');
+  await rejects('a closed pass takes no sign-ups', () => passes.subscribe(w.db, { passId: daily.id, userId: third, at: renewAt }), 'invalid_state');
+  await rejects('a closed pass cannot be edited', () =>
+    passes.updatePass(w.db, { venueId: w.venueId, passId: daily.id, actorId: w.ownerId, patch: { name: 'X' }, at: renewAt }), 'invalid_state');
+  const stillOk = await passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: sub.code, at: plusMinutes(renewAt, 5) });
+  eq('…but its members keep it to the end of their period', stillOk.redemption.quantity, 1);
+  eq('…and a closed pass is not recurring revenue', (await passes.detail(w.db, w.venueId, daily.id, renewAt)).stats.recurringMinor, 0);
+  const end = plusMinutes(plusMonths(sub.periodEnd, 1), 1);
+  const swept = await passes.runRenewals(w.db, end);
+  check('at the period end the closed and the cancelled expire', swept.expired >= 2, swept);
+  await rejects('an expired pass cannot be used', () => passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: sub.code, at: end }), 'expired');
+  await rejects('a draft is deleted, not closed', () =>
+    passes.setStatus(w.db, { venueId: w.venueId, passId: unlimitedItem.id, action: 'close', actorId: w.ownerId, at: base }), 'invalid_state');
+  await passes.deleteDraft(w.db, { venueId: w.venueId, passId: unlimitedItem.id, actorId: w.ownerId, at: base });
+  await rejects('…and is gone', () => passes.getPass(w.db, w.venueId, unlimitedItem.id), 'not_found');
+
+  /* ── an intro trial, once per person ── */
+  const trial = await passes.createPass(w.db, {
+    venueId: w.venueId, actorId: w.ownerId, pass: { name: 'Try us', benefitItem: 'Tea', priceMinor: 3000, intro: 'trial_7' }, at: base,
+  });
+  await passes.setStatus(w.db, { venueId: w.venueId, passId: trial.id, action: 'publish', actorId: w.ownerId, at: base });
+  const tsub = await passes.subscribe(w.db, { passId: trial.id, userId: third, at: base });
+  eq('a trial is free for seven days', [tsub.status, tsub.priceMinor, tsub.periodKind, tsub.periodEnd], ['trialing', 0, 'trial', plusDays(base, 7)]);
+  check('a trial is not recurring revenue', (await passes.detail(w.db, w.venueId, trial.id, base)).stats.recurringMinor === 0);
+  await passes.runRenewals(w.db, plusDays(base, 8));
+  const converted = (await passes.mine(w.db, third, plusDays(base, 8))).find((m) => m.id === tsub.id)!;
+  eq('…and becomes the full price at its end', [converted.status, converted.priceMinor, converted.periodKind], ['active', 3000, 'full']);
+  await passes.cancel(w.db, { subscriptionId: tsub.id, userId: third, at: plusDays(base, 9) });
+  const gone = plusDays(converted.periodEnd, 1);
+  await passes.runRenewals(w.db, gone);
+  const again = await passes.subscribe(w.db, { passId: trial.id, userId: third, at: gone });
+  eq('coming back gets no second trial', [again.status, again.periodKind, again.priceMinor], ['active', 'full', 3000]);
+
+  /* ── consent: only those who share are named ── */
+  const hidden = await passes.members(w.db, w.venueId, { passId: vip.id, at: base });
+  eq('a subscriber who has not shared is counted and not listed', [hidden.total, hidden.shared, hidden.rows.length], [1, 0, 0]);
+  await consent.grantSharing(w.db, { userId: third, venueId: w.venueId, at: base });
+  const shown = await passes.members(w.db, w.venueId, { passId: vip.id, at: base });
+  eq('…and appears once they share', [shown.shared, shown.rows[0]?.name, shown.rows[0]?.passName], [1, 'Third Customer', 'VIP club']);
+  await consent.revokeSharing(w.db, third, w.venueId, base);
+  eq('…and drops off when they stop', (await passes.members(w.db, w.venueId, { passId: vip.id, at: base })).shared, 0);
+
+  /* ── a sale linked to a use ── */
+  const receipt = await scan(w, 3000, plusDays(base, 1), third);
+  const vipSub = (await passes.mine(w.db, third, plusDays(base, 1))).find((m) => m.passId === vip.id)!;
+  const linked = await passes.redeem(w.db, {
+    venueId: w.venueId, actorId: w.ownerId, code: vipSub.code, transactionId: receipt.transaction.id, at: plusDays(base, 1),
+  });
+  eq('a linked sale supplies the bill, and a discount pass covers its percentage', [linked.redemption.billMinor, linked.redemption.coveredMinor], [3000, 450]);
+  await rejects('one sale is linked to one use', () =>
+    passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: vipSub.code, transactionId: receipt.transaction.id, at: plusDays(base, 1) }), 'already_used');
+
+  /* ── permissions, over HTTP ── */
+  const api = createApi({ db: w.db, routes: allRoutes, secret: SECRET, limits: false });
+  const server = await api.listen(0, '127.0.0.1');
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  const call = async (method: string, path: string, token?: string, body?: unknown) => {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        'x-forwarded-for': fakeAddress('passes-verify'),
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await response.text();
+    return { status: response.status, body: text ? JSON.parse(text) : null };
+  };
+  const tokenOf = async (userId: string) =>
+    (await accounts.createSession(w.db, { userId, mode: 'consumer', surface: 'mobile' })).token;
+  const memberOf = async (name: string, perms: Partial<Record<'earn' | 'redeem' | 'scan', 1>>) => {
+    const userId = await person(name);
+    const memberId = newId('tmm');
+    await w.db.run(
+      `INSERT INTO team_members (id, venue_id, user_id, name, role, perm_earn, perm_redeem, perm_scan, status,
+                                 created_at, joined_at, updated_at)
+       VALUES ($i, $v, $u, $n, 'custom', $e, $r, $s, 'active', $t, $t, $t)`,
+      { i: memberId, v: w.venueId, u: userId, n: name, e: perms.earn ?? 0, r: perms.redeem ?? 0, s: perms.scan ?? 0, t: base },
+    );
+    return { userId, memberId, token: await tokenOf(userId) };
+  };
+
+  const owner = await tokenOf(w.ownerId);
+  const customerToken = await tokenOf(w.customerId);
+  const strangerOwner = await person('Stranger Owner');
+  await w.db.run(`INSERT INTO user_roles (user_id, role, granted_at) VALUES ($u, 'partner_owner', $t)`, { u: strangerOwner, t: base });
+  const otherVenue = newId('ven');
+  await w.db.run(
+    `INSERT INTO venues (id, owner_user_id, name, category, city, country_code, timezone, currency, status, verified_at,
+                         created_at, updated_at)
+     VALUES ($i, $o, 'Other', 'cafe', 'Krakow', 'PL', $tz, 'PLN', 'live', $t, $t, $t)`,
+    { i: otherVenue, o: strangerOwner, tz: VENUE_TZ, t: base },
+  );
+  const stranger = await tokenOf(strangerOwner);
+  const cashier = await memberOf('Cara Cashier', { redeem: 1, scan: 1 });
+  const viewer = await memberOf('Vic Viewer', { scan: 1 });
+
+  const listed = await call('GET', `/v1/partner/venues/${w.venueId}/passes`, owner);
+  eq('the owner reads the Passes screen', [listed.status, Array.isArray(listed.body.passes)], [200, true]);
+  eq('another venue’s owner is refused', (await call('GET', `/v1/partner/venues/${w.venueId}/passes`, stranger)).status, 403);
+  eq('a cashier is not admitted to the dashboard', (await call('GET', `/v1/partner/venues/${w.venueId}/passes`, cashier.token)).status, 403);
+  const created = await call('POST', `/v1/partner/venues/${w.venueId}/passes`, owner, {
+    template: 'vip', name: 'HTTP club', priceMinor: 2500, discountPct: null, benefitItem: 'Cake', capKind: 'per_day', allowedDays: null,
+  });
+  eq('the drawer creates a pass, and null removes the template’s discount', [created.status, created.body.discountPct, created.body.capKind], [200, null, 'per_day']);
+  const published = await call('POST', `/v1/partner/venues/${w.venueId}/passes/${created.body.id}/status`, owner, { action: 'publish' });
+  eq('…and the status press publishes it', [published.status, published.body.status], [200, 'live']);
+  eq('a stranger cannot publish it', (await call('POST', `/v1/partner/venues/${otherVenue}/passes/${created.body.id}/status`, stranger, { action: 'pause' })).status, 404);
+  eq('the subscriber list needs the identified-profiles plan, which Growth has',
+    (await call('GET', `/v1/partner/venues/${w.venueId}/passes/${created.body.id}/subscribers`, owner)).status, 200);
+
+  const refused = await call('POST', `/v1/passes/${created.body.id}/subscribe`, customerToken);
+  eq('subscribing in the app is switched off, and says so', [refused.status, refused.body.error.code, refused.body.error.reason], [409, 'not_available', 'payments_unavailable']);
+  const publicList = await call('GET', `/v1/venues/${w.venueId}/passes`);
+  const httpPass = publicList.body.passes.find((p: { id: string }) => p.id === created.body.id);
+  eq('the customer sees a live pass that cannot be bought, and why', [httpPass?.subscribable, httpPass?.unavailableReason], [false, 'payments_unavailable']);
+  check('…and no draft or closed pass', !publicList.body.passes.some((p: { id: string }) => p.id === daily.id || p.id === draft.id));
+
+  const httpSub = await passes.subscribe(w.db, { passId: created.body.id, userId: w.customerId });
+  const mineHttp = await call('GET', '/v1/me/passes', customerToken);
+  check('the customer’s own passes carry the code to show', mineHttp.body.subscriptions.some((s: { code: string }) => s.code === httpSub.code));
+
+  const look = await call('POST', `/v1/partner/venues/${w.venueId}/passes/lookup`, viewer.token, { code: httpSub.code });
+  eq('a scan-only login can look a code up', [look.status, look.body.usable.ok], [200, true]);
+  eq('…and cannot use it', (await call('POST', `/v1/partner/venues/${w.venueId}/passes/redeem`, viewer.token, { code: httpSub.code })).status, 403);
+  eq('another venue’s owner cannot use it', (await call('POST', `/v1/partner/venues/${w.venueId}/passes/redeem`, stranger, { code: httpSub.code })).status, 403);
+  const used = await call('POST', `/v1/partner/venues/${w.venueId}/passes/redeem`, cashier.token, { code: httpSub.code });
+  eq('a cashier with redeem uses it, recorded against them', [used.status, used.body.redemption.confirmedBy?.memberId], [200, cashier.memberId]);
+  const row = await w.db.get<{ confirmed_member_id: string; confirmed_by: string }>(
+    `SELECT confirmed_member_id, confirmed_by FROM pass_redemptions WHERE id = $i`, { i: used.body.redemption.id },
+  );
+  eq('…on the row as well', [row?.confirmed_member_id, row?.confirmed_by], [cashier.memberId, cashier.userId]);
+  const again2 = await call('POST', `/v1/partner/venues/${w.venueId}/passes/redeem`, owner, { code: httpSub.code });
+  eq('the day’s allowance is the server’s', [again2.status, again2.body.error.code], [409, 'cap_reached']);
+  const attributed = await passes.redeem(w.db, {
+    venueId: w.venueId, actorId: w.ownerId, code: vipSub.code, memberId: cashier.memberId, at: plusDays(base, 2),
+  });
+  eq('the owner’s shared device names who was on shift', attributed.redemption.confirmedBy?.name, 'Cara Cashier');
+  await rejects('…and cannot name somebody without redeem', () =>
+    passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: vipSub.code, memberId: viewer.memberId, at: plusDays(base, 2) }), 'forbidden');
+  const ownSub = await passes.subscribe(w.db, { passId: vip.id, userId: cashier.userId, at: base });
+  await rejects('a cashier cannot redeem their own pass on their own till', () =>
+    passes.redeem(w.db, { venueId: w.venueId, actorId: cashier.userId, code: ownSub.code, at: plusDays(base, 1) }), 'forbidden');
+
+  server.close();
+  await w.db.close();
+}
+
 async function run(): Promise<void> {
   const started = Date.now();
 
@@ -10139,6 +10499,7 @@ async function run(): Promise<void> {
   await profileRules();
   await missionRules();
   await teamRules();
+  await passRules();
   await httpSurface();
 
   const ms = Date.now() - started;

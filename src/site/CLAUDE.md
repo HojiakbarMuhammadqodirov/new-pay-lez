@@ -58,7 +58,7 @@ Two more tokens exist because one value cannot do both jobs on paper:
   the wallet balance, every dashboard card — where `rgba(19,239,242,0.28)` is not
   a tint but a slab of aqua. **Light alphas are 5% / 11%**, which lands within a
   point or two of the reference design's `#EEF1F0` / `#F6F8F7`
-  (`b2b/Paylez Partner Dashboard v2.dc.html`): near-neutral surfaces, with the
+  (`b2b/dashboard-design/`): near-neutral surfaces, with the
   green spent only on things that are actually the accent. If a light panel ever
   looks like a coloured block, this is the token, not the component.
 - **`--logo`** — the only theme-conditional token that is not a colour, and the
@@ -77,13 +77,14 @@ and `--ink-on-rgb` (`88, 233, 212`) are declared in `:root` and never redeclared
 because they belong to a *surface* rather than to a theme: the near-black this
 brand's dark things are made of, and the mint that marks it. Dark is already made
 of them. Paper spends them in four places, and all four come from the reference
-design (`b2b/Paylez Partner Dashboard v2.dc.html`), which is itself a light page:
+design (`b2b/dashboard-design/`), which is itself a light page:
 
     --solid       the face of a thing you press. --accent in both themes, so
     --solid-lit   its label is --on-accent: near-black on the dark mint, white
     --on-solid    on paper. --solid-lit darkens on hover rather than lifting.
 
-**Except on `.pd-app`, where a press is the ink.** That is the inversion worth
+**Except on the dashboard, where a press is the ink** (light `--dx-press-*` in
+`dashboard.css`; nothing in `site.css` overrides `--solid` any more). That is the inversion worth
 understanding, and it is now scoped to one screen instead of being the default.
 The accent is what a mark is made of; the ink is what a press is made of, and on
 paper those stop being the same colour — a page of white cards with a deep-teal
@@ -113,13 +114,10 @@ named, sitting immediately after them. It re-points the tokens *inside* a panel
 (text to white at three alphas, the accent to the mint, surfaces and borders to
 white at low alpha) so the children invert without a rule each: a kicker is
 already `--accent-ink`, a figure already `--text`, a support tile already
-`--bg-2` on a `--border` hairline. Two values:
-
-- **`data-ink='on'`** — ink in both themes. The two phone mocks, which are
-  pictures of an app whose ground is black whichever theme is reading.
-- **`data-ink='paper'`** — ink only in light. The dashboard's black slabs: the
-  overview headline, the cost-per-new-customer panel, and the assistant's
-  opening panel. In dark they are already dark and glass is the better answer.
+`--bg-2` on a `--border` hairline. One value, **`data-ink='on'`** — ink in both
+themes, for the phone mocks, which are pictures of an app whose ground is black
+whichever theme is reading. (The dashboard's ink slabs are the kit's
+`Card tone="ink"`, tokened in `dashboard.css`.)
 
 Inside the scope a press flips back to the mint, because a black button on black
 is not a button — the same inversion dark runs, one level down. Anything added to

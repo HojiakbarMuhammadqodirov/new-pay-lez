@@ -1387,62 +1387,292 @@ export const pl: Dictionary = {
   dashboard: {
     tag: 'Partner',
     groups: { grow: 'Rozwój', workspace: 'Obszar roboczy' },
-    screens: [
-      { name: 'Przegląd', lede: 'Co Paylez dla Ciebie zrobił i ile to kosztowało.' },
-      { name: 'Gorące okazje', lede: 'Czasowe oferty pokazywane w kanale aplikacji Paylez.' },
-      { name: 'Kampanie lojalnościowe', lede: 'Powtarzalne nagrody, na które zapracowują stali klienci.' },
-      { name: 'Vouchery', lede: 'Jak punkty zamieniają się w rabaty i ile Cię to kosztuje.' },
-      { name: 'Wydane vouchery', lede: 'Każdy voucher w rękach Twoich klientów i co się z nim stało.' },
-      { name: 'Klienci', lede: 'Kto przychodzi, kiedy przychodzi i czy wraca.' },
-      {
+    screens: {
+      overview: {
+        name: 'Przegląd',
+        title: 'Analityka partnera',
+        lede: 'Co Paylez dla Ciebie zrobił i ile to kosztowało.',
+      },
+      deals: { name: 'Gorące okazje', lede: 'Czasowe oferty pokazywane w kanale aplikacji Paylez.' },
+      campaigns: { name: 'Kampanie lojalnościowe', lede: 'Powtarzalne nagrody, na które zapracowują stali klienci.' },
+      vouchers: { name: 'Vouchery', lede: 'Jak punkty zamieniają się w rabaty i ile Cię to kosztuje.' },
+      passes: { name: 'Karnety', lede: 'Subskrypcje, które klienci kupują bezpośrednio u Ciebie.' },
+      customers: { name: 'Klienci', lede: 'Kto przychodzi, kiedy przychodzi i czy wraca.' },
+      assistant: {
         name: 'Asystent',
         lede: 'Powiedz, co ma się wydarzyć. Ja to przygotuję, Ty decydujesz, czy ruszy.',
       },
-      { name: 'Skanowania', lede: 'Każde skanowanie QR przy Twojej kasie, od najnowszego.' },
-      { name: 'Profil firmy', lede: 'Twoja wizytówka w aplikacji Paylez, przetłumaczona dla każdego klienta.' },
-    ],
-    empty: [
-      {
+      scans: { name: 'Skanowania', lede: 'Każde skanowanie QR przy Twojej kasie, od najnowszego.' },
+      voucherActivity: {
+        name: 'Aktywność voucherów',
+        lede: 'Każdy voucher, który klienci zdobyli, wykorzystali lub pozwolili mu wygasnąć.',
+      },
+      team: { name: 'Zespół', lede: 'Kto obsługuje Twoją kasę i co każda osoba może przy niej robić.' },
+      profile: { name: 'Profil firmy', lede: 'Twoja wizytówka w aplikacji Paylez, przetłumaczona dla każdego klienta.' },
+    },
+    empty: {
+      overview: {
         title: 'W Twoim lokalu nic jeszcze nie działa',
         body: 'Klienci zobaczą Cię w aplikacji Paylez dopiero wtedy, gdy coś będzie aktywne. Najszybszy start to gorąca okazja — otwarta oferta z datą początku i końca, działająca w wybranych godzinach.',
         action: 'Stwórz pierwszą okazję',
       },
-      {
+      deals: {
         title: 'Uruchom ofertę dla każdego',
         body: 'Gorąca okazja pojawia się w kanale aplikacji dla wybranej grupy i godzin, a kończy się w ustalonym dniu. Płacisz dopiero, gdy ktoś ją odbierze.',
         action: 'Stwórz gorącą okazję',
       },
-      {
+      campaigns: {
         title: 'Nagradzaj stałych klientów za powroty',
         body: 'Kampania liczy wizyty i przyznaje nagrodę po osiągnięciu ustalonej liczby. Dobra pierwsza dla kawiarni: cztery wizyty, kawa z przelewu gratis.',
         action: 'Skonfiguruj kampanię',
       },
-      {
+      vouchers: {
         title: 'Ustaw budżet rabatowy, żeby zacząć dawać vouchery',
         body: 'Budżet rabatowy to maksimum, jakie oddasz w rabatach w jednym miesiącu. Vouchery kończą się, gdy budżet się wyczerpie, więc nigdy nie wydasz więcej, niż zaplanowałeś.',
         action: 'Ustaw budżet',
       },
-      {
+      passes: {
+        title: 'Zamień stałych klientów w subskrybentów',
+        body: 'Karnet to miesięczna subskrypcja, którą klienci kupują bezpośrednio u Ciebie — kawa dziennie, pakiet, klub członkowski. Zatrzymujesz całą kwotę; Paylez nie pobiera prowizji.',
+        action: 'Utwórz karnet',
+      },
+      voucherActivity: {
         title: 'Nikt jeszcze nie wziął vouchera',
         body: 'Voucher pojawia się tutaj w chwili, gdy klient wyda punkty na jednym z Twoich progów. Ustaw budżet rabatowy i drabinka się otworzy; wszystko dalej trafia tu z kodem, okresem ważności i statusem.',
         action: 'Ustaw budżet',
       },
-      {
+      customers: {
         title: 'Postaw kod QR przy kasie',
         body: 'Nic na tej stronie nie może się wypełnić, dopóki klienci nie zaczną skanować. Wydrukuj kod, postaw go obok kasy i poproś obsługę, by wskazywała go razem z rachunkiem. Pierwsze liczby pojawią się tego samego dnia.',
         action: 'Pobierz swój kod QR',
       },
-      {
+      assistant: {
         title: 'Powiedz, co ma się wydarzyć',
         body: 'Czytam Twoje ciche godziny, Twoje budżety i to, co działa w lokalach takich jak Twój, a potem przygotowuję całość do sprawdzenia. Nic nie ruszy, dopóki nie klikniesz publikacji.',
         action: 'Zacznij rozmowę',
       },
-      {
+      scans: {
         title: 'Jeszcze żadnych skanowań',
         body: 'Każde skanowanie przy Twojej kasie pojawia się tutaj w kilka sekund — kto przyszedł, ile wydał i jak blisko jest nagrody.',
         action: 'Pobierz swój kod QR',
       },
-    ],
+      team: {
+        title: 'Na razie jesteś tu sam',
+        body: 'Dodaj menedżerów i obsługę kasy, żeby mogli potwierdzać skanowania i prowadzić dzień — bez Twojej obecności przy każdej kasie.',
+        action: 'Dodaj pierwszą osobę do zespołu',
+      },
+    },
+
+    profile: {
+      editTitle: 'Co widzą klienci',
+      editIntro:
+        'Wszystko tutaj trafia prosto do Twojego wpisu w aplikacji Paylez. Pola oznaczone gwiazdką są potrzebne, zanim wpis będzie mógł się pojawić w aplikacji.',
+      langs: 'Języki obsługi',
+      logoSet: 'Dodane',
+      logoNone: 'Nie dodano',
+      closed: 'Zamknięte',
+      saved: 'Profil zapisany.',
+      submitted: 'Profil wysłany do weryfikacji.',
+      review: {
+        title: 'Profil wysłany do weryfikacji',
+        body: 'Nasz zespół sprawdzi dane Twojej firmy. Wpis pojawi się w aplikacji Paylez, gdy weryfikacja się zakończy.',
+        nextTitle: 'Co dalej?',
+        next: [
+          'Sprawdzamy nazwę firmy, adres i dane kontaktowe',
+          'Status na górze tej strony zmieni się po zakończeniu weryfikacji',
+          'W międzyczasie możesz przygotowywać oferty i kampanie',
+        ],
+        done: 'Rozumiem',
+      },
+    },
+
+    frame: {
+      venue: 'Lokal',
+      managed: '{venue} · menedżer',
+      soon: {
+        kicker: 'W budowie',
+        title: 'Ten ekran jest w drodze',
+        body: 'Jego układ jest przebudowywany według nowego projektu. Nic tutaj jeszcze nie działa, więc nic tutaj nie jest liczbą o Twoim lokalu.',
+      },
+      ownerOnly:
+        'Wizytówkę lokalu {venue} prowadzi jego właściciel. Zarządzasz tym lokalem, więc okazje, kampanie i liczby są w Twoich rękach, ale to, co czytają klienci, zmienia właściciel.',
+    },
+    team: {
+      add: 'Dodaj osobę do zespołu',
+      intro: {
+        title: 'Kto prowadzi Twoje kasy',
+        owner:
+          'Kasjerzy i kierownicy zmian obsługują kasę, menedżerowie prowadzą lokal, a Ty prowadzisz firmę. Każdy tutaj pracuje w aplikacji Paylez na własnym telefonie — Ty decydujesz, co kto może robić, a oni dołączają kodem. Tę stronę widzisz tylko Ty i Twoi menedżerowie.',
+        manager:
+          'Obsługa kasy, którą opiekujesz się w lokalu {venue}. Możesz dodawać kasjerów, kierowników zmian i konta niestandardowe oraz zmieniać ich uprawnienia. Menedżerów dodaje i zmienia właściciel.',
+      },
+      roles: {
+        owner: 'Właściciel',
+        manager: 'Menedżer',
+        shiftlead: 'Kierownik zmiany',
+        cashier: 'Kasjer',
+        custom: 'Niestandardowa',
+      },
+      legend: {
+        cashier:
+          'Obsługuje kasę. Potwierdza naliczenia i realizacje, skanuje kody i widzi, co jest aktywne. Niczego nie może zepsuć.',
+        shiftlead: 'Prowadzi zmianę. Wszystko, co kasjer, a do tego dzisiejsza liczba klientów i wstrzymywanie kampanii.',
+        manager: 'Prowadzi lokal na co dzień: okazje, budżety i obsługę kasy. Bez płatności i bez innych menedżerów.',
+        owner: 'Prowadzi firmę. Wszystko, co menedżer, a do tego płatności, wizytówka i menedżerowie.',
+      },
+      columns: {
+        member: 'Osoba',
+        role: 'Rola',
+        venue: 'Lokal',
+        signIn: 'Logowanie',
+        status: 'Status',
+        last: 'Ostatnia aktywność',
+        actions: 'Działania',
+      },
+      owner: {
+        unnamed: 'Właściciel lokalu',
+        sub: 'Właściciel lokalu {venue}',
+        last: 'Aktywny teraz',
+        tag: 'Właściciel konta',
+      },
+      byOwner: 'Zarządza właściciel',
+      sub: {
+        all: 'Wszystkie uprawnienia przy kasie',
+        some: '{n} z 6 uprawnień przy kasie',
+        none: 'Nic jeszcze nie włączono',
+      },
+      signIn: {
+        app: 'Własna aplikacja Paylez',
+        pending: 'Kod dołączenia · ważny do {date}',
+        expired: 'Kod dołączenia wygasł',
+        noCode: 'Brak ważnego kodu',
+      },
+      status: { active: 'Aktywny', onShift: 'Na zmianie', invited: 'Zaproszony' },
+      last: {
+        now: 'Aktywny teraz',
+        notJoined: 'Jeszcze nie dołączył',
+        joined: 'Dołączył {date}',
+      },
+      actions: {
+        edit: 'Edytuj',
+        reissue: 'Wydaj nowy kod dołączenia',
+        revoke: 'Odbierz dostęp',
+        cancelInvite: 'Anuluj zaproszenie',
+      },
+      perms: {
+        earn: {
+          label: 'Potwierdzanie naliczeń',
+          body: 'Wpisanie rachunku i potwierdzenie wizyty, żeby klient dostał punkty i pieczątki.',
+          phrase: 'potwierdzać naliczenia',
+        },
+        redeem: {
+          label: 'Potwierdzanie realizacji',
+          body: 'Przyjęcie przy kasie vouchera, nagrody albo karnetu subskrypcyjnego.',
+          phrase: 'potwierdzać realizacje',
+        },
+        scan: {
+          label: 'Skanowanie i pokazywanie kodów',
+          body: 'Pokazanie kodu QR kasy, zeskanowanie kodu klienta albo wpisanie kodu ręcznie.',
+          phrase: 'skanować kody',
+        },
+        running: {
+          label: 'Podgląd tego, co aktywne',
+          body: 'Okazje, karty pieczątek i vouchery aktywne dzisiaj, żeby mogli odpowiedzieć na pytanie „czy jest jakaś promocja?”.',
+          phrase: 'widzieć, co jest aktywne',
+        },
+        count: {
+          label: 'Podgląd liczby klientów',
+          body: 'Ilu klientów przyszło dzisiaj i ostatnie wizyty — imiona tylko tych klientów, którzy je Ci udostępniają.',
+          phrase: 'widzieć dzisiejszą liczbę klientów',
+        },
+        pause: {
+          label: 'Wstrzymywanie i wznawianie kampanii',
+          body: 'Wstrzymanie okazji albo kampanii z kasy — na przykład gdy czegoś zabraknie — i ponowne włączenie.',
+          phrase: 'wstrzymywać kampanie',
+        },
+      },
+      drawer: {
+        addKicker: 'Nowa osoba w zespole',
+        addTitle: 'Dodaj osobę do zespołu',
+        addSub: 'Pracują w aplikacji Paylez na własnym telefonie. Ty wybierasz, co mogą robić; oni dołączają kodem.',
+        editKicker: 'Edycja osoby z zespołu',
+        editTitle: 'Edytuj osobę z zespołu',
+        editSub: 'Zmiana dociera na ich telefon przy następnym dotknięciu. Nic w dostępie nie jest zapamiętywane.',
+        name: 'Imię i nazwisko',
+        namePlaceholder: 'np. Andrii P.',
+        nameHelp: 'To imię widnieje przy każdym skanie, który potwierdzą, więc widać, kto co zrobił.',
+        role: 'Zacznij od roli',
+        roleHelp: 'Rola ustawia przełączniki poniżej. Zmień dowolny z nich — nazwa roli zostaje.',
+        roleCards: {
+          cashier: 'Potwierdza naliczenia i realizacje, skanuje kody i widzi, co jest aktywne.',
+          shiftlead: 'Wszystko, co kasjer, a do tego liczba klientów i wstrzymywanie kampanii.',
+          manager:
+            'Prowadzi lokal na co dzień: okazje, budżety i obsługę kasy. Bez płatności, wypłat i zmian w samym lokalu.',
+          custom: 'Zacznij od wyłączonych uprawnień i włącz tylko to, czego potrzebują.',
+        },
+        perms: 'Co mogą robić przy kasie',
+        permsHelp: 'Budżety, sumy sprzedaży i analityka zawsze zostają przy Tobie i Twoich menedżerach.',
+        managerPerms:
+          'Menedżer może robić wszystko przy kasie i prowadzi lokal na co dzień. Nie ma tu czego wyłączać.',
+        join: 'Jak dołączają',
+        joinTitle: '6-cyfrowy kod, pokazany raz',
+        joinBody:
+          'Po zapisaniu dostaniesz kod, który im przekażesz. Na własnym telefonie otwierają Paylez, wchodzą w profil, stukają „Przełącz” i wybierają „Dołącz do lokalu kodem”. Działa raz, przez 7 dni — bez adresu e-mail i numeru telefonu.',
+        state: 'Na jakim są etapie',
+        pending: 'Jeszcze nie dołączyli. Ich kod działa do {date} i pokazujemy go tylko raz — wydaj nowy, jeśli go zgubili.',
+        expired: 'Nie dołączyli, a ich kod wygasł. Wydaj nowy, żeby dać im kolejny.',
+        joined: 'Dołączyli {date}. Na nowym telefonie potrzebują nowego kodu — stary telefon działa, dopóki go nie użyją.',
+        oneLine: 'W jednym zdaniu',
+        someone: 'Ta osoba',
+        who: {
+          cashier: '{name} będzie kasjerem w lokalu {venue}.',
+          shiftlead: '{name} będzie kierownikiem zmiany w lokalu {venue}.',
+          custom: '{name} będzie mieć niestandardowe konto w lokalu {venue}.',
+          manager: '{name} będzie zarządzać lokalem {venue}: okazje, budżety, obsługa kasy i wszystkie uprawnienia przy kasie.',
+        },
+        can: 'Przy kasie może {list}.',
+        nothing: 'Nic jeszcze nie włączono, więc ich kasa nie będzie miała żadnych działań.',
+        create: 'Utwórz kod dołączenia',
+        save: 'Zapisz zmiany',
+        saving: 'Zapisywanie…',
+        needName: 'Wpisz imię, żeby kontynuować',
+      },
+      code: {
+        kicker: 'Kod dołączenia',
+        title: '{name} — gotowe',
+        again: 'Nowy kod dla: {name}',
+        body: 'Przekaż im ten kod. Wpisują go raz na własnym telefonie, w Paylez: Profil → Przełącz → „Dołącz do lokalu kodem”.',
+        expires: 'Działa raz, do {date}. Nie pokażemy go ponownie — wydaj nowy, jeśli wygaśnie.',
+        copy: 'Kopiuj kod',
+        copyMessage: 'Kopiuj wiadomość',
+        done: 'Gotowe',
+        message:
+          'Twój kod do kasy Paylez w lokalu {venue} to {code}. Otwórz Paylez, wejdź w profil, stuknij „Przełącz” i wybierz „Dołącz do lokalu kodem”. Działa raz, przez 7 dni.',
+        copied: 'Skopiowano.',
+        copyFailed: 'Ta przeglądarka nie pozwoliła skopiować. Zaznacz kod i skopiuj go ręcznie.',
+      },
+      confirm: {
+        revokeTitle: 'Odebrać dostęp: {name}?',
+        revokeBody:
+          'Ich kasa znika z telefonu od razu, nawet w trakcie zmiany. Wszystko, co potwierdzili, zostaje zapisane. Żeby ich przywrócić, dodaj ich ponownie i daj nowy kod.',
+        revoke: 'Odbierz dostęp',
+        cancelTitle: 'Anulować zaproszenie: {name}?',
+        cancelBody: 'Ich kod dołączenia od razu przestaje działać. Możesz dodać ich później ponownie z nowym kodem.',
+        cancel: 'Anuluj zaproszenie',
+        reissueTitle: 'Wydać nowy kod dołączenia?',
+        reissuePending: 'Kod przekazany osobie {name} od razu przestaje działać. Daj jej nowy.',
+        reissueActive:
+          'Na wypadek, gdy {name} zmienia telefon. Obecny telefon działa, dopóki nowy kod nie zostanie wpisany na nowym.',
+        reissue: 'Wydaj nowy kod',
+      },
+      toasts: {
+        created: 'Kod dołączenia dla: {name} jest gotowy.',
+        saved: 'Zapisano zmiany: {name}.',
+        revoked: '{name} nie ma już dostępu do Twojej kasy.',
+        cancelled: 'Zaproszenie anulowane. Kod już nie działa.',
+        reissued: 'Nowy kod dla: {name}. Stary przestał działać.',
+      },
+    },
 
     register: {
       totals: {
@@ -1476,7 +1706,7 @@ export const pl: Dictionary = {
         search: 'Szukaj kodu lub nazwy',
         count: 'Widzisz {n} z {total}',
         empty: 'Nikt jeszcze nie wziął vouchera. Pojawi się tutaj w chwili, gdy klient wyda punkty na progu powyżej — z kodem, oboma końcami okresu ważności i tym, co się z nim stało.',
-        emptyFiltered: 'Nic nie pasuje. Wyczyść wyszukiwanie albo wybierz inny status.',
+        emptyFiltered: 'Żaden voucher na tej liście nie ma tego statusu.',
       },
       table: {
         code: 'Kod',
@@ -1487,14 +1717,42 @@ export const pl: Dictionary = {
         status: 'Status',
         redeemed: 'Wykorzystany',
         withheld: 'Ukryte — ten klient nie zgodził się udostępnić profilu Twojemu lokalowi.',
-        notRedeemed: 'jeszcze nie',
       },
       status: {
         all: 'Wszystkie',
-        active: 'Niewykorzystane',
+        active: 'Aktywne',
         redeemed: 'Wykorzystane',
-        expired: 'Przepadłe',
+        expired: 'Wygasłe',
         cancelled: 'Anulowane',
+      },
+      log: {
+        active: 'Aktywne teraz',
+        activeNote: 'do {amount} odłożone',
+        redeemed: 'Wykorzystane',
+        redeemedNote: '{amount} oddane w rabatach',
+        expired: 'Wygasłe niewykorzystane',
+        expiredNote: '{amount} wróciło do budżetu',
+        filter: 'Pokaż vouchery',
+        count: '{n} voucherów',
+        latest: 'Ostatnie {n} z {total}',
+        kind: 'Próg lojalnościowy',
+        columns: {
+          voucher: 'Voucher',
+          customer: 'Klient',
+          reward: 'Nagroda',
+          status: 'Status',
+          value: 'Wartość',
+          closed: 'Wydany · zamknięty',
+        },
+        upTo: 'do {amount}',
+        issued: 'Wydany {date}',
+        expires: 'Wygasa {date}',
+        used: 'Użyty {date}',
+        expiredOn: 'Wygasł {date}',
+        cancelled: 'Anulowany',
+        notShared: 'Imię nieudostępnione',
+        foot: 'Vouchery, które wygasną niewykorzystane, oddają odłożone pieniądze do Twojego budżetu rabatowego. Wartość wykorzystanych to prawdziwe pieniądze już odjęte od rachunku.',
+        settings: 'Ustawienia voucherów',
       },
     },
 
@@ -1536,46 +1794,18 @@ export const pl: Dictionary = {
       budgetTitle: 'Ustaw budżet na miesiąc',
       budgetLede:
         'Jedna kwota na miesiąc, podzielona między nagrody lojalnościowe i zniżki na bony. Nie może spaść poniżej tego, co już wydane lub odłożone.',
-      budgetTotal: 'Łącznie w tym miesiącu',
       budgetShare: 'Część na lojalność',
-      shareUnit: '% na lojalność',
       budgetShareNote: '{loyalty} na nagrody lojalnościowe, {voucher} na zniżki z bonów.',
       budgetSaved: 'Budżet zapisany.',
-      moveTitle: 'Przenieś pieniądze między pulami',
-      moveAmount: 'Ile przenieść',
-      moveDo: 'Przenieś',
-      moveDir: '{from} → {to}',
-      moveNote:
-        'Przenosi się tylko to, co wciąż dostępne. To, co odłożone, należy do klienta, który już na to zapracował.',
       moved: 'Przeniesione.',
       hint: 'Pula „{to}” jest prawie pusta, a „{from}” ma zapas. Warto przenieść około {amount}.',
       pools: { loyalty: 'Lojalność', voucher: 'Bony' },
-
-      ladderEdit: 'Zmień, co dają punkty',
-      ladderDone: 'Gotowe',
       tierPct: 'Zniżka',
-      tierPoints: 'Ile kosztuje punktów',
-      tierCap: 'Najwięcej z jednego rachunku',
-      pctUnit: '% zniżki',
-      tierAdd: 'Dodaj próg',
-      tierRetire: 'Wycofaj',
       tierRetired: 'Próg wycofany. Bony już wydane w tym progu nadal działają.',
       tiersSaved: 'Progi punktowe zapisane.',
-      tierDuplicate:
-        'Dwa progi nie mogą mieć tej samej zniżki — drugi zastąpiłby pierwszy.',
-
-      queueTitle: 'Czeka na potwierdzenie',
-      queueLede:
-        'Klient zeskanował kod i nic jeszcze nie zostało przyznane. Potwierdź, a punkty, pieczątki i zniżki wykonają się naraz.',
-      queueEmpty:
-        'Nic nie czeka. Skan pojawia się tutaj w kilka sekund po tym, jak klient podniesie telefon.',
       confirm: 'Potwierdź',
-      turnAway: 'Odmów',
       confirmed: 'Potwierdzone. Klient ma swoje punkty.',
-      turnedAway: 'Odmówione. Nic nie zostało przyznane.',
       billLabel: 'Kwota rachunku',
-      waitingCustomer: 'Czekamy, aż klient wpisze kwotę',
-      openedAt: 'Zeskanowano o {at}',
       intents: {
         earn: 'Zbieranie',
         voucher_redeem: 'Bon',
@@ -1599,14 +1829,11 @@ export const pl: Dictionary = {
       withheld: 'Wstrzymane — zbyt mało osób, by podać to bez ujawnienia, kim są.',
       noSource: 'Serwer jeszcze tego nie raportuje, więc ten panel nie ma czego pokazać.',
       planLocked: 'Poza planem tego lokalu.',
-      monthOnly:
-        'Liczby są raportowane za cały miesiąc kalendarzowy — to okno, w którym liczy serwer. Wybór zakresu powyżej jeszcze nimi nie porusza.',
       noFindings: 'W tym miesiącu nic się nie wyróżniło.',
       /** A panel drawn from the reference design's figures rather than
           from measured ones, so the layout can be seen while the endpoint
           behind it does not exist. Never shown when `PD_SEED` is off. */
       sample: 'Dane poglądowe',
-      tierUnit: 'Każdy z nich zdejmuje {unit} z rachunku.',
       plan: 'Brak budżetu do pokazania — to urządzenie nie jest zalogowane do API Paylez.',
       assistant:
         'Zanim cokolwiek zaproponuję, czytam Twoje ciche godziny, Twoje budżety i to, co działa w lokalach podobnych do Twojego — a to urządzenie nie jest zalogowane do API Paylez, więc nie mogę odczytać niczego z tego. Nie będę zgadywać liczby i podpisywać jej Twoim nazwiskiem.',
@@ -1683,10 +1910,8 @@ export const pl: Dictionary = {
         share: 'Udostępnione przez klienta',
         unknown: 'Skądś indziej',
       },
-      reachFunnel: '{seen} zobaczyło · {clicks} otworzyło · {claims} skorzystało',
       reachEmpty: 'Nikt Cię jeszcze nie zobaczył. Opublikowanie oferty umieszcza Cię w kanale aplikacji.',
       reachLive: 'Dane na żywo, zliczone z Twojej wizytówki i Twoich ofert.',
-      reachSample: 'Dane przykładowe — to urządzenie nie pobiera zasięgu z serwera.',
       budgetAlert:
         'Prognozujemy, że Twój budżet lojalnościowy skończy się przed końcem miesiąca ({month}). Masz {amount} niewykorzystane w voucherach — przenieść część?',
       budgetAction: 'Otwórz budżet lojalnościowy',
@@ -1707,7 +1932,6 @@ export const pl: Dictionary = {
 
       tiles: ['Wizyty', 'Odebrane okazje', 'Użyte vouchery', 'Użyte nagrody'],
       since: 'wobec poprzedniego okresu',
-      inMonth: 'w miesiącu {month}',
       deltaNew: 'Nowe',
       sinceNone: 'w poprzednim okresie nic',
       quietBoth: 'nic w tym ani w poprzednim okresie',
@@ -1724,8 +1948,6 @@ export const pl: Dictionary = {
         'Każde skanowanie QR przy kasie zestawione z voucherami, które klienci naprawdę wykorzystali',
       chartVisits: 'Wizyty',
       chartRedeemed: 'Zrealizowane vouchery',
-      /** The right-hand end of the chart's date axis. */
-      chartToday: 'dziś',
 
       holdingTitle: 'Pieniądze, które trzymasz',
       holding:
@@ -1770,14 +1992,54 @@ export const pl: Dictionary = {
       runningNote: 'Wszystko, co klienci mogą dziś zobaczyć albo zdobyć w Twoim lokalu',
       quota: 'Zostało {n} z {total} powiadomień w tym miesiącu',
       quotaOut: 'Brak powiadomień w tym miesiącu',
-      kinds: { deal: 'Gorąca okazja', campaign: 'Kampania', vouchers: 'Vouchery' },
+      kinds: { deal: 'Gorąca okazja', campaign: 'Kampania', vouchers: 'Vouchery', pass: 'Karnet' },
       claims: 'odebrań',
       usedEarned: 'użyte / zdobyte',
       givenAway: 'rozdane',
-      notifySent: 'Powiadomienie wysłane',
-      notifySet: 'Powiadomienie zaplanowane',
       tierBundle: 'Trzy progi punktowe',
-      tierBundleRule: '5% · 10% · 15% rabatu · jeden miesięczny budżet',
+
+      tierLadder: 'Progi punktowe',
+      tierRule: '{tiers} rabatu · jeden miesięczny budżet',
+      quotaResets: 'odnowienie {date}',
+      notifyAt: 'Powiadomienie zaplanowane na {when}',
+      notifySentAt: 'Powiadomienie wysłane {when}',
+      ends: 'do {date}',
+      subscribers: 'subskrybentów',
+      passDiscount: '{pct}% rabatu na wszystko',
+      passCaps: { per_day: '{n} dziennie', per_week: '{n} w tygodniu', per_month: '{n} w miesiącu', unlimited: 'bez limitu' },
+      passCapsOnce: { per_day: 'raz dziennie', per_week: 'raz w tygodniu', per_month: 'raz w miesiącu' },
+      passPrice: { monthly: '{amount}/mies.', quarterly: '{amount}/kwartał', annual: '{amount}/rok' },
+      passDraft: 'Twój karnet {name} to wciąż szkic — klienci jeszcze go nie widzą.',
+      passDraftDetail: 'Jest zapisany. Uzupełnij szczegóły i opublikuj go, aby pojawił się w aplikacji.',
+      passDraftAction: 'Dokończ',
+      passUpsell: 'Subskrybenci karnetów wydają około {amount} poza karnetem.',
+      passUpsellDetail: 'Szacunek z rachunków zapisanych przy {measured} z {redemptions} tegomiesięcznych użyć karnetów.',
+      passUpsellAction: 'Zobacz karnety',
+      subs: {
+        title: 'Twoje subskrypcje',
+        included: 'W planie Growth',
+        framing: 'Twoje subskrypcje przynoszą {amount} miesięcznie, prosto do Ciebie — Paylez nie pobiera prowizji.',
+        manage: 'Zarządzaj karnetami',
+        active: 'Aktywni subskrybenci',
+        activeNote: 'we wszystkich aktywnych karnetach',
+        recurring: 'Cyklicznie / mies.',
+        recurringNote: 'prosto do Ciebie, 0% prowizji',
+        redemptions: 'Użycia',
+        redemptionsNote: 'użycia karnetów w tym miesiącu',
+        upsell: 'Szac. dodatkowa sprzedaż',
+        upsellNote: 'wydatki ponad karnet',
+        upsellWhy: {
+          no_redemptions: 'w tym miesiącu nikt jeszcze nie użył karnetu',
+          no_bills_recorded: 'brak rachunku zapisanego przy użyciu karnetu',
+          no_covered_value: 'karnet nie pokrywa niczego, z czym można porównać',
+        },
+        kicker: 'Subskrypcje',
+        promoTitle: 'Zamień stałych gości w subskrybentów.',
+        promoBody:
+          'Miesięczny karnet to stały przychód, który zatrzymujesz w 100% — Paylez nie pobiera prowizji i nigdy nie przechowuje pieniędzy.',
+        create: 'Utwórz karnet',
+        seeGrowth: 'Zobacz Growth',
+      },
     },
 
     deals: {
@@ -1874,9 +2136,6 @@ export const pl: Dictionary = {
       dropNone: 'Ta okazja jeszcze nie ruszyła, więc nie ma czego mierzyć.',
 
       notifyTitle: 'Co zrobiło powiadomienie',
-      notifyVenueTitle: 'Co zrobiły Twoje powiadomienia w tym miesiącu',
-      notifyVenueSent: 'Na podstawie {n} powiadomień wysłanych w tym miesiącu.',
-      notifyVenueNone: 'W tym miesiącu nie wyszło żadne powiadomienie, więc nie ma jeszcze czego mierzyć.',
       notifySteps: ['Powiadomieni', 'Otworzyli', 'Przyszli'],
       notifyStepNotes: [
         'osób z włączonymi powiadomieniami',
@@ -1885,14 +2144,10 @@ export const pl: Dictionary = {
       ],
       notifySplit:
         '{camein} z {claims} odebrań tej okazji przyszło z powiadomienia. Pozostałe {alone} znalazły ją w aplikacji same.',
-      notifyBlocked:
-        'Wysłane do {n} osób. Kolejne {blocked} pasowały, ale niedawno dostały inne powiadomienia, więc tego nie otrzymały.',
       notifyScheduled:
         'Powiadomienie wyjdzie o {at} do {n} osób z włączonymi powiadomieniami.',
       notifyNone:
         'Ta okazja nie ma powiadomienia. {n} z {total} pasujących osób ma włączone powiadomienia.',
-      notifyChange: 'Zmień godzinę',
-      notifyCancel: 'Anuluj je',
       whoTitle: 'Kto to widzi i kiedy',
       /* The two fallbacks in the expanded row's targeting card. A deal
          with no window runs whenever it is live, and one with no audience
@@ -1902,7 +2157,6 @@ export const pl: Dictionary = {
       everyone: 'Wszyscy',
 
       limitForecast: 'W tym tempie ta okazja osiągnie limit {limit} odebrań około {date}.',
-      limitDates: ['22 sierpnia', '', '', '', '', ''],
       retro:
         'Trwała {weeks} tygodni i dała {claims} odebrań — mniej więcej jedną trzecią tego, co średnio dają Twoje okazje 15%. Spróbuj większego rabatu albo darmowej pozycji.',
 
@@ -1914,19 +2168,78 @@ export const pl: Dictionary = {
         expired: 'Skopiuj',
         archived: 'Skopiuj',
       },
-      pointsNote: 'Oferta punktowa — nic Cię nie kosztuje przy kasie',
-      costEstimate: 'szacunek',
-      costNone: 'bez kosztu rabatu',
-      notifyChips: {
-        none: 'Bez powiadomienia',
-        scheduled: 'Powiadomienie na {at}',
-        sent: 'Powiadomienie wysłane · przyszło {n}',
-      },
-      sortBy: 'Sortuj według: {column}',
       clearFilters: 'Wyczyść filtry',
       emptyFiltered: 'Nic nie pasuje',
-      emptyFilteredBody:
-        'Żadna okazja z Twojej listy nie pasuje do ustawionego wyszukiwania i filtra. Wyczyść je, aby znów zobaczyć wszystkie sześć.',
+
+      stateFilters: {
+        all: 'Wszystkie',
+        live: 'Aktywne',
+        scheduled: 'Zaplanowane',
+        paused: 'Wstrzymane',
+        draft: 'Szkice',
+        expired: 'Wygasłe',
+        archived: 'Zakończone',
+      },
+      quotaLine: 'Zostało {n} z {total} powiadomień w tym miesiącu · odnowienie {date}',
+      quotaNone: 'Brak powiadomień w tym miesiącu · odnowienie {date}',
+      chipScheduled: 'Powiadomienie ustawione na {at}',
+      chipSent: 'Powiadomienie wysłane · przyszło: {n}',
+      audienceReturning: 'Powracający klienci',
+      notStartedCell: 'Jeszcze nie ruszyła',
+      emptyTitle: 'Uruchom ofertę, z której skorzysta każdy',
+      emptyBody:
+        'Gorąca okazja to otwarta oferta z datą początku i końca. Nikt nie musi na nią zapracować — pojawia się w aplikacji u tych, których wybierzesz. Dobry początek dla kawiarni: 20% taniej na kawę przelewową, pn–pt 07:00–10:00, żeby wypełnić spokojne poranki.',
+      searchTitle: 'Nic nie pasuje do „{q}”',
+      searchBody: 'Sprawdź pisownię albo wyczyść wyszukiwanie, aby zobaczyć wszystkie okazje ({n}).',
+      filterTitle: 'W „{filter}” nie ma teraz nic',
+      filterBody:
+        'Utwórz okazję, a pojawi się w aplikacji Paylez w chwili publikacji. Większość kawiarni zaczyna od porannej zniżki.',
+      notifyScheduledBare: 'Powiadomienie wyjdzie {at}.',
+      notifyNoneBare: 'Ta okazja nie ma powiadomienia.',
+      notifyJust: 'Wysłane {at} do osób: {n}. Wyniki pojawią się tu w ciągu doby.',
+      notifyAdd: 'Zaplanuj powiadomienie',
+      limitReached: 'Ta okazja osiągnęła limit {limit} odbiorów.',
+      ranFor: 'Trwała tygodni: {weeks}, odebrano ją razy: {claims}.',
+      endTitle: 'Zakończyć „{name}”?',
+      endBody:
+        'Zniknie z aplikacji na dobre. Jej wyniki zostaną na tym ekranie, ale nie da się jej wznowić — skopiuj ją, żeby uruchomić ponownie.',
+      endConfirm: 'Zakończ okazję',
+      copied: 'Skopiowano do nowej okazji. Sprawdź daty i ją opublikuj.',
+      copy: 'Kopiuj',
+
+      form: {
+        kicker: 'Gorąca okazja',
+        title: 'Utwórz gorącą okazję',
+        editTitle: 'Edytuj gorącą okazję',
+        sub: 'Okazja z datą początku i końca. Pojawia się w aplikacji Paylez w chwili publikacji.',
+        titleError: 'Nadaj okazji tytuł, żeby klienci wiedzieli, co to jest.',
+        windowDays: 'Klienci będą widzieć tę okazję przez dni: {n}, od {from} do {to}.',
+        windowBad: 'Data końca jest przed datą początku. Przesuń datę końca na później.',
+        windowPick: 'Wybierz obie daty, żeby zobaczyć okres trwania.',
+        quotaLeft: 'Zostało Ci powiadomień w tym miesiącu: {n}. Odnowią się {date}.',
+        quotaNone: 'Nie masz już powiadomień w tym miesiącu. Odnowią się {date}.',
+        outTitle: 'Wykorzystano wszystkie powiadomienia w tym miesiącu ({total})',
+        outBody:
+          'Okazja i tak będzie działać w aplikacji. Powiadomienie możesz dodać ponownie od {date} albo przejść na większy plan, żeby mieć ich więcej.',
+        outPlan: 'Zobacz plany',
+        reachLine: '{n} z {total} osób pasujących do tej okazji ma włączone powiadomienia.',
+        reachThin:
+          'Tylko {pct}% tej grupy ma włączone powiadomienia. Powiadomienie dotrze tu do mniejszej liczby osób niż sama okazja.',
+        notifySays: 'Powiadomienie zawiera tytuł i opis okazji, tak jak na podglądzie.',
+        lockApp: 'Paylez',
+        lockNow: 'teraz',
+        stopOptions: [
+          { label: 'Bez limitu', note: 'Trwa do daty końca.' },
+          { label: 'Zakończ po liczbie odbiorów', note: 'Dobre, gdy wiesz, ile osób możesz obsłużyć.' },
+          { label: 'Zakończ po kwocie', note: 'Dobre, gdy koszt jest ważniejszy niż liczba.' },
+        ],
+        limitNone: 'Bez limitu odbiorów',
+        previewBadge: 'OKAZJA',
+        publish: 'Opublikuj okazję',
+        save: 'Zapisz zmiany',
+        invalidCopy: 'Dodaj tytuł i tekst zniżki, aby kontynuować',
+        invalidDates: 'Popraw daty, aby kontynuować',
+      },
     },
 
     campaigns: {
@@ -1944,7 +2257,6 @@ export const pl: Dictionary = {
         'Wstrzymana 28 marca',
       ],
       rule: '{visits} wizyty → {reward}',
-      visitRule: 'Liczy się jedna wizyta dziennie. Nagroda wygasa 60 dni po zdobyciu.',
       earned: 'Zdobyte',
       used: 'Wykorzystane',
       unused: '{n} zdobytych i nigdy nieużytych',
@@ -1966,7 +2278,6 @@ export const pl: Dictionary = {
       cooldown: 'Skany liczą się raz na {n} godz.',
       rebalance:
         'Prognozujemy, że Twój budżet lojalnościowy skończy się {date}. W voucherach leży niewykorzystane {amount} — przenieść część?',
-      rebalanceAction: 'Przenieś budżet',
       budgetTitle: 'Budżet lojalnościowy',
       budgetLede:
         'Ile odłożyłeś w tym miesiącu na nagrody lojalnościowe. Gorące okazje nie wchodzą w to.',
@@ -1977,15 +2288,75 @@ export const pl: Dictionary = {
       forecast: 'W tym tempie budżet lojalnościowy wystarczy do {date}.',
       forecastOut: 'Budżet lojalnościowy jest wyczerpany. Nowe nagrody przestają być wydawane.',
       forecastSafe: 'W tym tempie budżet lojalnościowy wystarczy na cały {month}.',
-      pausedNote:
-        'Wstrzymana. Uczestnicy zachowują to, co zdobyli, a nic nowego nie jest liczone.',
+
+      board: {
+        totals: ['Zdobyte', 'Wykorzystane', 'Niewykorzystane'],
+        gap: 'Teraz największą lukę ma „{name}”: nagrody zdobyte i niewykorzystane: {n}.',
+        remindNote: 'Jedno powiadomienie do wszystkich, którzy mają niewykorzystaną nagrodę.',
+        remindResult: 'Ostatnie przypomnienie, {date}, sprowadziło z powrotem {back} z {of} klientów.',
+        share: 'z Twojego budżetu rabatowego {total}. Reszta, {vouchers}, idzie na vouchery.',
+        exhausted:
+          'W tym miesiącu nie są zdobywane nowe nagrody. Nagrody, które klienci już zdobyli, pozostają ważne i zostaną zrealizowane.',
+        rebalance: 'Budżet lojalnościowy skończy się około {date}. Masz {amount} niewykorzystane w voucherach — przenieść część?',
+        rebalanceOut: 'Budżet lojalnościowy jest wyczerpany. Masz {amount} niewykorzystane w voucherach — przenieść część?',
+        move: 'Przenieś {amount}',
+        moved: 'Przeniesiono {amount} z voucherów do kampanii lojalnościowych.',
+        young: 'Za wcześnie, by ocenić',
+        scanDay: '1 skan na klienta dziennie',
+        minSpend: 'min. wydatek {amount}',
+        expiry: 'nagroda wygasa po {n} dniach',
+        paused: 'Wstrzymana. Zdobyte już nagrody ({n}) pozostają ważne, więc {amount} zostaje odłożone, dopóki nie zostaną wykorzystane lub nie wygasną.',
+        since: 'Działa od {date}',
+        started: 'Start {date}',
+        states: { active: 'Aktywna', paused: 'Wstrzymana', draft: 'Szkic', ended: 'Zakończona' },
+        endTitle: 'Zakończyć „{name}”?',
+        endBody:
+          'Od następnej wizyty nikt jej nie zdobędzie. Nagrody, które klienci już zdobyli, pozostają ważne, dopóki nie zostaną wykorzystane lub nie wygasną.',
+        endConfirm: 'Zakończ kampanię',
+        emptyBody:
+          'Kampania lojalnościowa liczy wizyty klienta i daje mu coś za darmo, gdy osiągnie wybraną przez Ciebie liczbę. Ty decydujesz, jaka to nagroda i ile Cię kosztuje, więc zawsze znasz cenę.',
+        suggestKicker: 'Dobra pierwsza kampania dla kawiarni',
+        suggestNote: 'Kosztuje Cię około {amount} za każdym razem.',
+        suggestAction: 'Ustaw tę kampanię',
+        starter: 'Wypełniono przykładową kampanią. Zmień, co chcesz.',
+      },
+      form: {
+        kicker: 'Kampania lojalnościowa',
+        title: 'Utwórz kampanię',
+        editTitle: 'Edytuj kampanię',
+        sub: 'Nagroda, która się powtarza. Klienci zdobywają ją, wracając.',
+        rewardKinds: ['Coś za darmo', 'Kwota rabatu'],
+        projection: 'Jeśli dojdzie do tego {n} klientów, będzie Cię to kosztować około {amount}.',
+        top: '{n} — wygrywa pierwsza',
+        bottom: '{n} — wygrywa ostatnia',
+        priorityTopHelp: 'Ta kampania wypłaca nagrodę przed każdą inną, którą prowadzisz.',
+        priorityHelp: 'Kampanie z priorytetem od {from} do 5 wypłacają nagrodę przed tą.',
+        summaryOne: 'Odwiedź raz i odbierz: {reward}.',
+        summary: 'Odwiedź {n} razy i odbierz: {reward}.',
+        summaryNote:
+          'Nagroda od razu trafia do aplikacji klienta i jest ważna przez {days} dni. Liczą się tylko wizyty za {amount} lub więcej.',
+        summaryNoteBare: 'Nagroda od razu trafia do aplikacji klienta i jest ważna przez {days} dni.',
+        invalid: 'Dodaj nazwę, nagrodę i jej koszt, aby kontynuować',
+        start: 'Uruchom kampanię',
+      },
     },
 
     vouchers: {
-      alertTitle: 'Twój budżet rabatowy się kończy',
+      alertTitle: 'Twój budżet skończy się około {date}',
       alertBody:
-        'W obecnym tempie skończy się {date}, a vouchery przestaną być wydawane do przyszłego miesiąca.',
+        'To przed końcem miesiąca. Gdy pula się opróżni, nowe vouchery nie będą wydawane, dopóki nie zwiększysz budżetu albo nie zacznie się nowy miesiąc.',
       alertAction: 'Zwiększ budżet',
+      outTitle: 'Budżet rabatowy na ten miesiąc jest wykorzystany',
+      outBody:
+        'Nowe vouchery nie są wydawane. Te, które klienci już mają, nadal działają — pieniądze na nie odłożono, gdy je dostali.',
+      allocSplit:
+        'Z tego {voucher} jest na vouchery — pasek poniżej. Pozostałe {loyalty} jest odłożone na kampanie lojalnościowe.',
+      avgCategory:
+        'Typowa kwota dla lokali takich jak Twój. Zmieni się na Twoją własną, gdy zobaczymy wystarczająco dużo Twojej sprzedaży.',
+      savesOnBlur: 'Zmiany zapisują się, gdy opuścisz pole',
+      pointsFor: 'Punkty potrzebne do {tier}',
+      steps: { first: 'najłatwiej osiągnąć', middle: 'środkowy próg', last: 'Twoi najlepsi klienci' },
+      insightNone: 'Nic jeszcze nie rozdano. Gdy klienci zaczną osiągać progi, zobaczysz tu ich rozkład.',
       budgetTitle: 'Budżet voucherów',
       budgetLede:
         'Jedna pula na wszystkie trzy progi. To prawdziwe pieniądze wychodzące z Twojej kasy, a łączną kwotę dla obu funkcji ustawiasz tutaj.',
@@ -1999,15 +2370,14 @@ export const pl: Dictionary = {
         'Pieniądze odłożone na vouchery, które klienci zdobyli, ale jeszcze nie wykorzystali. Jeśli wygasną, wracają.',
       free: 'Dostępne',
       freeNote: 'Wolne na nowe vouchery już teraz.',
-      forecast: 'W tym tempie budżet wystarczy do {date}.',
-      forecastOut: 'Budżet jest wyczerpany. Nowe vouchery nie są wydawane.',
+      forecast: 'W tym tempie budżet skończy się około {date}.',
+      forecastOut: 'W puli nic nie zostało na ten miesiąc.',
       forecastSafe: 'W tym tempie budżet wystarczy na cały {month}.',
       buysTitle: 'To, co zostało, kupi',
-      buys: 'około {n} kolejnych voucherów',
-      buysNote: 'Przy takim rozkładzie progów, jaki osiągają teraz Twoi klienci.',
+      buys: 'Około {n} kolejnych voucherów',
+      buysNote: 'Szacunek na podstawie Twojego średniego rachunku {amount}.',
       avgTitle: 'Średnia transakcja',
-      avgNote:
-        'Wzięta z Twojej własnej sprzedaży z ostatnich 30 dni. Zmień, jeśli wygląda źle.',
+      avgNote: 'Obliczona z Twojej sprzedaży z ostatnich 30 dni.',
       maxTitle: 'Najwięcej z jednego vouchera',
       maxNote:
         'Żaden pojedynczy voucher nie zdejmuje z rachunku więcej niż tyle, jakkolwiek duże byłoby zamówienie.',
@@ -2016,13 +2386,10 @@ export const pl: Dictionary = {
         'Progi nie trzymają pieniędzy. O dotarciu decydują punkty, więc podniesienie liczby kieruje tam mniej budżetu.',
       columns: ['Próg', 'Potrzebne punkty', 'Wydane', 'Użyte', 'Koszt dotąd'],
       tier: '{n}% rabatu',
-      stillOut: '{n} wciąż u klientów',
       retired: 'Wycofany',
       tierDetail: 'Każdy zabiera {unit} z rachunku. Ten próg to {pct}% tego, co pula wydała do tej pory.',
       pointsUnit: 'pkt',
       pointsOrder: 'Większy rabat nie może kosztować mniej punktów niż mniejszy.',
-      tryNote:
-        'Wpisz tu inne wartości, aby zobaczyć, co stałoby się z pulą. Nic nie jest zapisywane — po odświeżeniu wracają Twoje prawdziwe liczby.',
       points: '{n} pkt',
       mixTitle: 'Gdzie poszły pieniądze',
       returnedTitle: 'Zwrócone pieniądze',
@@ -2044,12 +2411,8 @@ export const pl: Dictionary = {
         'Rabaty voucherowe',
         'Rabaty gorących okazji',
       ],
-      costFinding:
-        'Każdy nowy klient kosztował Cię {now} w miesiącu {month}, wobec {then} w czerwcu. Większość tego spadku wzięła się z Twojej okazji z darmowym produktem.',
       costAction: 'Zobacz swoje okazje',
       trendTitle: 'Ostatnie trzy miesiące',
-      trendMonths: ['Czerwiec', 'Lipiec', 'Sierpień'],
-      spendByMonth: 'Wydatki u Ciebie, miesiąc po miesiącu',
       benchmark:
         'Przeciętna krakowska kawiarnia w Paylez płaci {amount} za każdego nowego klienta. To szacunek z lokali podobnych do Twojego, nie obietnica.',
 
@@ -2057,8 +2420,6 @@ export const pl: Dictionary = {
       rosterIntro:
         '{n} z Twoich {total} klientów włączyło udostępnianie profilu, więc tych widzisz z imienia. Wszyscy pozostali zostają w zbiorczych liczbach poniżej.',
       rosterCount: '{n} udostępnia',
-      rosterColumns: ['Klient', 'Wydał', 'Wizyty', 'Ostatnio', 'Status'],
-      rosterFilters: ['Wszyscy', 'Stali', 'Najcenniejsi', 'Mogą odejść', 'Odeszli', 'Nowi'],
       withdrew:
         'Każdy może wyłączyć udostępnianie w dowolnej chwili. Wtedy znika z tej listy, a jego historia przestaje być dla Ciebie widoczna.',
       statuses: {
@@ -2072,7 +2433,6 @@ export const pl: Dictionary = {
       daysAgo: '{n} dni temu',
       dayAgo: 'wczoraj',
       stamps: '{done} z {of} pieczątek',
-      tierProgress: 'próg {n}%',
 
       detail: {
         open: 'Pokaż: {name}',
@@ -2080,7 +2440,6 @@ export const pl: Dictionary = {
         spent: 'Wydał u Ciebie',
         visits: 'Wizyty',
         firstSeen: 'Pierwsza wizyta',
-        lastSeen: 'Ostatnia wizyta',
         language: 'Język aplikacji',
         months: 'Wizyty w kolejnych miesiącach',
         cards: 'Karty pieczątek',
@@ -2092,16 +2451,9 @@ export const pl: Dictionary = {
       },
 
       whenTitle: 'Kiedy przychodzą',
-      whenLede:
-        'Każde skanowanie QR przy kasie, w przeciętnym tygodniu. Ciemniej znaczy tłoczniej.',
       days: ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'],
-      heatCell: 'około {n} wizyt w normalnym tygodniu',
-      quietFinding:
-        'Wtorek i środa, 14:00–16:00, to Twoje najspokojniejsze godziny — około 60% poniżej tygodniowej średniej.',
       quietAction: 'Ustaw to za mnie',
       quietSelf: 'Zrobię to sam',
-      peakFinding:
-        'Najwięcej masz w dni robocze między 08:00 a 10:00. Twoja poranna okazja już wtedy działa, więc głębszy rabat niewiele tam da.',
 
       nationCount: '{n} klientów · {pct}%',
       readTitle: 'W jakim języku mówią Twoi klienci',
@@ -2125,8 +2477,6 @@ export const pl: Dictionary = {
       cohort: '{back} z {first} · {pct}%',
       backFinding:
         '{first} osób odwiedziło Cię po raz pierwszy w miesiącu {month}. {back} wróciło w ciągu 30 dni — {pct}%.',
-      lapsedFinding:
-        '{n} Twoich stałych klientów nie było od 30 dni. Wcześniej przychodzili mniej więcej raz w tygodniu.',
 
       compareTitle: 'Jak wypadasz na tle innych',
       compareNote:
@@ -2143,23 +2493,6 @@ export const pl: Dictionary = {
       roiUnits: ['powtórnych wizyt', 'odebrań', 'użytych voucherów'],
       roiPer: ['za powtórną wizytę', 'za odebranie', 'za użycie'],
       roiLine: '{cost} wydane · {n} {unit}',
-
-      patterns: [
-        'Poranki w dni robocze, często przed 9',
-        'Poranki w dni robocze',
-        'Weekendy, późny poranek',
-        'Przychodził w piątkowe popołudnia',
-        'Dwie wizyty, obie po południu',
-        'Lunch w dni robocze',
-        'Weekendowe poranki',
-        'Popołudnia, różne dni',
-        'Prawie każdy roboczy poranek',
-        'Trzy wizyty, popołudnia',
-        'Był wtorkowym stałym bywalcem',
-        'Weekendy',
-        'Pierwsza wizyta dwa dni temu',
-        'Czwartkowe popołudnia, ostatnio rzadziej',
-      ],
       rewards: [
         'próg 15% — Twój najlepszy klient',
         'Jedna pieczątka od darmowej kawy',
@@ -2172,6 +2505,112 @@ export const pl: Dictionary = {
         'próg 10% — odszedł',
         'próg 10% — zwalnia',
       ],
+
+      page: {
+        thinKicker: 'Nowi klienci do tej pory',
+        thinUnit: 'nowych w Twoim lokalu w miesiącu {month}',
+        thinLine:
+          'Na razie jest zbyt mało nowych klientów, by podać koszt jednego z nich, nie wskazując konkretnej osoby. Liczba pojawi się, gdy będzie ich wystarczająco dużo.',
+        findingDown: 'Każdy nowy klient kosztował Cię {now} w miesiącu {month}, mniej niż {then} w miesiącu {first}.',
+        findingUp: 'Każdy nowy klient kosztował Cię {now} w miesiącu {month}, więcej niż {then} w miesiącu {first}.',
+        findingFlat: 'Każdy nowy klient kosztował Cię {now} w miesiącu {month}, mniej więcej tyle co w miesiącu {first}.',
+        trendNone: 'Trend zacznie się, gdy pełny miesiąc będzie miał dość nowych klientów, by ich policzyć.',
+        benchmark:
+          'Lokale podobne do Twojego płacą w Paylez średnio {amount} za każdego nowego klienta. To szacunek z {n} lokali, a nie obietnica.',
+
+        emptyTitle: 'Nikt jeszcze nie udostępnia swojego profilu',
+        emptyBody:
+          'Gdy klient zdecyduje się udostępnić swój profil, pojawi się tutaj, żebyś mógł dbać o stałych gości po imieniu. Nigdy nie zobaczysz nikogo, kto się na to nie zgodził.',
+        fewNote:
+          'Na razie tylko kilka osób udostępniło swój profil. Kolejni stali goście pojawią się tutaj, gdy wyrażą zgodę.',
+        shown: 'Pokazujemy {n} najaktywniejszych. Łącznie profil udostępniło {total} osób.',
+        filters: {
+          all: 'Wszyscy',
+          regular: 'Stali',
+          away: 'Odchodzą',
+          new: 'Nowi',
+          top: 'Najwięcej wydają',
+          members: 'Subskrybenci',
+        },
+        columns: {
+          customer: 'Klient',
+          spent: 'Wydał',
+          visits: 'Wizyty',
+          vouchers: 'Vouchery',
+          last: 'Ostatnio',
+          status: 'Status',
+        },
+        statuses: { regular: 'Stały', away: 'Odchodzi', new: 'Nowy' },
+        tier: 'próg {n}%',
+        stamps: '{done}/{of}',
+        open: 'Otwórz: {name}',
+
+        back: 'Wszyscy klienci',
+        sharingSince: 'Udostępnia profil od: {date}',
+        firstVisit: 'Pierwsza wizyta: {date}',
+        privacy:
+          '{name} zdecydował(a) się udostępnić Ci te dane i może to w każdej chwili wyłączyć. Widzisz je tylko dlatego, że wyraził(a) zgodę.',
+        passKicker: 'Karnet',
+        passSince: 'Od',
+        passUsed: 'Użyty w tym okresie',
+        passStatus: { trialing: 'Okres próbny', active: 'Aktywny', cancelled: 'Anulowany' },
+        stats: {
+          spent: 'Wydał u Ciebie',
+          visits: 'Wizyty',
+          average: 'Średni rachunek',
+          vouchers: 'Użyte vouchery',
+          last: 'Ostatnio',
+        },
+        vouchersOf: '{used} z {issued}',
+        spendKicker: 'Wydatki u Ciebie, miesiąc po miesiącu',
+        rewardKicker: 'Status nagrody',
+        rewardTier: 'Próg rabatu {n}%',
+        rewardTierNote: 'Najgłębszy rabat voucherowy, jaki kupił u Ciebie.',
+        rewardStamps: '{done} z {need} pieczątek',
+        rewardNone: 'Nie ma tu jeszcze vouchera ani karty z pieczątkami.',
+        usedKicker: 'Z czego skorzystał',
+        usedNone: 'Nie skorzystał jeszcze z żadnej okazji.',
+        inCampaign: 'W Twojej kampanii „{name}”',
+        whenKicker: 'Kiedy przychodzi',
+        pattern: 'Najczęściej: {day}, około {time}',
+        patternNone: 'Za mało wizyt, żeby zobaczyć jakiś wzór.',
+        build: 'Zbuduj podobną okazję',
+
+        heatLede: 'Każde skanowanie kodu QR przy kasie w tym miesiącu, według dnia i godziny. Ciemniej znaczy więcej ruchu.',
+        heatTitle: '{day}, {time}: {n} wizyt w tym miesiącu',
+        quiet: '{day} około {time} to Twoja najspokojniejsza godzina otwarcia — około {pct}% poniżej przeciętnej godziny.',
+        busy: 'Najbardziej ruchliwa godzina: {day}, około {time}.',
+        heatEmpty: 'W tym miesiącu nie było jeszcze skanów przy kasie, więc nie ma czego narysować.',
+        quietToast: 'Dzień i godzina są już wpisane. Dodaj ofertę.',
+
+        langOther: 'Inne',
+        langHidden: 'Mniejsze grupy liczymy jako „inne”, żeby nikogo nie dało się wskazać.',
+        langSuppressed: 'W tym miesiącu jest za mało klientów, by podzielić ich według języka, nie wskazując nikogo.',
+        langFinding:
+          '{pct}% Twoich klientów używa aplikacji w języku: {language}, ale żadna z Twoich aktywnych okazji nie jest w nim napisana.',
+
+        backNone: 'Za mało pierwszych wizyt, żeby powiedzieć, kto wraca.',
+        remindLine: '{n} klientów ma niewykorzystaną nagrodę lub voucher.',
+        remind: 'Przypomnij im',
+        lapsedLine: '{n} klientów, którzy wcześniej przychodzili, nie wróciło od {days} dni.',
+
+        lockLine: 'Porównanie z innymi i to, gdzie pracują Twoje pieniądze, są dostępne w planie Growth.',
+        seePlan: 'Zobacz plan Growth',
+        compareNote:
+          'Porównanie z {n} innymi podobnymi lokalami w Paylez. Liczby są uśredniane dla wielu lokali, nigdy nie pokazujemy pojedynczego.',
+        compareRows: {
+          claim_rate: 'Odsetek odebranych okazji',
+          second_visit_rate: 'Druga wizyta w ciągu 30 dni',
+          cost_per_new_customer: 'Koszt nowego klienta',
+        },
+        compareNone:
+          'W Paylez nie ma jeszcze dość podobnych lokali, by średnia coś znaczyła, więc jej nie pokazujemy.',
+        compareNoneNote: 'Pojawi się sama, gdy w okolicy zacznie działać wystarczająco dużo lokali.',
+        roiRows: { loyalty: 'Kampanie lojalnościowe', deals: 'Gorące okazje', vouchers: 'Vouchery' },
+        roiUnits: { loyalty: 'odebranych nagród', deals: 'odbiorów', vouchers: 'użytych voucherów' },
+        roiPer: { loyalty: 'za odebraną nagrodę', deals: 'za odbiór', vouchers: 'za użycie' },
+        roiNone: 'Żadne z tych trzech narzędzi nie wydało jeszcze nic w tym miesiącu.',
+      },
     },
 
     scans: {
@@ -2198,7 +2637,6 @@ export const pl: Dictionary = {
       notCounted: 'Nie wliczono',
       notCountedNote: 'Poniżej minimalnego rachunku, za szybko po poprzednim skanie albo już policzony tego dnia.',
       discount: '{amount} zniżki',
-      emptyWindow: 'W tym okresie nie ma jeszcze skanowań.',
       emptySegment: 'Żadne skanowanie nie pasuje do tego filtra.',
       todayTitle: 'Dziś przy kasie',
       count: '{n} skanowań',
@@ -2207,6 +2645,8 @@ export const pl: Dictionary = {
       prev: 'Poprzednia',
       next: 'Następna',
       coords: 'Kasa',
+      confirmedBy: 'Potwierdza: {name}',
+      todayLabels: ['Wizyty', 'Klienci', 'Utarg'],
 
       counter: {
         title: 'Zapisz wizytę przy kasie',
@@ -2262,7 +2702,6 @@ export const pl: Dictionary = {
       exportCsv: 'Eksport CSV',
       preview: 'Podejrzyj wizytówkę',
       exported: 'Twój plik CSV się pobiera.',
-      previewing: 'Otwieram podgląd Twojej wizytówki.',
     },
 
     drawer: {
@@ -2272,7 +2711,6 @@ export const pl: Dictionary = {
          panel does both jobs and the heading is what says which. */
 
       editDeal: 'Edytuj gorącą ofertę',
-      editCampaign: 'Edytuj kampanię',
       close: 'Zamknij',
       cancel: 'Anuluj',
       later: 'Zapisz i dokończ później',
@@ -2288,7 +2726,6 @@ export const pl: Dictionary = {
         descLabel: 'Opis',
         descPlaceholder: 'Napisz, co dostaje klient, w jednym–dwóch krótkich zdaniach.',
         translateNote: 'Paylez przetłumaczy to dla klientów czytających w innym języku.',
-        copyError: 'Okazja potrzebuje tytułu i opisu, zanim ruszy.',
         kindTitle: 'Jaki to rodzaj okazji',
         kinds: ['Rabat procentowy', 'Darmowa pozycja', 'Kwota zniżki', 'Dodatkowa pieczątka'],
         discountTitle: 'Rabat i daty',
@@ -2296,7 +2733,6 @@ export const pl: Dictionary = {
         badgeNote: 'Krótko i jasno. Klienci widzą to najpierw. Najwyżej 14 znaków.',
         from: 'Start',
         to: 'Koniec',
-        windowError: 'Data końca jest wcześniejsza niż data startu.',
         whenTitle: 'Które dni i godziny',
         hourFrom: 'Od',
         hourTo: 'Do',
@@ -2305,25 +2741,13 @@ export const pl: Dictionary = {
         noDays: 'jeszcze żadnych dni',
         audienceTitle: 'Kto to widzi',
         audienceEstimate: 'Pasuje do tego około {n} osób, a {notifiable} z nich można powiadomić.',
-        reachLabel: 'osób w tej grupie dziś',
-        notifiableLabel: 'można powiadomić',
         reachLanguage: 'Serwer nie wylicza grupy odbiorców według języka aplikacji, więc ta nie ma liczby.',
         notifyTitle: 'Powiadom ludzi',
         notifySwitch: 'Wyślij powiadomienie o tej okazji',
-        notifyQuota: 'Zostało {n} z {total} w tym miesiącu.',
-        notifyOutTitle: 'Wykorzystałeś wszystkie {total} w tym miesiącu',
-        notifyOutBody:
-          'Licznik zeruje się pierwszego. Plan Growth ma ich więcej, a okazja działa i bez powiadomienia — po prostu czeka, aż ktoś otworzy aplikację.',
-        notifyPlan: 'Zobacz plan Growth',
         notifyWhen: 'Kiedy wychodzi',
-        notifySuggested: 'Twoi odbiorcy otwierają aplikację najczęściej około {at}.',
-        useSuggested: 'Ustaw {at}',
         quietNote: 'Nic nie wychodzi przed 07:00 ani po 21:00 czasu Twojego lokalu, cokolwiek ustawisz.',
         notifyWho: 'Kto je dostanie',
-        notifyReach: '{n} z {total} ma włączone powiadomienia.',
         notifyWhoNote: 'Zmień to wyżej, w „Kto to widzi”',
-        notifyText: 'Co w nim jest',
-        notifyTextNote: 'Wzięte z tytułu okazji. Możesz skrócić — najwyżej 64 znaki.',
         stopTitle: 'Kiedy ma się zatrzymać',
         stopOptions: [
           { label: 'W dacie końca', note: 'Działa do ustawionej daty i ani dnia dłużej.' },
@@ -2341,7 +2765,6 @@ export const pl: Dictionary = {
         previewClaim: 'Odbierz',
         previewUntitled: 'Tytuł Twojej okazji',
         previewNoDesc: 'Tutaj pojawi się Twój opis.',
-        previewLimitNone: 'Bez limitu odebrań',
         previewLimitClaims: 'Zatrzymuje się po {n} odebraniach',
         previewLimitMoney: 'Zatrzymuje się, gdy kosztuje {amount}',
         filing: 'Zapisywanie…',
@@ -2380,7 +2803,6 @@ export const pl: Dictionary = {
         rewardOff: 'zniżki',
         rewardError: 'Napisz, co dostaje klient.',
         costTitle: 'Ile Cię to kosztuje',
-        costEach: 'za każdym razem',
         costNote:
           'Używamy tego, by śledzić koszt Twoich kampanii. To kwota rezerwowana z budżetu lojalnościowego za każdym razem, gdy ktoś zdobędzie tę nagrodę.',
         project: 'klientów',
@@ -2407,14 +2829,11 @@ export const pl: Dictionary = {
         costError: 'Podaj, ile kosztuje Cię jedna nagroda — pieniądze są rezerwowane z budżetu lojalnościowego w chwili, gdy ktoś ją zdobędzie.',
       },
       valid: 'Popraw {n} rzecz powyżej przed publikacją.',
-      validPlural: 'Popraw {n} rzeczy powyżej przed publikacją.',
     },
 
     assistant: {
-      knowTitle: 'Co wiem o lokalu „{venue}”',
       knowEmpty:
         'Nic tu jeszcze nie jest zmierzone. Uczę się, gdy klienci skanują kod przy Twojej ladzie — do tego czasu to wszystko, co widzę.',
-      knowNote: 'Każda liczba, którą podaję, pochodzi z danych Twojego lokalu. Żadnej nie wymyślam.',
       facts: {
         visits: 'Wizyty w tym miesiącu',
         customers: 'Klienci w tym miesiącu',
@@ -2434,9 +2853,6 @@ export const pl: Dictionary = {
         archived: 'Zarchiwizowany',
       },
       receipt: 'Liczby, z których powstała ta odpowiedź',
-
-      attentionTitle: 'Wymaga Twojej uwagi',
-      attentionNone: 'W tej chwili nic nie wymaga Twojej uwagi.',
       attentionFailed: 'Nie udało mi się odczytać, co wymaga Twojej uwagi.',
       review: {
         dealStuck:
@@ -2458,8 +2874,6 @@ export const pl: Dictionary = {
         startCampaign: 'Załóż kartę pieczątek',
         dealThen: 'Utwórz okazję na tę godzinę',
       },
-
-      startTitle: 'Od czego zacząć',
       suggestions: {
         first_deal: {
           label: 'Uruchom pierwszą okazję',
@@ -2494,18 +2908,14 @@ export const pl: Dictionary = {
         },
       },
       quietPlain: 'Okazja skierowana na godzinę, w której masz najmniej ruchu.',
-      askTitle: 'Pytania, na które odpowiem',
       questions: {
         quiet: 'Kiedy w moim lokalu jest najciszej?',
         cost: 'Ile kosztował mnie każdy nowy klient?',
         month: 'Jak idzie ten miesiąc?',
       },
-
-      convTitle: 'Porozmawiaj z asystentem',
       reset: 'Zacznij od nowa',
       opening:
         'Zapytaj mnie o wizyty, najcichsze godziny albo wydatki. Możesz też przełączyć na Projekt, napisać, co ma się wydarzyć, a ja przygotuję to do sprawdzenia w formularzu.',
-      modeLabel: 'Co zrobić z Twoją wiadomością',
       modes: { ask: 'Pytanie', draft: 'Projekt' },
       fieldLabel: { ask: 'Twoje pytanie', draft: 'Co ma się wydarzyć' },
       placeholders: {
@@ -2513,7 +2923,6 @@ export const pl: Dictionary = {
         draft: 'Na przykład: żeby stali klienci częściej wracali',
       },
       budgetLabel: 'Budżet (opcjonalnie)',
-      budgetShown: 'Budżet: {amount}',
       send: 'Wyślij',
       composerNote:
         'Odpowiadam na podstawie liczb Twojego lokalu i niczego nie publikuję — projekt otwiera się w formularzu, a opublikować możesz go tylko Ty.',
@@ -2546,7 +2955,6 @@ export const pl: Dictionary = {
       },
 
       draftTag: 'Projekt',
-      draftNote: 'Nic tutaj nie jest aktywne. Otworzy się w formularzu, a opublikować możesz to tylko Ty.',
       goal: 'Twoja prośba: „{goal}”',
       kinds: {
         hot_deal: 'Gorąca okazja',
@@ -2593,7 +3001,6 @@ export const pl: Dictionary = {
         unmatched:
           'Nie udało mi się powiązać tego celu z niczym, co mierzę, więc to prosty punkt wyjścia. Wszystko zmienisz w formularzu.',
       },
-      openForm: 'Otwórz w formularzu',
       openVouchers: 'Otwórz vouchery',
 
       states: {
@@ -2614,6 +3021,35 @@ export const pl: Dictionary = {
       },
 
       dayChoices: ['Wtorek i środa', 'Czwartek', 'Piątek'],
+
+      chat: {
+        online: 'Online',
+        newConversation: 'Nowa rozmowa',
+        more: 'Więcej',
+        clear: 'Wyczyść rozmowę',
+        export: 'Eksportuj historię czatu',
+        name: 'Asystent',
+        you: 'Ty',
+        hello: 'Cześć! Jestem Twoim asystentem Paylez dla {venue}. Oto szybki przegląd:',
+        helloEmpty: 'Cześć! Jestem Twoim asystentem Paylez dla {venue}.',
+        liveDeals: 'Aktywne okazje',
+        topDeal: 'Najlepsza okazja: „{title}” — otwarcia: {n}',
+        workOn: 'Nad czym chcesz popracować?',
+        attention: 'Kilka rzeczy wymaga uwagi:',
+        chips: {
+          deal: 'Utwórz gorącą okazję',
+          campaign: 'Ustaw kampanię lojalnościową',
+          stats: 'Pokaż moje statystyki',
+          vouchers: 'Skonfiguruj vouchery',
+        },
+        draftLead: 'Oto co przygotowałem:',
+        draftHead: 'Szkic: {kind}',
+        draftAsk:
+          'Chcesz dodać warunki albo coś zmienić? Zrób to w formularzu — nic nie trafi do aplikacji, dopóki go tam nie opublikujesz.',
+        publish: 'Sprawdź i opublikuj',
+        fieldLabel: 'Wiadomość do asystenta',
+        placeholder: 'Zapytaj o cokolwiek w swojej firmie…',
+      },
     },
 
     collapse: 'Zwiń menu',
@@ -2633,7 +3069,6 @@ export const pl: Dictionary = {
       kicker: 'Twoja subskrypcja',
       title: 'Twój plan i trzy poziomy',
       lede: 'Na czym jesteś, ile z tego wykorzystujesz i co zawierają pozostałe.',
-      mineKicker: 'Obowiązuje teraz',
       noSubscription: 'Poziom darmowy',
       freeNote:
         'Jesteś na poziomie darmowym, od którego zaczyna każdy lokal. Nic nie wygasa i nic nie jest należne.',
@@ -2641,7 +3076,9 @@ export const pl: Dictionary = {
       renews: 'Odnawia się {date}.',
       until: 'Zmienia się {date}.',
       notIncluded: 'Nie zawiera',
-      compareKicker: 'Porównanie',
+      current: 'Obecny plan',
+      compareAll: 'Porównaj wszystkie funkcje',
+      talk: 'Porozmawiaj z nami',
       compareTitle: 'Co zawiera każdy poziom',
       whatYouGet: 'Co otrzymujesz',
       yours: 'Twój',
@@ -2670,6 +3107,221 @@ export const pl: Dictionary = {
     },
 
     ranges: ['Ostatnie 7 dni', 'Ostatnie 14 dni', 'Ostatnie 30 dni', 'Ostatni kwartał'],
+    passes: {
+      intro: 'Subskrypcje, które klienci kupują bezpośrednio u Ciebie — kawa dziennie, miesięczny pakiet, klub członkowski.',
+      introStrong: 'Wszystko zostaje u Ciebie. Paylez nie pobiera prowizji.',
+      included: 'W planie {plan}',
+      lockedPill: 'Plany Growth i Chain',
+      lockedTitle: 'Karnety są w planie Growth',
+      seePlan: 'Zobacz plan Growth',
+      lockedBody:
+        'Twój plan, {plan}, nie obejmuje karnetów, więc nie można tu utworzyć ani opublikować nowego karnetu. Istniejące karnety nadal można otworzyć, edytować, wstrzymać lub zamknąć.',
+      payoutsTitle: 'Klienci nie mogą jeszcze subskrybować',
+      payoutsBody:
+        'Paylez nie może jeszcze przyjmować za Ciebie płatności za subskrypcje — podłączenie konta wypłat nie jest dostępne. Możesz przygotować i opublikować karnet, a pojawi się on w aplikacji, ale nikt nie może go subskrybować, dopóki wypłaty nie ruszą, i do tego czasu nikt nie zostanie obciążony.',
+      create: 'Utwórz karnet',
+      stats: {
+        active: 'Aktywni subskrybenci',
+        activeNote: 'we wszystkich aktywnych karnetach',
+        recurring: 'Przychód cykliczny',
+        recurringNote: 'kwota, na którą zapisali się subskrybenci co miesiąc — jeszcze nie pobrana',
+        redemptions: 'Użycia w tym miesiącu',
+        redemptionsNote: 'karnety użyte przy ladzie',
+        upsell: 'Szac. dosprzedaż',
+        upsellNote: 'wydatki ponad karnet, zmierzone na {n} z {total} użyć',
+      },
+      upsellWhy: {
+        no_redemptions: 'Nie zmierzono: w tym miesiącu nie użyto żadnego karnetu.',
+        no_bills_recorded: 'Nie zmierzono: przy żadnym użyciu karnetu nie zapisano rachunku.',
+        no_covered_value: 'Nie zmierzono: ustaw „Maksymalny rabat na wizytę”, aby znać pokrytą część rachunku.',
+        unknown: 'Jeszcze nie zmierzono.',
+      },
+      card: {
+        subscribers: 'subskrybentów',
+        used: 'użyć w tym miesiącu',
+        mrr: 'MRR',
+        view: 'Zobacz',
+        edit: 'Edytuj',
+        pause: 'Wstrzymaj',
+        resume: 'Wznów',
+        publish: 'Opublikuj',
+      },
+      status: { live: 'Aktywny', paused: 'Wstrzymany', draft: 'Szkic', closed: 'Zamknięty', soldOut: 'Wyprzedany' },
+      period: { monthly: '/ miesiąc', quarterly: '/ kwartał', annual: '/ rok' },
+      periodWord: { monthly: 'miesięcznie', quarterly: 'kwartalnie', annual: 'rocznie' },
+      rule: {
+        anyBenefit: 'Korzyść dla członków',
+        discount: '{pct}% zniżki na wszystko',
+        perDay: 'raz dziennie',
+        perDayN: '{n} dziennie',
+        perWeek: '{n} w tygodniu',
+        perMonth: '{n} w miesiącu',
+        unlimited: 'bez limitu',
+        anyDay: 'każdego dnia',
+        weekends: 'w weekendy',
+      },
+      templatesTitle: 'Zacznij nowy karnet od szablonu',
+      templatesBody:
+        'Wybierz najbliższy i dopasuj go. Każdy szablon wypełnia rozsądne ustawienia, więc możesz wystartować w kilka minut.',
+      templates: {
+        daily: { name: 'Dzienny przydział', blurb: 'Jedna rzecz dziennie za stałą miesięczną cenę.', example: 'Jedna kawa dziennie · {amount} miesięcznie' },
+        bundle: { name: 'Pakiet miesięczny', blurb: 'Ustalona liczba opłaconych z góry rzeczy co miesiąc.', example: '10 kaw miesięcznie · {amount}' },
+        vip: { name: 'Klub VIP', blurb: 'Stała zniżka i przywileje dla członków.', example: '15% zniżki na wszystko + przywileje · {amount}' },
+        weekend: { name: 'Weekendowy lub sezonowy', blurb: 'Rzeczy ograniczone do wybranych dni lub sezonu.', example: 'Dwie kawy w weekend · {amount}' },
+        custom: { name: 'Od zera', blurb: 'Pusty karnet, który budujesz sam.', example: 'Ustaw każdą zasadę po swojemu' },
+      },
+      detail: {
+        back: 'Wszystkie karnety',
+        edit: 'Edytuj karnet',
+        pauseSignups: 'Wstrzymaj zapisy',
+        resume: 'Wznów',
+        publish: 'Opublikuj',
+        close: 'Zamknij',
+        deleteDraft: 'Usuń szkic',
+        subscribers: 'Subskrybenci',
+        subscribersNote: '+{new} nowych · {cancelled} rezygnacji w tym miesiącu',
+        revenue: 'Przychód cykliczny',
+        revenueNote: 'kwota subskrypcji — jeszcze nie pobrana',
+        redemptions: 'Użycia',
+        perSub: '{n} na aktywnego subskrybenta',
+        upsell: 'Szac. dosprzedaż',
+        upsellNote: 'wydatki ponad to, co obejmuje karnet, na {n} z {total} użyć',
+        lessonTitle: 'Lekcja Pret',
+        lessonMeasured:
+          'Ci subskrybenci wydali w tym miesiącu około {amount} ponad to, co obejmuje karnet. Opłata zapełnia miejsca; zyskiem jest dosprzedaż.',
+        lessonGeneral:
+          'Gdy ludzie już subskrybują, opłata przyciąga ruch — subskrybenci wracają częściej i wydają więcej, niż obejmuje karnet. Ustal cenę tak, by zapełniać miejsca, a nie zarabiać na filiżance.',
+        priceTitle: 'Zmiana ceny',
+        priceBody:
+          'Nowa cena obowiązuje nowych subskrybentów od razu, a pozostałych od ich najbliższego odnowienia. Nikt nigdy nie płaci więcej w trakcie okresu.',
+        listTitle: 'Subskrybenci',
+        listNote: 'Widać tu tylko klientów, którzy zgodzili się udostępniać dane — tak samo jak na stronie Klienci.',
+        listShared: '{shared} z {total} subskrybentów udostępnia Ci swoje imię.',
+        listNone: 'Brak subskrybentów.',
+        listNoneShared: 'Ten karnet ma {total} osób i żadna nie zgodziła się udostępnić Ci swojego imienia.',
+        listLocked: 'Twój plan nie obejmuje danych klientów, więc subskrybenci są liczeni, ale nie wyświetlani.',
+        since: 'Od {date}',
+        used: 'użyć',
+        subStatus: { active: 'Aktywny', trialing: 'Okres próbny', cancelled: 'Anulowany' },
+      },
+      closeConfirm: {
+        title: 'Zamknąć {name}?',
+        body: 'Odnowienia ustają i nikt nowy nie może subskrybować. Obecni członkowie zachowują karnet do końca bieżącego okresu. Tego nie da się cofnąć.',
+        confirm: 'Zamknij karnet',
+      },
+      deleteConfirm: {
+        title: 'Usunąć {name}?',
+        body: 'Nikt nigdy nie miał tego szkicu, więc zostanie całkowicie usunięty.',
+        confirm: 'Usuń szkic',
+      },
+      toasts: {
+        paused: 'Zapisy wstrzymane. Obecni subskrybenci zachowują karnet.',
+        resumed: 'Karnet znów jest aktywny.',
+        published: 'Karnet opublikowany. Jest już w aplikacji.',
+        closed: 'Karnet zamknięty. Odnowienia ustają; obecni członkowie mają go do końca okresu.',
+        deleted: 'Szkic usunięty.',
+        saved: 'Zapisano jako szkic. Opublikuj, gdy będzie gotowy.',
+        updated: 'Karnet zaktualizowany. Nowa cena obowiązuje od najbliższego odnowienia każdego subskrybenta.',
+      },
+      refusals: {
+        missing: 'Karnet nie jest gotowy do publikacji: brakuje jeszcze {what}.',
+        notVerified: 'Twój lokal nie został jeszcze zweryfikowany, więc jego karnety nie mogą być aktywne.',
+        entitlement: 'Twój plan nie obejmuje karnetów, więc nie można go opublikować.',
+      },
+      missing: {
+        name: 'nazwy',
+        benefit: 'tego, co obejmuje',
+        price: 'ceny',
+        unlimitedOk: 'decyzji o użyciu bez limitu',
+      },
+      drawer: {
+        kicker: 'Karnet subskrypcyjny',
+        createTitle: 'Utwórz karnet',
+        editTitle: 'Edytuj karnet',
+        sub: 'Klienci subskrybują i płacą bezpośrednio Tobie. Zatrzymujesz 100% — Paylez nie pobiera prowizji.',
+        preview: 'Podgląd',
+        previewName: 'Nazwa karnetu',
+        previewTagline: 'Dodaj krótkie hasło',
+        plain: '{benefit}, {cap}, {days} · {amount} {period}.',
+        s1: '1 · Punkt wyjścia',
+        s2: '2 · Co obejmuje',
+        item: 'Darmowa lub wliczona rzecz',
+        itemPlaceholder: 'Dowolna kawa przelewowa lub flat white',
+        itemHelp: 'Zostaw puste dla karnetu tylko ze zniżką.',
+        discount: 'Stała zniżka na wszystko',
+        discountHelp: 'Procent od całego rachunku, przy każdej wizycie.',
+        perks: 'Przywileje członków',
+        perk: {
+          early_access: 'Wcześniejszy dostęp do ofert',
+          member_deals: 'Oferty tylko dla członków',
+          skip_line: 'Bez kolejki',
+          birthday: 'Urodzinowy prezent',
+        },
+        s3: '3 · Limity i zasady',
+        howOften: 'Jak często można z niego korzystać?',
+        cap: {
+          per_day: { label: 'Raz dziennie', note: 'Jedno użycie dziennie — bezpieczny wybór większości lokali.' },
+          per_week: { label: 'Ustalona liczba w tygodniu', note: 'Stała liczba w tygodniu, potem przerwa do poniedziałku.' },
+          per_month: { label: 'Ustalona liczba w miesiącu', note: 'Stała liczba, potem przerwa do następnego miesiąca.' },
+          unlimited: { label: 'Bez limitu', note: 'Bez ograniczeń. Uwaga — częsti klienci mogą kosztować więcej niż opłata.' },
+        },
+        unit: { per_day: 'razy dziennie', per_week: 'w tygodniu', per_month: 'w miesiącu' },
+        unlimitedTitle: 'Częsti klienci mogą kosztować więcej niż opłata',
+        unlimitedBody: 'Większość lokali to ogranicza — tylko to chroni karnet przed stratą. Dodać limit uczciwego użycia?',
+        addCap: 'Dodaj limit dzienny',
+        keepUnlimited: 'Zostaw bez limitu',
+        days: 'Które dni',
+        dayNames: ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Nd'],
+        daysAny: 'Ważny każdego dnia tygodnia.',
+        daysSome: 'Ważny tylko w wybrane dni.',
+        maxValue: 'Maksymalny rabat na wizytę',
+        maxValueHelp: 'Aby jedno użycie nie zdjęło za dużo z dużego rachunku.',
+        seats: 'Kto może korzystać',
+        seatsOne: 'Tylko oni',
+        seatsFamily: 'Rodzina i przyjaciele',
+        seatsOneNote: 'Karnet dla jednej osoby.',
+        seatsFamilyNote: 'Dzieli go do {n} osób. Limit dotyczy każdego miejsca.',
+        s4: '4 · Cena i rozliczenie',
+        price: 'Cena',
+        billed: 'Rozliczenie',
+        periods: { monthly: 'Miesięcznie', quarterly: 'Kwartalnie', annual: 'Rocznie' },
+        intro: 'Oferta na start',
+        intros: { none: 'Bez oferty na start', trial_7: '7 dni za darmo', half_first: 'Pierwszy miesiąc za pół ceny' },
+        subCap: 'Ogranicz liczbę posiadaczy',
+        subCapUnit: 'miejsc',
+        subCapHelp: '0 oznacza brak limitu. Po osiągnięciu pokazuje „Wyprzedany”.',
+        econTitle: 'Czy to ma sens?',
+        econCost: 'Twój koszt jednego użycia',
+        econLoss:
+          'Przy zasadzie „{cap}” częsty subskrybent używa karnetu około {n}× w miesiącu. Twój koszt ≈ {cost}; karnet przynosi {price} — więc „tracisz” około {gap} na tym, co obejmuje. Ale subskrybenci przychodzą dużo częściej i wydają ponad karnet. Ustal cenę, by zapełniać miejsca, a nie zarabiać na filiżance.',
+        econMargin:
+          'Przy zasadzie „{cap}” częsty subskrybent używa karnetu około {n}× w miesiącu. Twój koszt ≈ {cost}; karnet przynosi {price} — marża {gap}, zanim zacznie się dosprzedaż.',
+        econNoCost: 'Podaj koszt jednego użycia, aby sprawdzić, czy cena pokrywa częstego subskrybenta.',
+        s5: '5 · Wygląd',
+        name: 'Nazwa karnetu',
+        namePlaceholder: 'Poranny Klub Kawowy',
+        nameError: 'Nadaj karnetowi nazwę, którą zobaczą klienci.',
+        tagline: 'Krótkie hasło',
+        taglinePlaceholder: 'Kawa dziennie, jedna stała cena',
+        accent: 'Kolor akcentu',
+        accents: { teal: 'Morski', deep_green: 'Ciemna zieleń', purple: 'Fioletowy', terracotta: 'Terakota', ink: 'Atrament' },
+        s6: '6 · Wypłaty',
+        payoutTitle: 'Wypłaty nie są jeszcze dostępne',
+        payoutBody:
+          'Paylez nie może jeszcze podłączyć Twojego konta wypłat, więc klienci nie mogą subskrybować — nawet opublikowanego karnetu. Publikacja umieszcza karnet w aplikacji; subskrypcje ruszą razem z wypłatami.',
+        payoutFoot: 'Gdy ruszą, płatności trafią prosto od klienta do Ciebie. Paylez nigdy nie przechowuje tych pieniędzy.',
+        saveLater: 'Zapisz i dokończ później',
+        publish: 'Opublikuj karnet',
+        save: 'Zapisz zmiany',
+        invalid: {
+          name: 'Nazwij karnet, aby kontynuować',
+          benefit: 'Dodaj wliczoną rzecz lub zniżkę, aby kontynuować',
+          price: 'Ustaw cenę, aby kontynuować',
+          unlimitedOk: 'Rozstrzygnij ostrzeżenie o braku limitu, aby kontynuować',
+          locked: 'Twój plan nie obejmuje karnetów, więc nie można go opublikować.',
+        },
+      },
+    },
     rangeMenu: 'Okres raportowania',
     notifications: 'Powiadomienia',
     inbox: {

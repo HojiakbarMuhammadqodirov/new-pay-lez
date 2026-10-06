@@ -144,6 +144,9 @@ async function budgetBody(db: Ctx['db'], venue: Awaited<ReturnType<typeof getVen
        anybody who opens a venue, and a venue's issuance is its own trading. */
     tiers: await vouchers.partnerLadder(db, venue.id, at),
     averageCheck: await averageCheck(db, venue, at),
+    /* Minor units of the budget's currency, released into this month's
+       voucher pool by expiries — see `vouchers.returnedToBudget`. */
+    returnedMinor: await vouchers.returnedToBudget(db, view.id),
     rebalanceHint: budget.rebalanceHint(view),
     tolerance: budget.toleranceOf(view),
   };
@@ -412,6 +415,10 @@ export const partnerRoutes: Route[] = [
     handler: async (ctx) => {
       const venue = await mine(ctx);
       return {
+        /* The rows carry minor units and no currency of their own; the
+           register's money is the venue's, and a screen converting it to the
+           reader's needs to know which it is converting from. */
+        currency: venue.currency,
         tiers: await vouchers.partnerLadder(ctx.db, venue.id, ctx.at),
         totals: await vouchers.partnerVoucherTotals(ctx.db, venue.id, ctx.at),
         vouchers: await vouchers.partnerVouchers(ctx.db, venue.id, {
@@ -597,7 +604,30 @@ export const partnerRoutes: Route[] = [
           validTo: optStr(ctx.body, 'validTo'),
           capClaims: optInt(ctx.body, 'capClaims', { min: 1 }),
           capSpendMinor: optInt(ctx.body, 'capSpendMinor', { min: 1 }),
-          copy: ctx.body.copy as Record<string, { title?: string; description?: string }> | undefined,
+          /*
+           * The targeting the create route takes, so the dashboard's edit form
+           * can save what it shows. Each is read only when sent: `list` turns
+           * an absent field into `[]`, and `[]` joined is `''`, which the
+           * UPDATE's COALESCE would keep — clearing a weekday set the owner
+           * never touched. Absent stays `undefined`, which is "leave it".
+           */
+          targetWeekdays:
+            ctx.body.targetWeekdays === undefined
+              ? undefined
+              : list(ctx.body, 'targetWeekdays', (item) => Number(item)),
+          targetFromMin: optInt(ctx.body, 'targetFromMin', { min: 0, max: 1439 }),
+          targetToMin: optInt(ctx.body, 'targetToMin', { min: 0, max: 1440 }),
+          targetLanguages:
+            ctx.body.targetLanguages === undefined
+              ? undefined
+              : list(ctx.body, 'targetLanguages', (item) => String(item)),
+          targetAudience:
+            ctx.body.targetAudience === undefined
+              ? undefined
+              : list(ctx.body, 'targetAudience', (item) => String(item) as deals.Segment),
+          copy: ctx.body.copy as
+            | Record<string, { title?: string; description?: string; terms?: string }>
+            | undefined,
         },
         at: ctx.at,
       });

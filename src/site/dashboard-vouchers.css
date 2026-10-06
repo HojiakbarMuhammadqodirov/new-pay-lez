@@ -1,0 +1,781 @@
+/* ══════════════════════════════════════════════ dashboard · vouchers ══
+ *
+ * The Vouchers screen (`dashboardVouchers.tsx`), v3 §3.4. Tokens only — every
+ * colour is a `--dx-*` from `dashboard.css`, so dark mode is the same rules
+ * reading the dark token block. Every selector is rooted at `.dx-app` because
+ * `dashboard.css` and this sheet can land on either side of `site.css` in the
+ * bundle: specificity wins here, never source order.
+ */
+
+.dx-app .dx-vch {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.dx-app .dx-vch-missing {
+  font-weight: 600;
+  color: var(--dx-faint);
+  cursor: help;
+}
+
+/* ── the tier chip: one accent at three strengths (v3 tierTint/tierInk) ── */
+
+.dx-app .dx-vch-chip {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 8px;
+  padding: 6px 11px;
+  color: var(--dx-on-mint);
+  background: rgba(var(--dx-mint-rgb), 0.35);
+}
+
+.dx-app .dx-vch-chip[data-size='sm'] {
+  font-size: 12px;
+  padding: 4px 9px;
+  border-radius: 7px;
+}
+
+.dx-app .dx-vch-chip[data-step='2'] {
+  background: var(--dx-mint);
+}
+
+.dx-app .dx-vch-chip[data-step='3'] {
+  color: rgb(var(--dx-white-rgb));
+  background: var(--dx-deep);
+}
+
+/* On black the deep green *is* the mint, so the 10% and 15% chips would be one
+   colour; the shallow two step down in strength instead and the deepest keeps
+   the full fill with its dark ink. */
+:root:not([data-theme='light']) .dx-app .dx-vch-chip {
+  color: var(--dx-ink);
+  background: rgba(var(--dx-mint-rgb), 0.18);
+}
+
+:root:not([data-theme='light']) .dx-app .dx-vch-chip[data-step='2'] {
+  background: rgba(var(--dx-mint-rgb), 0.42);
+}
+
+:root:not([data-theme='light']) .dx-app .dx-vch-chip[data-step='3'] {
+  color: var(--dx-on-mint);
+  background: var(--dx-mint);
+}
+
+/* ── the alert (low / out) ── */
+
+.dx-app .dx-vch-alert {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 20px 22px;
+  border-radius: var(--dx-r-card);
+  border: 1px solid rgba(var(--dx-caution-rgb), 0.35);
+  background: rgba(var(--dx-caution-rgb), 0.09);
+}
+
+.dx-app .dx-vch-alert > svg {
+  margin-top: 1px;
+  color: var(--dx-warn);
+}
+
+.dx-app .dx-vch-alert[data-tone='down'] {
+  border-color: rgba(var(--dx-down-rgb), 0.35);
+  background: rgba(var(--dx-down-rgb), 0.08);
+}
+
+.dx-app .dx-vch-alert[data-tone='down'] > svg {
+  color: var(--dx-down);
+}
+
+.dx-app .dx-vch-alert > div {
+  flex: 1 1 340px;
+  min-width: min(260px, 100%);
+}
+
+.dx-app .dx-vch-alert b {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.dx-app .dx-vch-alert p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-vch-alert .dx-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* ── the ink budget card ── */
+
+.dx-app .dx-card.dx-vch-budget {
+  border-radius: var(--dx-r-card);
+  padding: 28px 30px;
+}
+
+.dx-app .dx-vch-budget-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 22px;
+}
+
+.dx-app .dx-vch-budget-top > div {
+  flex: 1 1 320px;
+}
+
+.dx-app .dx-vch-budget h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dx-ink-card-fg);
+}
+
+.dx-app .dx-vch-budget-top p {
+  margin: 0;
+  max-width: 460px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(var(--dx-ink-card-rgb), 0.58);
+}
+
+.dx-app .dx-vch-total {
+  flex: 0 0 auto;
+  display: block;
+}
+
+.dx-app .dx-vch-total > span:first-child {
+  display: block;
+  margin-bottom: 8px;
+  text-align: right;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: rgba(var(--dx-ink-card-rgb), 0.5);
+}
+
+.dx-app .dx-vch-total-well {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(var(--dx-ink-card-rgb), 0.16);
+  background: rgba(var(--dx-ink-card-rgb), 0.06);
+  cursor: text;
+  transition: border-color 0.15s;
+}
+
+.dx-app .dx-vch-total-well:focus-within {
+  border-color: var(--dx-ink-accent);
+}
+
+.dx-app .dx-vch-total-well input {
+  width: 120px;
+  border: none;
+  outline: none;
+  background: transparent;
+  text-align: right;
+  font: inherit;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-ink-card-fg);
+  -moz-appearance: textfield;
+}
+
+.dx-app .dx-vch-total-well input::-webkit-inner-spin-button,
+.dx-app .dx-vch-total-well input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.dx-app .dx-vch-total-well em {
+  font-style: normal;
+  font-size: 15px;
+  font-weight: 700;
+  color: rgba(var(--dx-ink-card-rgb), 0.5);
+}
+
+.dx-app .dx-vch-split {
+  max-width: 620px;
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: rgba(var(--dx-ink-card-rgb), 0.58);
+}
+
+/* The kit's three-state bar, re-tracked for the slab: white at 9% for what is
+   free, and the mint hatch for what is set aside. */
+.dx-app .dx-vch-budget .dx-progress {
+  margin-bottom: 18px;
+  background: rgba(var(--dx-ink-card-rgb), 0.09);
+}
+
+.dx-app .dx-vch-budget .dx-progress > i[data-part='aside'] {
+  background: var(--dx-hatch-ink);
+}
+
+.dx-app .dx-vch-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+  margin-bottom: 22px;
+}
+
+.dx-app .dx-vch-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: rgba(var(--dx-ink-card-rgb), 0.72);
+}
+
+.dx-app .dx-vch-key > i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--dx-fill);
+}
+
+.dx-app .dx-vch-key > i[data-part='aside'] {
+  background: var(--dx-hatch-ink);
+  background-size: 6px 6px;
+}
+
+.dx-app .dx-vch-key > i[data-part='free'] {
+  background: rgba(var(--dx-ink-card-rgb), 0.16);
+}
+
+.dx-app .dx-vch-legend b {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-ink-card-fg);
+}
+
+.dx-app .dx-vch-legend b[data-empty='true'] {
+  color: var(--dx-ink-down);
+}
+
+.dx-app .dx-vch-legend p,
+.dx-app .dx-vch-foot p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(var(--dx-ink-card-rgb), 0.45);
+}
+
+.dx-app .dx-vch-forecast {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--dx-ink-accent);
+  background: rgba(var(--dx-mint-rgb), 0.14);
+}
+
+.dx-app .dx-vch-forecast[data-tone='warn'] {
+  color: var(--dx-ink-warn);
+  background: rgba(var(--dx-caution-rgb), 0.2);
+}
+
+.dx-app .dx-vch-foot {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  align-items: start;
+  gap: 22px;
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(var(--dx-ink-card-rgb), 0.09);
+}
+
+.dx-app .dx-vch-foot-label {
+  display: block;
+  margin-bottom: 9px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(var(--dx-ink-card-rgb), 0.4);
+}
+
+.dx-app .dx-vch-foot-big,
+.dx-app .dx-vch-foot-fact {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-ink-card-fg);
+}
+
+/* A fact where v3 draws a well: the same 15px/700 figure, without the box
+   that would invite typing into something nothing saves. */
+.dx-app .dx-vch-foot-fact {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.dx-app .dx-vch-foot .dx-vch-missing {
+  display: block;
+  margin-bottom: 6px;
+  color: rgba(var(--dx-ink-card-rgb), 0.45);
+}
+
+/* ── who reaches each tier ── */
+
+.dx-app .dx-vch-ladder-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 22px 20px 18px;
+}
+
+.dx-app .dx-vch-ladder-head h2 {
+  margin: 0 0 5px;
+}
+
+.dx-app .dx-vch-ladder-head p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-vch-ladder-head > span {
+  font-size: 12.5px;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-vch-scroll {
+  overflow-x: auto;
+}
+
+.dx-app .dx-vch-tiers {
+  width: 100%;
+  min-width: 700px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.dx-app .dx-vch-tiers th:nth-child(1) {
+  width: 32%;
+}
+
+.dx-app .dx-vch-tiers th:nth-child(2) {
+  width: 168px;
+}
+
+.dx-app .dx-vch-tiers th {
+  padding: 0 7px 10px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-vch-tiers th:first-child,
+.dx-app .dx-vch-tiers td:first-child {
+  padding-left: 20px;
+}
+
+.dx-app .dx-vch-tiers th:last-child,
+.dx-app .dx-vch-tiers td:last-child {
+  padding-right: 20px;
+}
+
+.dx-app .dx-vch-tiers td {
+  padding: 16px 7px;
+  vertical-align: middle;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-app .dx-vch-tiers tbody tr + tr td {
+  border-top: 1px solid var(--dx-line);
+}
+
+.dx-app .dx-vch-tiers td b {
+  font-weight: 700;
+}
+
+.dx-app .dx-vch-tiers td[data-quiet='true'] {
+  font-size: 13.5px;
+  white-space: nowrap;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-vch-tiers tr[data-retired='true'] .dx-vch-chip {
+  opacity: 0.55;
+}
+
+.dx-app .dx-vch-tier {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.dx-app .dx-vch-tier > span:last-child {
+  font-size: 12.5px;
+  color: var(--dx-muted);
+}
+
+/* v3's points well: 8px 11px, 13.5/700 ink, a 11.5px "pts". */
+.dx-app .dx-vch-tiers .dx-unit {
+  padding: 8px 11px;
+  max-width: 140px;
+}
+
+.dx-app .dx-vch-tiers .dx-unit input,
+.dx-app .dx-vch-cap .dx-unit input {
+  font-size: 13.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-app .dx-vch-tiers .dx-unit > span {
+  font-size: 11.5px;
+}
+
+.dx-app .dx-vch-points-fact {
+  font-size: 13.5px;
+  color: var(--dx-muted);
+  cursor: help;
+}
+
+.dx-app .dx-vch-none {
+  margin: 0;
+  padding: 0 20px 22px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+
+/* An error in weight, never in a hue the palette does not have. */
+.dx-app .dx-vch-error {
+  margin: 0;
+  padding: 0 20px 18px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dx-down);
+}
+
+/* ── where the money went · money returned · suggestion ── */
+
+.dx-app .dx-vch-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.dx-app .dx-card.dx-vch-mix {
+  flex: 1 1 420px;
+  min-width: min(320px, 100%);
+  padding: 22px 24px;
+}
+
+.dx-app .dx-vch-mix-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.dx-app .dx-vch-mix-head h2 {
+  font-size: 15px;
+}
+
+.dx-app .dx-vch-mix-head b {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-app .dx-vch-mixbar {
+  display: flex;
+  height: 10px;
+  margin-bottom: 16px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--dx-soft);
+}
+
+.dx-app .dx-vch-mixbar > i,
+.dx-app .dx-vch-mixrows i {
+  display: block;
+  background: rgba(var(--dx-mint-rgb), 0.35);
+}
+
+.dx-app .dx-vch-mixbar > i[data-step='2'],
+.dx-app .dx-vch-mixrows i[data-step='2'] {
+  background: var(--dx-mint);
+}
+
+.dx-app .dx-vch-mixbar > i[data-step='3'],
+.dx-app .dx-vch-mixrows i[data-step='3'] {
+  background: var(--dx-deep);
+}
+
+:root:not([data-theme='light']) .dx-app :is(.dx-vch-mixbar > i, .dx-vch-mixrows i) {
+  background: rgba(var(--dx-mint-rgb), 0.22);
+}
+
+:root:not([data-theme='light']) .dx-app :is(.dx-vch-mixbar > i, .dx-vch-mixrows i)[data-step='2'] {
+  background: rgba(var(--dx-mint-rgb), 0.55);
+}
+
+:root:not([data-theme='light']) .dx-app :is(.dx-vch-mixbar > i, .dx-vch-mixrows i)[data-step='3'] {
+  background: var(--dx-mint);
+}
+
+.dx-app .dx-vch-mixrows {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dx-app .dx-vch-mixrows li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-app .dx-vch-mixrows i {
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.dx-app .dx-vch-mixrows span {
+  flex: 1;
+  font-weight: 600;
+}
+
+.dx-app .dx-vch-mixrows em {
+  font-style: normal;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-vch-mixrows b {
+  width: 44px;
+  text-align: right;
+  font-weight: 700;
+}
+
+.dx-app .dx-vch-quiet {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-vch-side {
+  flex: 1 1 300px;
+  min-width: min(280px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dx-app .dx-card.dx-vch-returned {
+  padding: 22px 24px;
+}
+
+.dx-app .dx-vch-returned-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dx-app .dx-vch-returned > b {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-app .dx-vch-returned > .dx-vch-missing {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 26px;
+}
+
+.dx-app .dx-vch-returned p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-vch-suggest {
+  padding: 20px 22px;
+  border-radius: var(--dx-r-card);
+  border: 1px solid rgba(var(--dx-deep-rgb), 0.18);
+  background: rgba(var(--dx-mint-rgb), 0.13);
+}
+
+.dx-app .dx-vch-suggest > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--dx-deep);
+}
+
+.dx-app .dx-vch-suggest .dx-eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+}
+
+.dx-app .dx-vch-suggest p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--dx-ink);
+}
+
+/* ── limits ── */
+
+.dx-app .dx-vch-limit-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.dx-app .dx-vch-limit {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 16px;
+  padding: 14px 0;
+}
+
+.dx-app .dx-vch-limit + .dx-vch-limit {
+  border-top: 1px solid var(--dx-soft);
+}
+
+.dx-app .dx-vch-limit-use {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+  align-self: center;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-vch-limit-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 260px;
+}
+
+.dx-app .dx-vch-cap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dx-app .dx-vch-cap > span:first-child {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-vch-retired {
+  grid-column: span 2;
+  align-self: center;
+  justify-self: start;
+  padding: 4px 10px;
+  border-radius: var(--dx-r-pill);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--dx-warn);
+  background: rgba(var(--dx-gold-rgb), 0.22);
+}
+
+.dx-app .dx-vch-limits-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--dx-soft);
+}
+
+.dx-app .dx-vch-limits-foot p {
+  flex: 1 1 320px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dx-faint);
+}
+
+@media (max-width: 46rem) {
+  .dx-app .dx-card.dx-vch-budget {
+    padding: 22px 20px;
+  }
+
+  .dx-app .dx-vch-total,
+  .dx-app .dx-vch-total-well input {
+    width: 100%;
+  }
+
+  .dx-app .dx-vch-total > span:first-child {
+    text-align: left;
+  }
+
+  .dx-app .dx-vch-limit {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .dx-app .dx-vch-limit-use {
+    grid-column: 1 / -1;
+  }
+}

@@ -34,6 +34,7 @@ import * as checkin from './domain/checkin.ts';
 import * as entitlements from './domain/entitlements.ts';
 import * as gate from './domain/gate.ts';
 import * as giftCards from './domain/giftCards.ts';
+import * as passes from './domain/passes.ts';
 import * as ledger from './domain/ledger.ts';
 import * as notifications from './domain/notifications.ts';
 import * as occasions from './domain/occasions.ts';
@@ -91,6 +92,9 @@ export async function runHourly(db: Db, at: Iso = now()): Promise<JobReport> {
   detail.vouchers = await vouchers.expireVouchers(db, at);
   detail.rewards = await campaigns.expireRewards(db, at);
   detail.subscriptions = await entitlements.runRenewals(db, at);
+  /* Venue passes: roll the periods that ended, expire the cancelled and the
+     closed. Charging is a TODO port (`ports/passPayments.ts`) — no rail. */
+  detail.passes = await passes.runRenewals(db, at);
   /* Before the drain, so a reminder written this hour goes out on this hour's
      push rather than waiting for the next one — the window it is sent in is
      only an hour or two wide once quiet hours have had their say. */
@@ -102,7 +106,7 @@ export async function runHourly(db: Db, at: Iso = now()): Promise<JobReport> {
   detail.occasions = await occasions.payDue(db, at);
   detail.push = await push.drain(db);
 
-  return { at, ran: ['vouchers', 'rewards', 'subscriptions', 'check-ins', 'occasions', 'push'], detail };
+  return { at, ran: ['vouchers', 'rewards', 'subscriptions', 'passes', 'check-ins', 'occasions', 'push'], detail };
 }
 
 /**

@@ -31,7 +31,10 @@ export type IdPrefix =
   /* a redemption pass the customer's phone shows (FLUTTER-BRIEF §3b) */
   | 'pss'
   /* a gift card's code (the gift-card engine) */
-  | 'gcc';
+  | 'gcc'
+  /* subscription passes (`domain/passes.ts`): the pass a venue sells, one
+     customer's subscription to it, one of its periods, one use at the counter */
+  | 'spa' | 'psb' | 'ppr' | 'prd';
 
 export const newId = (prefix: IdPrefix): string => `${prefix}_${randomBytes(10).toString('hex')}`;
 

@@ -94,7 +94,7 @@ const SCHEMAS: Record<string, Schema> = {
               'unauthenticated', 'forbidden', 'not_verified', 'entitlement_required',
               'consent_required', 'not_found', 'conflict', 'already_used', 'expired',
               'insufficient_points', 'budget_exhausted', 'cap_reached', 'no_energy',
-              'daily_cap', 'quota_exceeded', 'quiet_hours', 'invalid_trigger',
+              'daily_cap', 'quota_exceeded', 'quiet_hours', 'not_available', 'invalid_trigger',
               'replay_detected', 'rate_limited', 'internal',
             ],
           },
@@ -1122,6 +1122,131 @@ const SCHEMAS: Record<string, Schema> = {
       rating: { type: 'number', nullable: true },
       description: { type: 'string', nullable: true },
       links: arrayOf({ type: 'object', properties: { kind: str(), value: str() } }),
+    },
+  },
+  /* ── subscription passes (`domain/passes.ts`) ── */
+  PassTerms: {
+    type: 'object',
+    description:
+      'The redemption rule as **locked onto one period**. A pass edited mid-term changes what new ' +
+      'subscribers get at once and what existing ones get at their next renewal, never before.',
+    properties: {
+      benefitItem: { type: 'string', nullable: true },
+      discountPct: { type: 'integer', nullable: true },
+      capKind: { type: 'string', enum: ['per_day', 'per_week', 'per_month', 'unlimited'] },
+      capCount: int('Uses per window. Ignored when `capKind` is `unlimited`.'),
+      allowedDays: { type: 'array', items: { type: 'integer' }, nullable: true, description: 'Monday-zero. Null is any day.' },
+      fromMin: { type: 'integer', nullable: true, description: 'Minutes past local midnight, or null.' },
+      toMin: { type: 'integer', nullable: true },
+      maxValueMinor: { type: 'integer', nullable: true, description: '"Most off one visit", in minor units.' },
+      seats: int('1, or up to 3 for "Friends and family".'),
+      billingPeriod: { type: 'string', enum: ['monthly', 'quarterly', 'annual'] },
+    },
+  },
+  Pass: {
+    type: 'object',
+    description:
+      'A pass as its venue sees it. `soldOut` is derived (holders against `subscriberCap`). ' +
+      '`missing` lists what publishing would still refuse: `name`, `benefit`, `price`, `unlimitedOk`.',
+    properties: {
+      id: str(),
+      venueId: str(),
+      template: { type: 'string', enum: ['daily', 'bundle', 'vip', 'weekend', 'custom'] },
+      name: str(),
+      tagline: { type: 'string', nullable: true },
+      accent: { type: 'string', enum: ['teal', 'deep_green', 'purple', 'terracotta', 'ink'] },
+      benefitItem: { type: 'string', nullable: true },
+      discountPct: { type: 'integer', nullable: true },
+      perks: arrayOf({ type: 'string', enum: ['early_access', 'member_deals', 'skip_line', 'birthday'] }),
+      capKind: { type: 'string', enum: ['per_day', 'per_week', 'per_month', 'unlimited'] },
+      capCount: int(),
+      unlimitedOk: bool(),
+      allowedDays: { type: 'array', items: { type: 'integer' }, nullable: true },
+      fromMin: { type: 'integer', nullable: true },
+      toMin: { type: 'integer', nullable: true },
+      maxValueMinor: { type: 'integer', nullable: true },
+      seats: int(),
+      priceMinor: minor('Price per billing period'),
+      currency: str(),
+      billingPeriod: { type: 'string', enum: ['monthly', 'quarterly', 'annual'] },
+      intro: { type: 'string', enum: ['none', 'trial_7', 'half_first'] },
+      subscriberCap: { type: 'integer', nullable: true },
+      costPerUseMinor: { type: 'integer', nullable: true },
+      status: { type: 'string', enum: ['draft', 'live', 'paused', 'closed'] },
+      soldOut: bool(),
+      holders: int('Current holders: trialing, active, or cancelled inside their period.'),
+      missing: arrayOf(str()),
+      publishedAt: { type: 'string', nullable: true },
+      pausedAt: { type: 'string', nullable: true },
+      closedAt: { type: 'string', nullable: true },
+      createdAt: str(),
+      updatedAt: str(),
+    },
+  },
+  PassUpsell: {
+    type: 'object',
+    description:
+      'Extra spend beyond the pass, **estimated** from the uses where the till entered a bill and ' +
+      'the covered value is known. Never scaled up to unmeasured uses. `minor` is null — with a ' +
+      '`reason` — when nothing could be measured; it is never a stand-in 0.',
+    properties: {
+      minor: { type: 'integer', nullable: true },
+      measured: int(),
+      redemptions: int(),
+      reason: { type: 'string', nullable: true, enum: ['no_redemptions', 'no_bills_recorded', 'no_covered_value', null] },
+    },
+  },
+  PassAllowance: {
+    type: 'object',
+    properties: {
+      capKind: str(),
+      window: str('`d:YYYY-MM-DD`, `w:YYYY-Www`, `m:<period anchor>` or `u`.'),
+      used: int(),
+      allowance: { type: 'integer', nullable: true },
+      remaining: { type: 'integer', nullable: true },
+      resetsAt: { type: 'string', nullable: true },
+    },
+  },
+  PassSubscription: {
+    type: 'object',
+    description: '`charged` is always false today: there is no payment rail for venue passes.',
+    properties: {
+      id: str(),
+      passId: str(),
+      venueId: str(),
+      code: str('`PS-XXXXXX`. What the customer shows the counter.'),
+      status: { type: 'string', enum: ['trialing', 'active', 'cancelled', 'expired'] },
+      startedAt: str(),
+      periodStart: str(),
+      periodEnd: str(),
+      priceMinor: minor('The price this period is locked at'),
+      currency: str(),
+      periodKind: { type: 'string', enum: ['trial', 'intro', 'full'] },
+      charged: bool(),
+      cancelledAt: { type: 'string', nullable: true },
+      terms: ref('PassTerms'),
+    },
+  },
+  PassMembers: {
+    type: 'object',
+    description: 'Current holders who share their profile with this venue. `total` counts everybody holding.',
+    properties: {
+      total: int(),
+      shared: int(),
+      rows: arrayOf(
+        obj({
+          subscriptionId: str(),
+          passId: str(),
+          passName: str(),
+          accent: str(),
+          userId: str(),
+          name: str(),
+          avatar: { type: 'string', nullable: true },
+          since: str(),
+          usedThisPeriod: int(),
+          status: { type: 'string', enum: ['trialing', 'active', 'cancelled'] },
+        }),
+      ),
     },
   },
 };
@@ -2633,7 +2758,9 @@ const DOCS: Record<string, Doc> = {
     description:
       'Rows gain two optional keys, **absent rather than null** when unknown: `tierPct`, the highest discount ' +
       'this customer bought a voucher for here, and `spendTrend` (`up` / `down` / `flat`), their last 30 days of ' +
-      'spend here against the 30 before. The `status` filter now applies before paging, and an unknown `sort` or ' +
+      'spend here against the 30 before. Every row also carries `vouchersIssued` (bought here, any state but ' +
+      'cancelled) and `vouchersUsed` (of those, redeemed); the detail carries the same two plus `sharingSince`, ' +
+      'when the current sharing grant began. The `status` filter now applies before paging, and an unknown `sort` or ' +
       '`status` is a 400.',
     tags: ['partner'],
     query: [
@@ -2749,6 +2876,220 @@ const DOCS: Record<string, Doc> = {
   'POST /v1/billing/cancel': { summary: 'Cancel at the end of the period', tags: ['billing'], body: { venueId: str() }, response: { type: 'object' } },
 
   'GET /v1/health': { summary: 'Liveness', tags: ['meta'], response: { type: 'object' } },
+  /* ── subscription passes ── */
+  'GET /v1/partner/venues/{id}/passes': {
+    summary: 'The Passes screen: four stat cards and a card per pass',
+    description:
+      'Owner, admin or this venue’s manager. Every revenue figure is the **contracted** price — no ' +
+      'payment rail exists for venue passes, so nothing is collected. `recurringMinor` is each ' +
+      '*active* subscription (not trialing, not cancelled, on a pass that is not closed) at the price ' +
+      'its current period is locked at, spread over its billing period. "This month" is the ' +
+      'venue-local month in `month`.',
+    tags: ['passes', 'partner'],
+    response: obj({
+      month: str('YYYY-MM'),
+      currency: str(),
+      stats: obj({
+        activeSubscribers: int(),
+        livePasses: int(),
+        recurringMinor: minor('Recurring revenue a month'),
+        redemptionsThisMonth: int('Uses, counting quantity.'),
+        upsell: ref('PassUpsell'),
+      }),
+      payouts: obj({ connected: bool(), available: bool() }),
+      subscribeAvailable: bool('Whether customers can subscribe in the app (`PAYLEZ_PASS_SUBSCRIBE`).'),
+      passes: arrayOf({
+        allOf: [ref('Pass'), obj({ stats: obj({ subscribers: int(), usedThisMonth: int(), recurringMinor: int() }) })],
+      }),
+    }),
+  },
+  'POST /v1/partner/venues/{id}/passes': {
+    summary: 'Create a pass (always a draft)',
+    description:
+      'Needs the `passes` entitlement (Growth, Chain). Every field is optional; a template fills ' +
+      'the *rule* (accent, cap, days, VIP’s 15%) and never a name, item or price. `null` removes a ' +
+      'nullable field. `subscriberCap: 0` means no limit.',
+    tags: ['passes', 'partner'],
+    body: {
+      template: { type: 'string', enum: ['daily', 'bundle', 'vip', 'weekend', 'custom'] },
+      name: str('≤ 60.'),
+      tagline: str('≤ 120.'),
+      accent: { type: 'string', enum: ['teal', 'deep_green', 'purple', 'terracotta', 'ink'] },
+      benefitItem: str('≤ 120. Null for a discount-only pass.'),
+      discountPct: int('1–100, or null.'),
+      perks: arrayOf({ type: 'string', enum: ['early_access', 'member_deals', 'skip_line', 'birthday'] }),
+      capKind: { type: 'string', enum: ['per_day', 'per_week', 'per_month', 'unlimited'] },
+      capCount: int('1–1000.'),
+      unlimitedOk: bool('"Keep it unlimited" — required to publish an unlimited *item* pass.'),
+      allowedDays: { type: 'array', items: { type: 'integer' }, nullable: true },
+      fromMin: int(),
+      toMin: int(),
+      maxValueMinor: minor('Most off one visit'),
+      seats: int('1–3.'),
+      priceMinor: minor('Price per billing period'),
+      billingPeriod: { type: 'string', enum: ['monthly', 'quarterly', 'annual'] },
+      intro: { type: 'string', enum: ['none', 'trial_7', 'half_first'] },
+      subscriberCap: int(),
+      costPerUseMinor: minor('The venue’s own cost per use, for the economics panel'),
+    },
+    response: ref('Pass'),
+    errors: [
+      [403, '`entitlement_required` — `passes`.'],
+      [400, '`validation_failed` naming the field.'],
+      [409, '`cap_reached` — twenty open passes.'],
+    ],
+  },
+  'GET /v1/partner/venues/{id}/passes/{passId}': {
+    summary: 'One pass, with the detail view’s stats',
+    tags: ['passes', 'partner'],
+    response: obj({
+      month: str(),
+      pass: ref('Pass'),
+      stats: obj({
+        subscribers: int(),
+        newThisMonth: int(),
+        cancelledThisMonth: int(),
+        recurringMinor: int(),
+        redemptionsThisMonth: int(),
+        perActiveSubscriber: { type: 'number', description: 'One decimal. 0 with nobody holding.' },
+        upsell: ref('PassUpsell'),
+      }),
+    }),
+  },
+  'PATCH /v1/partner/venues/{id}/passes/{passId}': {
+    summary: 'Edit a pass',
+    description:
+      'Same body as create, every field optional. A new price or rule reaches new subscribers at ' +
+      'once and existing ones at their next renewal. A live or paused pass may not be edited into ' +
+      'something publishing would refuse (`validation_failed` with `missing`). Closed passes: 400.',
+    tags: ['passes', 'partner'],
+    response: ref('Pass'),
+  },
+  'DELETE /v1/partner/venues/{id}/passes/{passId}': {
+    summary: 'Delete a draft nobody ever held',
+    tags: ['passes', 'partner'],
+    response: obj({ deleted: bool() }),
+    errors: [[400, '`invalid_state` — not a draft, or it has subscribers: close it instead.']],
+  },
+  'POST /v1/partner/venues/{id}/passes/{passId}/status': {
+    summary: 'Publish, pause, resume or close a pass',
+    description:
+      '`publish` draft → live and `resume` paused → live both need a verified venue, the `passes` ' +
+      'entitlement and a complete pass. `pause` stops sign-ups only — subscribers keep using it and ' +
+      'keep renewing. `close` stops renewals; members keep it to the end of their period. Asking for ' +
+      'the state it is already in returns the pass.',
+    tags: ['passes', 'partner'],
+    body: { action: { type: 'string', enum: ['publish', 'pause', 'resume', 'close'] } },
+    required: ['action'],
+    response: ref('Pass'),
+    errors: [
+      [400, '`invalid_state` — the transition does not exist (a draft is deleted, not closed); `validation_failed` with `missing`.'],
+      [403, '`not_verified`, or `entitlement_required` — `passes`.'],
+    ],
+  },
+  'GET /v1/partner/venues/{id}/passes/{passId}/subscribers': {
+    summary: 'A pass’s subscribers — those who share their profile',
+    description: 'Needs `identified_profiles`, like the Customers page, and runs the same consent rule in SQL.',
+    tags: ['passes', 'partner'],
+    response: ref('PassMembers'),
+    errors: [[403, '`entitlement_required` — `identified_profiles`.']],
+  },
+  'GET /v1/partner/venues/{id}/passes/members': {
+    summary: 'Every current pass holder who shares, across passes',
+    description: 'For the Customers page’s subscriber chip and its "Pass membership" row.',
+    tags: ['passes', 'partner'],
+    response: ref('PassMembers'),
+  },
+  'POST /v1/partner/venues/{id}/passes/lookup': {
+    summary: 'The counter: what a pass code is, and what is left on it',
+    description:
+      'Needs `scan` at this venue. Writes nothing. The customer’s name only when they share; a ' +
+      'staff login sees first name and initial.',
+    tags: ['passes', 'team'],
+    body: { code: str('`PS-XXXXXX`, any case.') },
+    required: ['code'],
+    response: obj({
+      subscription: obj({ id: str(), code: str(), status: str(), periodEnd: str() }),
+      pass: obj({ id: str(), name: str(), benefitItem: { type: 'string', nullable: true }, discountPct: { type: 'integer', nullable: true }, seats: int() }),
+      customer: obj({ name: { type: 'string', nullable: true } }),
+      allowance: ref('PassAllowance'),
+      usable: obj({ ok: bool(), reason: { type: 'string', nullable: true, enum: ['expired', 'wrong_day', 'outside_hours', 'used_up', null] } }),
+    }),
+    errors: [[403, 'No `scan` at this venue.'], [404, '`not_found` — no pass with that code here.']],
+  },
+  'POST /v1/partner/venues/{id}/passes/redeem': {
+    summary: 'The counter: use a pass',
+    description:
+      'Needs `redeem` — the permission that already confirms voucher and reward redemptions. ' +
+      '`memberId` is the shared device naming who is on shift (an active member holding `redeem`); ' +
+      'the use is recorded against them in `confirmed_member_id`. A member cannot redeem their own ' +
+      'pass. The allowance is counted in the venue’s day, its ISO week, or a month anchored on the ' +
+      'period start, under a lock. `billMinor`, or a committed `transactionId` for this customer at ' +
+      'this venue, feeds the upsell estimate.',
+    tags: ['passes', 'team'],
+    body: {
+      code: str(),
+      quantity: int('1–3, and at most the pass’s seats.'),
+      billMinor: minor('The whole bill on this visit'),
+      transactionId: str(),
+      memberId: str(),
+    },
+    required: ['code'],
+    response: obj({
+      redemption: obj({
+        id: str(),
+        subscriptionId: str(),
+        passId: str(),
+        quantity: int(),
+        billMinor: { type: 'integer', nullable: true },
+        coveredMinor: { type: 'integer', nullable: true },
+        transactionId: { type: 'string', nullable: true },
+        redeemedAt: str(),
+        confirmedBy: { type: 'object', nullable: true, properties: { memberId: str(), name: str() } },
+      }),
+      allowance: ref('PassAllowance'),
+    }),
+    errors: [
+      [403, 'No `redeem` here, a member naming somebody without it, or a member’s own pass.'],
+      [404, '`not_found` — no pass with that code here.'],
+      [409, '`cap_reached` (with `used`, `allowance`, `resetsAt`), `expired`, `conflict` with `reason: wrong_day | outside_hours`, `already_used` (a linked sale).'],
+    ],
+  },
+  'GET /v1/venues/{id}/passes': {
+    summary: 'A venue’s live passes, as a customer sees them',
+    description:
+      'Paused, draft and closed passes are absent. `subscribable` is false with ' +
+      '`unavailableReason: payments_unavailable` while in-app subscribing is switched off.',
+    tags: ['passes', 'catalogue'],
+    response: obj({ passes: arrayOf({ type: 'object' }), subscribeAvailable: bool() }),
+  },
+  'GET /v1/me/passes': {
+    summary: 'My passes',
+    description: 'Current subscriptions and anything that ended in the last 90 days, each with its code and allowance.',
+    tags: ['passes', 'me'],
+    response: obj({
+      subscriptions: arrayOf({ allOf: [ref('PassSubscription'), obj({ pass: { type: 'object' }, allowance: ref('PassAllowance') })] }),
+    }),
+  },
+  'POST /v1/passes/{passId}/subscribe': {
+    summary: 'Subscribe to a pass — switched off',
+    description:
+      'There is no payment rail for venue-direct subscriptions (it needs Stripe Connect). Until one ' +
+      'exists this answers `409 not_available` with `reason: payments_unavailable`, unless the ' +
+      'deployment sets `PAYLEZ_PASS_SUBSCRIBE=on`.',
+    tags: ['passes'],
+    response: ref('PassSubscription'),
+    errors: [
+      [409, '`not_available` (the default), `conflict` (already held), `cap_reached` (sold out).'],
+      [400, '`invalid_state` — the pass is paused or not on sale.'],
+    ],
+  },
+  'POST /v1/me/passes/{subscriptionId}/cancel': {
+    summary: 'Stop renewing a pass',
+    description: 'Kept to the end of the current period, trial included, then expired.',
+    tags: ['passes', 'me'],
+    response: ref('PassSubscription'),
+  },
 };
 
 /* ═══════════════════════════════════════════════════════════ the emitter ══ */
@@ -2927,6 +3268,7 @@ export function buildSpec(): Schema {
       { name: 'assistant', description: 'Grounded search and explanation.' },
       { name: 'partner', description: 'The partner dashboard and its mobile companion.' },
       { name: 'team', description: 'Staff and Manager workspaces: the team, joining, the counter. See server/TEAM.md.' },
+      { name: 'passes', description: 'Subscription passes a venue sells to its customers. No payment rail yet: in-app subscribing is switched off.' },
       { name: 'billing', description: 'Plans, subscriptions, receipts.' },
       { name: 'guide', description: 'The relocation guidebook, news, community, exchange rates.' },
       { name: 'admin', description: 'Platform operations. Desktop only.' },

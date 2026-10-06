@@ -1,0 +1,313 @@
+/* ══════════════════════════════════════════ dashboard · voucher activity ══
+ *
+ * The register (`dashboardVoucherList.tsx`), v3 §3.9. Tokens only; every
+ * selector rooted at `.dx-app` so it wins on specificity whichever side of
+ * `site.css` it lands in the bundle.
+ */
+
+.dx-app .dx-vlog {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* ── the three stat cards ── */
+
+.dx-app .dx-vlog-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.dx-app .dx-card.dx-vlog-stat {
+  padding: 20px 22px;
+}
+
+.dx-app .dx-vlog-stat > i {
+  display: block;
+  width: 34px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--dx-deep);
+}
+
+.dx-app .dx-vlog-stat > i[data-tone='redeemed'] {
+  background: var(--dx-ink);
+}
+
+.dx-app .dx-vlog-stat > i[data-tone='expired'] {
+  background: var(--dx-down);
+}
+
+.dx-app .dx-vlog-stat > span {
+  display: block;
+  margin: 13px 0 9px;
+  font-size: 12.5px;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-vlog-stat > b {
+  display: block;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-app .dx-vlog-stat > p {
+  margin: 9px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-vlog-lapsing {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* ── the list ── */
+
+.dx-app .dx-vlog-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--dx-soft);
+}
+
+.dx-app .dx-vlog-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-right: auto;
+}
+
+/* v3's filter chip: "All  21" — the count is a second span rather than two
+   spaces, so the gap survives HTML whitespace collapsing. */
+.dx-app .dx-vlog-chips button {
+  display: inline-flex;
+  gap: 0.4em;
+  padding: 7px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--dx-line);
+  background: var(--dx-control-bg);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--dx-muted);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.dx-app .dx-vlog-chips button:hover {
+  border-color: var(--dx-deep);
+  color: var(--dx-deep);
+}
+
+.dx-app .dx-vlog-chips button[aria-pressed='true'] {
+  border-color: var(--dx-press-bg);
+  background: var(--dx-press-bg);
+  color: var(--dx-ink-card-fg);
+}
+
+:root:not([data-theme='light']) .dx-app .dx-vlog-chips button[aria-pressed='true'] {
+  color: var(--dx-press-fg);
+}
+
+.dx-app .dx-vlog-count {
+  font-size: 13px;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-vlog-scroll {
+  overflow-x: auto;
+}
+
+.dx-app .dx-vlog-table {
+  width: 100%;
+  min-width: 840px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* v3's grid: minmax(140px,1fr) minmax(150px,1.2fr) 128px 104px 92px 150px. */
+.dx-app .dx-vlog-table th:nth-child(1) {
+  width: 21%;
+}
+
+.dx-app .dx-vlog-table th:nth-child(2) {
+  width: 26%;
+}
+
+.dx-app .dx-vlog-table th:nth-child(3) {
+  width: 142px;
+}
+
+.dx-app .dx-vlog-table th:nth-child(4) {
+  width: 118px;
+}
+
+.dx-app .dx-vlog-table th:nth-child(5) {
+  width: 120px;
+}
+
+.dx-app .dx-vlog-table th:nth-child(6) {
+  width: 170px;
+}
+
+.dx-app .dx-vlog-table th {
+  padding: 12px 7px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-vlog-table td {
+  padding: 13px 7px;
+  border-top: 1px solid var(--dx-soft);
+  vertical-align: middle;
+  font-size: 13px;
+}
+
+.dx-app .dx-vlog-table :is(th, td):first-child {
+  padding-left: 20px;
+}
+
+.dx-app .dx-vlog-table :is(th, td):last-child {
+  padding-right: 20px;
+}
+
+.dx-app .dx-vlog-table [data-align='right'] {
+  text-align: right;
+}
+
+.dx-app .dx-vlog-table td[data-align='right'] {
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.dx-app .dx-vlog-code {
+  display: block;
+  font-family: var(--dx-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--dx-ink);
+  background: none;
+  padding: 0;
+}
+
+.dx-app .dx-vlog-sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-vlog-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dx-app .dx-vlog-who b,
+.dx-app .dx-vlog-withheld {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dx-app .dx-vlog-withheld {
+  font-weight: 500;
+  color: var(--dx-faint);
+  cursor: help;
+}
+
+.dx-app .dx-vlog-avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--dx-ink);
+  background: var(--dx-soft);
+}
+
+.dx-app .dx-vlog-reward {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--dx-deep);
+  background: rgba(var(--dx-mint-rgb), 0.18);
+}
+
+/* v3's status pills are the kit's with the 3px 10px / 11.5px of this list. */
+.dx-app .dx-vlog-table .dx-pill {
+  padding: 3px 10px;
+  font-size: 11.5px;
+}
+
+.dx-app .dx-vlog-table .dx-pill[data-tone='active'] {
+  background: rgba(var(--dx-deep-rgb), 0.12);
+}
+
+.dx-app .dx-vlog-date {
+  display: block;
+  font-size: 12.5px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-vlog-date[data-tone='down'] {
+  color: var(--dx-down);
+}
+
+.dx-app .dx-vlog-none {
+  font-weight: 600;
+  color: var(--dx-faint);
+}
+
+.dx-app .dx-vlog-empty {
+  margin: 0;
+  padding: 22px 20px;
+  font-size: 13px;
+  color: var(--dx-muted);
+}
+
+.dx-app .dx-vlog-foot {
+  margin: 0;
+  padding: 16px 20px;
+  border-top: 1px solid var(--dx-soft);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dx-faint);
+}
