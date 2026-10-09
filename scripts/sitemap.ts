@@ -67,6 +67,9 @@ export const LISTED: Record<Route, string | null> = {
   admin: null,
   /* `/i/<code>` is a message to one person, not a page to be found. */
   invite: null,
+  /* A sticker's landing and an account's last page. Nothing to index. */
+  tag: null,
+  'delete-account': null,
 };
 
 /** The last commit date for one file, as a bare `YYYY-MM-DD`, or `null` if git

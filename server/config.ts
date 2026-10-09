@@ -12,6 +12,158 @@
  * `configFor()` in `domain/settings.ts` is the reader.
  */
 
+/* ══════════════════════════════════════════ the arcade games' economics ══
+ *
+ * One row per game that came after the rulebook's eight, and every number that
+ * prices or polices one of them. The rulebook (`paylez-points-rulebook.md`)
+ * names eight games; these are priced **by its master formula and nothing
+ * else** — §4.1 turns a 0..100 performance into 2..18 points, then the featured
+ * ×1.5, the decay by round of the day, the plan multiplier and the three flat
+ * bonuses, exactly as for a quiz. So no row here carries a payout. What a row
+ * decides is the two things the formula cannot know about a game:
+ *
+ *   1. **how a result maps onto performance** — `performancePerUnit` (a count
+ *      times a rate, capped at 100, the shape of §5.6 Bird's Flight), or a
+ *      `share` of what the level holds;
+ *   2. **how fast a result can honestly arrive** — `unitsPerSecond` plus
+ *      `allowance` bound a client's claim by the round's own duration,
+ *      measured between two stamps this server wrote (§9.3 "plausible score
+ *      ranges, minimum round duration").
+ *
+ * ## The target: no game out-earns another per minute of play
+ *
+ * Every round is worth at most 18 before the bonuses, and energy charges one
+ * per round whatever the game (§3), so over a day the games are level by
+ * construction. Over a *minute* they are level only if no game can produce a
+ * perfect round faster than the originals can, and the fastest original is a
+ * quiz: five questions read and answered, about 20 seconds at the very best.
+ * `MIN_PERFECT_SECONDS` is that figure, and `verify:api` checks every row
+ * against it: `(perfect − allowance) / unitsPerSecond` — the shortest round
+ * the bound would still credit as perfect — must not be shorter. Measured at
+ * a typical round (`typicalSeconds`, typical performance in the comment):
+ *
+ *   game            perfect at          typical round      pts/min (typ.)
+ *   ─────────────── ─────────────────── ────────────────── ──────────────
+ *   quiz ×3         5/5                 ~45 s, perf 60–80  ~15–19
+ *   Word Builder    3 words, no hints   ~45 s, perf 70–100 ~17–24
+ *   Memory Match    ≤10 moves           ~60 s, perf 72–85  ~13–15
+ *   Bird's Flight   25 gaps             ~30 s, perf 20–60  ~8–22
+ *   2048            the 2048 tile       ~4 min, perf 50–65 ~2–3
+ *   Food Cross      2 000 in 20 swaps   ~75 s, perf ~80    ~11
+ *   Food Ninja      50 foods            60 s, perf 60–100  ~11–18
+ *   Snake           25 foods            ~60 s, perf 40–80  ~7–14
+ *   Canon Numbers   25 net hits         90 s, perf 40–80   ~5–10
+ *   Bounce Ball     the whole wall      ~60 s, perf 30–70  ~5–13
+ *   Doodle Jump     50 platforms        ~50 s, perf 40–80  ~8–17
+ *   Zuma            the whole chain     ~70 s, perf 40–80  ~6–12
+ *
+ * Points per minute at decay 1.00 on Free. Every arcade game sits at or below
+ * the quizzes and Word Builder, which is the intended direction: the
+ * question games are the L-Earn content, and an arcade game that paid better
+ * per minute would empty them (rulebook §4.1, "if Bird's Flight paid more than
+ * Memory Match, everyone would play Bird's Flight").
+ *
+ * ## Caps, per round and per day
+ *
+ * Per round the cap is the formula's own: performance clamps at 100, so a
+ * round is 18 base (27 featured; 47 featured on Premium) plus the flat
+ * bonuses, however long it ran. Per day there is no separate points cap on
+ * purpose — `CONFIG.points` explains why a second limiter was removed — and
+ * the day is bounded by energy × decay: a Free tank of 4 plus a refill every
+ * two hours pays at most 18 × (1 + .65 + .45 + .3 + .2 + .12 × 7) ≈ 64 base
+ * points from sixteen perfect rounds, before bonuses. The weekly game cap
+ * (`CONFIG.games.weeklyGameCap`, §9.1) is the backstop over all of it, and it
+ * counts every game here exactly as it counts a quiz.
+ */
+/** §9.3: the quickest honest perfect round in the set — a five-question quiz. */
+export const MIN_PERFECT_SECONDS = 20;
+
+/** One arcade game's pricing and policing; see the table's comment above. */
+export interface ArcadeEconomy {
+  /** `count`: `performancePerUnit` each, capped at 100. `share`: done ÷ what the level holds. */
+  measure: 'count' | 'share';
+  /** Performance a unit is worth, for a `count`; 0 on a `share`, which has no unit rate. */
+  performancePerUnit: number;
+  /** The fastest honest rate, generous on purpose (§9.3). */
+  unitsPerSecond: number;
+  /** Units credited on top of the rate: clocks, latency, what was on screen at the start. */
+  allowance: number;
+  /** Milliseconds of clock slack, for the games timed event by event. */
+  slackMs: number;
+  /** A typical round, for the per-minute comparison only. */
+  typicalSeconds: number;
+  /** A reported count's hard ceiling, however long the round ran. Unset where the level itself is the ceiling. */
+  maxUnits?: number;
+}
+
+export const ARCADE_ECONOMY: Readonly<
+  Record<'snake' | 'cannon_numbers' | 'breakout' | 'doodle_jump' | 'zuma' | 'food_ninja', Readonly<ArcadeEconomy>>
+> = {
+  /*
+   * Snake — **replayed**: the server plays the reported turns again on the
+   * round's own food list and counts what that game ate, held to the round's
+   * duration plus `slackMs`. 4 a food, so 25 is perfect. The rate bound is the
+   * replay itself (a tick is 140 ms falling to 70, and a food is ~8 cells
+   * away played well), so `unitsPerSecond` here is documentation of that
+   * floor rather than a second check: 25 foods × 8 cells × ~100 ms ≈ 20 s.
+   */
+  snake: { measure: 'count', performancePerUnit: 4, unitsPerSecond: 1.25, allowance: 0, slackMs: 3000, typicalSeconds: 60 },
+  /*
+   * Canon Numbers as the website plays it — **reported and bounded**: shoot
+   * the number that answers the sum, `{hits, wrong}` at the end. 4 a net
+   * correct hit (hits − wrong), so 25 is perfect, Bird's Flight's shape.
+   * Mirrors `CANNON_SCORING` in `src/site/games/cannon/config.ts`, and
+   * `npm run verify` holds the two to each other. A sum has to be read and a
+   * target aimed at, so an honest player does not clear one a second over the
+   * 90-second round; 1 a second plus 4 for clocks and latency makes a perfect
+   * claim take at least 21 s. `maxUnits` is the ceiling on any claim. The
+   * app's held board is scored separately (`cannonPerformancePerBlock`).
+   */
+  cannon_numbers: {
+    measure: 'count',
+    performancePerUnit: 4,
+    unitsPerSecond: 1,
+    allowance: 4,
+    slackMs: 0,
+    typicalSeconds: 90,
+    maxUnits: 150,
+  },
+  /*
+   * Bounce Ball (`breakout`) — **bounded**: a share of the 40-brick wall.
+   * The ball leaves the paddle at 0.62 field widths a second and a paddle
+   * return is ~1.6 field heights, so an honest player breaks about one brick
+   * per return — a second and a half — and faster only once a channel opens
+   * above the wall. 1.2 a second plus 4 lets the best honest run through and
+   * makes a perfect claim take at least 30 s. It was 4 a second, which
+   * credited a whole wall nine seconds after `/start`.
+   */
+  breakout: { measure: 'share', performancePerUnit: 0, unitsPerSecond: 1.2, allowance: 4, slackMs: 0, typicalSeconds: 60 },
+  /*
+   * Doodle Jump — **bounded**: 2 a platform, so 50 is perfect. A jump peaks
+   * 0.32 above its platform after 0.5 s and the gaps open from 0.15 to 0.26,
+   * so two platforms a landing is possible only for the first nine or so and
+   * one a landing after that: ~3 a second at the very start, ~1.3 for the rest.
+   * 2 a second plus 5 makes a perfect claim take at least 22.5 s (it was 3 a
+   * second, 15 s).
+   */
+  doodle_jump: { measure: 'count', performancePerUnit: 2, unitsPerSecond: 2, allowance: 5, slackMs: 0, typicalSeconds: 50 },
+  /*
+   * Zuma — **bounded**: a share of the 60-ball chain, counting chain balls
+   * only. One shot is in flight at a time and travels ~0.6 field units at 1.7 a
+   * second, and a three-match clears two chain balls and the shot, so even a
+   * flawless shooter clears under three chain balls a second. 2.5 plus 6
+   * makes a perfect claim take at least 21.6 s (it was 5 a second, 10.8 s).
+   */
+  zuma: { measure: 'share', performancePerUnit: 0, unitsPerSecond: 2.5, allowance: 6, slackMs: 0, typicalSeconds: 70 },
+  /*
+   * Food Ninja — **bounded by the schedule**: a slice counts only for a food
+   * the server's seeded schedule has in the air by the server's clock, once,
+   * at most six a swipe. 2 a food, so 50 of the ~90 thrown is perfect; the
+   * round is a fixed 60 s, which is the time bound.
+   */
+  food_ninja: { measure: 'count', performancePerUnit: 2, unitsPerSecond: 1, allowance: 0, slackMs: 1500, typicalSeconds: 60 },
+};
+
 export const CONFIG = {
   /* ─────────────────────────────────────────────────────────── the server ── */
   server: {
@@ -203,9 +355,17 @@ export const CONFIG = {
      */
     streakMilestones: { 7: 50, 30: 250, 100: 1000 } as Record<number, number>,
     /** Coming back after a lapse, once a month. Worth having rather than
-        token: the round it accompanies is the one that restarts the habit. */
+        token: the round it accompanies is the one that restarts the habit.
+
+        2026-10-08 rebalance: it is for an **absence**, not a missed day. It
+        pays only when at least `comebackMinAbsenceDays` whole days went by
+        without a paid round — a day a streak freeze absorbed does not count
+        towards that — and at most once in any rolling `comebackEveryDays`
+        (it used to pay on any one-day gap, freeze or not, on a fixed 30-day
+        grid that let two payments land days apart). */
     comeback: 100,
     comebackEveryDays: 30,
+    comebackMinAbsenceDays: 7,
     /*
      * **There is no flat featured-game bonus any more.** `dailyGame: 20` lived
      * here and was paid by `payDailyGame` as its own ledger entry, once a day,
@@ -951,8 +1111,8 @@ export const CONFIG = {
      * late. Generous on purpose, as the flight's allowance is — its job is to
      * refuse the impossible, not to referee the plausible.
      */
-    ninjaPerformancePerFood: 2,
-    ninjaSlackMs: 1500,
+    ninjaPerformancePerFood: ARCADE_ECONOMY.food_ninja.performancePerUnit,
+    ninjaSlackMs: ARCADE_ECONOMY.food_ninja.slackMs,
     /*
      * ── the five arcade games (`domain/arcade.ts`) ──
      *
@@ -961,23 +1121,34 @@ export const CONFIG = {
      * The `…PerSecond` figures are the plausibility bounds on the three that
      * are reported rather than replayed — the fastest honest rate, generous on
      * purpose, plus a fixed allowance — the same arrangement as the flight's.
+     *
+     * **The numbers live in `ARCADE_ECONOMY` at the top of this file**, one
+     * row per game with the reasoning and the per-minute comparison; these
+     * flat keys are the names the scorers have always read, kept as aliases so
+     * no reader moved.
      */
     /** Snake: 4 a food, so 25 is a perfect round. Replayed, not reported. */
-    snakePerformancePerFood: 4,
+    snakePerformancePerFood: ARCADE_ECONOMY.snake.performancePerUnit,
     /** How much longer than the round lasted a replay may run, in ms. */
-    snakeSlackMs: 3000,
-    /** Canon Numbers: 4 a block destroyed, so 25 is a perfect round. */
+    snakeSlackMs: ARCADE_ECONOMY.snake.slackMs,
+    /** Canon Numbers on the held board (the app): 4 a block destroyed, so 25 is a perfect round. */
     cannonPerformancePerBlock: 4,
-    /** Breakout: the share of the wall broken. At most four bricks a second. */
-    breakoutBricksPerSecond: 4,
-    breakoutAllowance: 4,
+    /** Canon Numbers as the website plays it: 4 a net hit, bounded by `ARCADE_ECONOMY.cannon_numbers`. */
+    cannonPerformancePerHit: ARCADE_ECONOMY.cannon_numbers.performancePerUnit,
+    cannonHitsPerSecond: ARCADE_ECONOMY.cannon_numbers.unitsPerSecond,
+    cannonHitAllowance: ARCADE_ECONOMY.cannon_numbers.allowance,
+    /** No round can claim more than this however long it ran (unset in the row: only the rate bounds it). */
+    cannonMaxHits: ARCADE_ECONOMY.cannon_numbers.maxUnits ?? Number.POSITIVE_INFINITY,
+    /** Breakout: the share of the wall broken, bounded by `ARCADE_ECONOMY.breakout`. */
+    breakoutBricksPerSecond: ARCADE_ECONOMY.breakout.unitsPerSecond,
+    breakoutAllowance: ARCADE_ECONOMY.breakout.allowance,
     /** Doodle Jump: 2 a platform climbed, so 50 is a perfect round. */
-    doodlePerformancePerPlatform: 2,
-    doodlePlatformsPerSecond: 3,
-    doodleAllowance: 5,
-    /** Zuma: the share of the chain cleared. */
-    zumaBallsPerSecond: 5,
-    zumaAllowance: 6,
+    doodlePerformancePerPlatform: ARCADE_ECONOMY.doodle_jump.performancePerUnit,
+    doodlePlatformsPerSecond: ARCADE_ECONOMY.doodle_jump.unitsPerSecond,
+    doodleAllowance: ARCADE_ECONOMY.doodle_jump.allowance,
+    /** Zuma: the share of the chain cleared, bounded by `ARCADE_ECONOMY.zuma`. */
+    zumaBallsPerSecond: ARCADE_ECONOMY.zuma.unitsPerSecond,
+    zumaAllowance: ARCADE_ECONOMY.zuma.allowance,
     flightTarget: 5,
     /*
      * The plausibility bound on a claimed run, in seconds per gap.
@@ -1089,7 +1260,12 @@ export const CONFIG = {
      * `games.finish`, which trims the round to what is left and reports the
      * trim as `capped`.
      */
-    weeklyGameCap: { free: 450, pro: 600, premium: 1000 } as Readonly<Record<string, number>>,
+    /* 2026-10-08 rebalance: 450 / 600 / 1 000 → 200 / 280 / 450. The old
+       figures sat above an honest perfect week and let an engaged Free player
+       bank ~3.5× rulebook §10's ~1 880 a month from games and missions alone,
+       without a visit. The cap is now a real ceiling on game points rather than
+       a backstop, so a visit is where the rest of a month's earning comes from. */
+    weeklyGameCap: { free: 200, pro: 280, premium: 450 } as Readonly<Record<string, number>>,
 
     /** Streak freezes: earned one per this many days. The count held is a
      *  plan entitlement (`streak_freezes`); Premium never breaks a streak. */
@@ -1120,31 +1296,40 @@ export const CONFIG = {
    */
   missions: {
     rewards: {
+      /*
+       * 2026-10-08 rebalance (owner-approved): the no-visit missions were most of
+       * the inflation. **A reward of 0 means the mission is not served at all**
+       * (`domain/missions.ts`, `zeroReward`) — a "+0" row is a chore with no
+       * point, and `todays_game` at 0 is also what stops the featured card being
+       * paid twice (the ×1.5 already pays it; see `CONFIG.earn` above). The
+       * definitions stay, so the rulebook's numbering does. Visit-linked
+       * missions are unchanged.
+       */
       /* §8.1 daily */
-      'daily.todays_game': 25,
-      'daily.warm_up': 10,
-      'daily.empty_the_tank': 15,
+      'daily.todays_game': 0,
+      'daily.warm_up': 0,
+      'daily.empty_the_tank': 5,
       'daily.record_a_visit': 20,
-      'daily.flawless': 20,
-      'daily.mix_it_up': 15,
+      'daily.flawless': 5,
+      'daily.mix_it_up': 5,
       'daily.window_shopping': 5,
-      'daily.new_record': 20,
+      'daily.new_record': 5,
       'daily.early_bird': 15,
-      'daily.night_owl': 10,
-      'daily.on_a_roll': 10,
+      'daily.night_owl': 0,
+      'daily.on_a_roll': 0,
       /* §8.2 weekly */
-      'weekly.five_day_player': 50,
+      'weekly.five_day_player': 30,
       'weekly.three_venues': 60,
-      'weekly.full_deck': 80,
-      'weekly.point_hunter': 40,
+      'weekly.full_deck': 40,
+      'weekly.point_hunter': 0,
       'weekly.regular': 50,
       'weekly.somewhere_new': 50,
-      'weekly.ten_rounds': 40,
-      'weekly.unbroken': 60,
+      'weekly.ten_rounds': 0,
+      'weekly.unbroken': 0,
       'weekly.cash_it_in': 40,
       'weekly.weekend_warrior': 40,
       'weekly.explorer': 55,
-      'weekly.quiz_master': 70,
+      'weekly.quiz_master': 30,
       /* §8.3 ongoing — the claimable ones; 25–33 mirror automatic bonuses */
       'ongoing.city_explorer': 200,
       'ongoing.local_legend': 250,
@@ -1359,6 +1544,13 @@ export const CONFIG = {
      */
     dir: process.env.PAYLEZ_MEDIA_DIR ?? 'server/data/media',
     maxBytes: 256 * 1024,
+    /**
+     * The ceiling on an uploaded profile photo (`POST /v1/me/avatar`), decoded.
+     * Two megabytes is a generous phone photo; the app re-encodes to a 512 px
+     * JPEG of well under 200 kB before it sends, so this only bounds a client
+     * that does not.
+     */
+    avatarMaxBytes: 2 * 1024 * 1024,
     timeoutMs: 4000,
     /**
      * How long a browser may keep one.
@@ -1419,6 +1611,23 @@ export const CONFIG = {
     verifyEmailPerHour: 30,
     resetCodePerHour: 10,
     resetPasswordPerHour: 20,
+    /* The username availability check is called as somebody types (the app
+       debounces to ~one call per pause), so it is generous; what it bounds is
+       a script enumerating the handle namespace. The photo upload is a few
+       hundred kilobytes a call, so it is bounded like a write. Both per
+       account. */
+    usernameCheckPerHour: 300,
+    avatarUploadPerHour: 30,
+    /* `PUT /v1/me/username`. A handle is what other people know somebody by,
+       so changing it is bounded like a write rather than like a read: twenty is
+       a person trying a few and correcting a typo, not a rotation of names. */
+    usernameSetPerHour: 20,
+    /* `POST /v1/auth/signin`, per *connection*. `auth.signInPerHour` below
+       counts failures per address tried, which stops guessing one account's
+       password but not one machine trying one common password against many
+       addresses (spraying). This bounds that, and is high enough for an
+       office or a café behind one router. */
+    signInPerHour: 60,
   },
 
   /* ─────────────────────────────────────────────────────── sessions ── */

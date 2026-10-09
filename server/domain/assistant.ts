@@ -28,7 +28,7 @@ import * as ledger from './ledger.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
 import { now, type Iso } from './time.ts';
-import { getVenue, venuesOf } from './venues.ts';
+import { averageCheck, getVenue, venuesOf } from './venues.ts';
 
 export type Side = 'consumer' | 'partner';
 
@@ -134,9 +134,14 @@ async function appendMessage(
   await db.run(`UPDATE assistant_sessions SET updated_at = $t WHERE id = $s`, { t: at, s: sessionId });
 }
 
-export const transcript = async (db: Db, sessionId: string) =>
-  await db.all(`SELECT seq, role, text, grounding, created_at FROM assistant_messages
-           WHERE session_id = $s ORDER BY seq`, { s: sessionId });
+/* Scoped to the asker. It read any conversation by id alone, so a leaked id —
+   in a log, a screenshot, a shared device — was somebody else's transcript,
+   and a partner's holds their business numbers. Somebody else's id answers
+   exactly like an id that does not exist: an empty list. */
+export const transcript = async (db: Db, sessionId: string, userId: string) =>
+  await db.all(`SELECT m.seq, m.role, m.text, m.grounding, m.created_at FROM assistant_messages m
+           JOIN assistant_sessions s ON s.id = m.session_id
+           WHERE m.session_id = $s AND s.user_id = $u ORDER BY m.seq`, { s: sessionId, u: userId });
 
 /* ═══════════════════════════════════════════════════════ §10 the consumer ══ */
 
@@ -502,7 +507,9 @@ export async function draftFor(
      the goal rather than on an intent classifier, because the whole draft is
      shown for approval anyway — a wrong guess costs a click, not a campaign. */
   if (/repeat|again|loyal|return|come ?back|more often|regular|retention|wraca/.test(goal)) {
-    const cost = Math.max(500, Math.round((venue.avg_check_minor ?? 3200) * 0.3));
+    /* The average the owner set or chose on the Vouchers screen, the same one
+       every voucher reserve is built from. */
+    const cost = Math.max(500, Math.round((await averageCheck(db, venue, at)).minor * 0.3));
     reasoning.push('A visit-based campaign is what buys repeat custom; a percentage is a voucher.');
     reasoning.push(`The reward costs you ${cost} minor units, which is what the reserve holds per earned reward.`);
     return {

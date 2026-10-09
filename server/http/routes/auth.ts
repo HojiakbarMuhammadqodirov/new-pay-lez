@@ -12,6 +12,7 @@ import * as accounts from '../../domain/accounts.ts';
 import * as consent from '../../domain/consent.ts';
 import * as entitlements from '../../domain/entitlements.ts';
 import * as ledger from '../../domain/ledger.ts';
+import * as media from '../../domain/media.ts';
 import * as social from '../../domain/social.ts';
 import * as verification from '../../domain/verification.ts';
 import { DomainError } from '../../domain/errors.ts';
@@ -20,8 +21,29 @@ import { CONFIG } from '../../config.ts';
 import { exchangeGoogleCode, verifyGoogleIdToken } from '../../crypto/google.ts';
 import type { Ctx, Route } from '../router.ts';
 
+/**
+ * The guest account a sign-up may fold in: `provisionalId` from the body, and
+ * only when the request is signed in **as that guest** (the app sends the
+ * guest's bearer token with the sign-up, as it does with every call).
+ *
+ * The id alone was trusted before, and `merge` checks only that the target is
+ * provisional — so anybody holding a guest's `usr_…` id could sign up and take
+ * that guest's points, games and handle. An id that is not proven is ignored
+ * rather than refused: the sign-up itself is still wanted.
+ */
+const ownGuest = (ctx: Ctx): string | undefined => {
+  const named = optStr(ctx.body, 'provisionalId');
+  return named && ctx.actor?.user.id === named ? named : undefined;
+};
+
 const cookieFor = (token: string, maxAgeDays: number): string => {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  /* `Secure` on any deployment. It keyed on `NODE_ENV=production` alone, which
+     nothing in DEPLOY.md or the env example sets, so production's session
+     cookie could travel over plain http. A Postgres URL is the other sign of a
+     real deployment (a laptop runs on the SQLite file); browsers accept a
+     Secure cookie on http://localhost anyway. */
+  const secure =
+    process.env.NODE_ENV === 'production' || process.env.PAYLEZ_PG_URL ? '; Secure' : '';
   return `paylez_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=${
     maxAgeDays * 86400
   }`;
@@ -87,10 +109,12 @@ async function me(ctx: Ctx, fresh?: accounts.User) {
        * the code before the spend rather than after the 403.
        */
       emailVerificationRequired: await verification.required(ctx.db, user.id),
-      /* §1.4's standing answer, as a boolean because it is one. The column is
-         an integer for the same reason `leaderboard_opt_in` is — SQLite has no
-         boolean — and a client should not have to know that. */
-      venueSharingDefault: user.venue_sharing_default === 1,
+      /* §1.4's standing answer, which is always on now and cannot be switched
+         off (see the PATCH below). Still sent, and always `true`, because the
+         app draws a switch from it; a client may stop drawing one. A constant
+         rather than the column, so the answer cannot say "off" for any row the
+         boot has not yet normalised. */
+      venueSharingDefault: true,
       leaderboardOptIn: user.leaderboard_opt_in === 1,
       referralCode: user.referral_code,
       createdAt: user.created_at,
@@ -170,7 +194,7 @@ export const authRoutes: Route[] = [
            as consent. */
         acceptTerms: ctx.body.acceptTerms === true,
         referralCode: optStr(ctx.body, 'referralCode'),
-        provisionalId: optStr(ctx.body, 'provisionalId'),
+        provisionalId: ownGuest(ctx),
         at: ctx.at,
       });
       const session = await accounts.createSession(ctx.db, {
@@ -208,6 +232,9 @@ export const authRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/auth/signin',
     auth: 'none',
+    /* Per connection, beside the per-address failure throttle in
+       `accounts.signIn` — see `CONFIG.limits.signInPerHour`. */
+    limit: { perHour: CONFIG.limits.signInPerHour, by: 'connection' },
     handler: async (ctx) => {
       const result = await accounts.signIn(ctx.db, {
         email: str(ctx.body, 'email'),
@@ -316,7 +343,7 @@ export const authRoutes: Route[] = [
        * rather than a transfer; merging onto the account already signed in is
        * skipped rather than treated as an error.
        */
-      const provisionalId = optStr(ctx.body, 'provisionalId');
+      const provisionalId = ownGuest(ctx);
       if (provisionalId && provisionalId !== user.id) {
         await accounts.merge(ctx.db, provisionalId, user.id, ctx.at);
       }
@@ -469,22 +496,20 @@ export const authRoutes: Route[] = [
         await social.setLeaderboardOptIn(ctx.db, user.id, bool(ctx.body, 'leaderboardOptIn'));
       }
       /*
-       * §1.4's standing answer — "share my profile with venues I visit".
+       * §1.4's standing answer — "share my profile with venues I visit" — is
+       * **always on** now (2026-10-08), and no client may switch it off.
        *
-       * Beside the board's opt-in for the same reason: both are preferences
-       * rather than profile *fields*, both are read by a switch that applies on
-       * the flip, and both are written before the profile below so the row
-       * `me()` renders has seen them.
-       *
-       * Switching it **off does not revoke anything**. The grants that stand
-       * are about specific venues somebody has been to, and declining future
-       * ones is a different decision from withdrawing the ones they made —
-       * `DELETE /v1/me/sharing/:venueId` is that, one venue at a time, and
-       * `GET /v1/me/consents` lists them.
+       * The key is still *accepted*, because the app already on people's
+       * phones sends it and a 400 for a key it has always sent would break its
+       * whole profile save. It is read for shape and then **ignored**: neither
+       * `true` nor `false` writes anything. The column is held at 1 by the boot
+       * (`sharingAlwaysOn` in `db/db.ts` / `db/pg.ts`), which is also what took
+       * every stored opt-out back — see the note there for why that is a
+       * rewrite and not a read-side override. `consent.setSharingDefault` is
+       * kept for the test suite's isolation of the consent gate and is called
+       * from no route.
        */
-      if (ctx.body.venueSharingDefault !== undefined) {
-        await consent.setSharingDefault(ctx.db, user.id, bool(ctx.body, 'venueSharingDefault'));
-      }
+      if (ctx.body.venueSharingDefault !== undefined) bool(ctx.body, 'venueSharingDefault');
       /*
        * An explicit JSON `null` takes an answer back (§2.13); an absent key and an
        * empty string still leave it alone, so a client that resends its whole
@@ -564,6 +589,103 @@ export const authRoutes: Route[] = [
     pattern: '/v1/me/onboarded',
     auth: 'user',
     handler: async (ctx) => await accounts.completeOnboarding(ctx.db, actor(ctx).user.id, ctx.at),
+  },
+  {
+    /**
+     * Whether a username can be had — the as-you-type check.
+     *
+     * `{username, available, mine, reason, message, suggestions}`: `reason` is
+     * one of `length`, `shape`, `reserved`, `taken` (null when available), and
+     * `message` is the sentence `PATCH /v1/me` would refuse with. `mine` is an
+     * account asking about its own handle, which is available to it.
+     *
+     * Advice, not a reservation: the `PATCH` is what claims the name, and a
+     * second claim on it is still a 409. Signed-in only and bounded per
+     * account, because an open existence check over every handle is a
+     * directory of who is on the product.
+     */
+    method: 'GET',
+    pattern: '/v1/usernames/:name',
+    auth: 'user',
+    limit: { perHour: CONFIG.limits.usernameCheckPerHour, by: 'account' },
+    handler: async (ctx) =>
+      /* Already decoded by the router; decoding twice would throw on a `%`. */
+      await accounts.usernameAvailability(ctx.db, actor(ctx).user.id, ctx.params.name),
+  },
+  {
+    /**
+     * Three free handles for this account before anything is typed —
+     * `{suggestions}`, built from its name and the part of its address before
+     * the `@`. What a "create your username" step opens with. Advice, like the
+     * check above, and bounded by the same per-account ceiling.
+     */
+    method: 'GET',
+    pattern: '/v1/usernames',
+    auth: 'user',
+    limit: { perHour: CONFIG.limits.usernameCheckPerHour, by: 'account' },
+    handler: async (ctx) => await accounts.usernameSuggestions(ctx.db, actor(ctx).user.id),
+  },
+  {
+    /**
+     * Set or change the username — `{username}` — and nothing else.
+     *
+     * The same write `PATCH /v1/me {username}` makes (one rule, in
+     * `accounts.updateProfile`), on a route of its own for two reasons. It is
+     * **bounded like a write**: a handle is the one profile answer other people
+     * read, and changing it every few seconds is impersonation by rotation, so
+     * `CONFIG.limits.usernameSetPerHour` caps it per account where the profile
+     * PATCH has no ceiling. And a client's username step has exactly one thing
+     * to send, so it should not have to know which other keys the PATCH would
+     * also act on. Answers with the whole account, like the PATCH; a taken name
+     * is `409 conflict` naming `username`, anything else a `400` naming it.
+     */
+    method: 'PUT',
+    pattern: '/v1/me/username',
+    auth: 'user',
+    limit: { perHour: CONFIG.limits.usernameSetPerHour, by: 'account' },
+    handler: async (ctx) => {
+      const updated = await accounts.updateProfile(
+        ctx.db,
+        actor(ctx).user.id,
+        { username: str(ctx.body, 'username'), clear: [] },
+        ctx.at,
+      );
+      return await me(ctx, updated);
+    },
+  },
+  {
+    /**
+     * Upload a profile photo: `{image}` — base64, or a whole `data:` URL.
+     *
+     * JPEG, PNG or WebP **by the bytes**, at most `CONFIG.media.avatarMaxBytes`
+     * decoded (2 MB). Stored in `media_assets` and served back at
+     * `GET /v1/media/user/:id?v=…`, which is what `avatar` on the account now
+     * reads — a path on this API, so a client joins it to its API base. Answers
+     * with the whole account, as `PATCH /v1/me` does; a photo that finishes the
+     * seven answers pays the profile bonus here exactly as it would there.
+     */
+    method: 'POST',
+    pattern: '/v1/me/avatar',
+    auth: 'user',
+    limit: { perHour: CONFIG.limits.avatarUploadPerHour, by: 'account' },
+    /* base64 is 4/3 of the bytes, plus a little for the JSON around it. */
+    maxBody: Math.ceil((CONFIG.media.avatarMaxBytes * 4) / 3) + 4096,
+    handler: async (ctx) => {
+      const raw = str(ctx.body, 'image');
+      const encoded = raw.startsWith('data:') ? raw.slice(raw.indexOf(',') + 1) : raw;
+      if (!/^[A-Za-z0-9+/\s]*={0,2}\s*$/.test(encoded)) {
+        throw new DomainError('validation_failed', 'image is base64', { field: 'avatar' });
+      }
+      const updated = await media.storeAvatar(ctx.db, actor(ctx).user.id, Buffer.from(encoded, 'base64'), ctx.at);
+      return await me(ctx, updated);
+    },
+  },
+  {
+    /** Remove the profile photo. The same as `PATCH /v1/me {avatar: null}`, plus the stored bytes go. */
+    method: 'DELETE',
+    pattern: '/v1/me/avatar',
+    auth: 'user',
+    handler: async (ctx) => await me(ctx, await media.removeAvatar(ctx.db, actor(ctx).user.id, ctx.at)),
   },
   {
     method: 'POST',

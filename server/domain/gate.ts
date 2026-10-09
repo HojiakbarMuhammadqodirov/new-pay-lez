@@ -129,40 +129,128 @@ export async function verifyQr(db: Db, token: string, secret: string, userId: st
 }
 
 /**
+ * §3.3 limits on taps, beside the per-account hourly bound the route declares
+ * (`NFC_TAPS_PER_HOUR`, enforced by `http/server.ts`).
+ *
+ * One tag, one account, a rolling day. A tap opens a PENDING transaction and
+ * grants nothing, and `recordVisit`'s cooldown already decides whether a
+ * second scan the same day is a visit — so this is not an economy rule. It is
+ * a ceiling on litter: a phone held against a sticker in a loop burns the
+ * tag's counter and fills the counter's queue with gates nobody will confirm.
+ * Six is a customer who paid, came back for a coffee, and tapped twice each
+ * time because the first one did not seem to take.
+ *
+ * Both live here rather than in `config.ts` only because that file was being
+ * edited by another session when they were added; moving them is a cut and a
+ * paste.
+ */
+export const NFC_TAPS_PER_TAG_PER_DAY = 6;
+export const NFC_TAPS_PER_HOUR = 20;
+
+/** What a verified tap resolved to. */
+export interface VerifiedTap {
+  venueId: string;
+  /** The tag's UID — what `trigger_ref` records as `nfc:<uid>`. */
+  uid: string;
+  counter: number;
+}
+
+/**
  * §3.3. Verify an NFC tap and burn its counter.
  *
- * The counter check is the whole replay defence and it is `>`, never `>=`: a tap
- * that presents the counter we already saw is the same tap arriving twice.
+ * The order is the defence: the MAC first (a forgery learns nothing about the
+ * registry), then the registry (unknown and revoked tags), then the per-tag
+ * ceiling, and the counter last — so a tap refused for any earlier reason does
+ * not burn anything, and the transaction around it rolls back regardless.
+ *
+ * The counter check is `>`, never `>=`: a tap that presents the counter we
+ * already saw is the same tap arriving twice. The one exception is a tag's
+ * very first tap, which NTAG 424 DNA may number 0 — `last_tap_at IS NULL` is
+ * what tells "never tapped" from "tapped at 0", because `last_counter`'s
+ * default is also 0.
  */
 export async function verifyNfc(
   db: Db,
   input: { piccHex: string; cmacHex: string; masterKey: Buffer; userId: string; at?: Iso },
-): Promise<string> {
+): Promise<VerifiedTap> {
   const at = input.at ?? now();
   const result = verifyTap(input.masterKey, input.piccHex, input.cmacHex);
-  if (!result.ok) throw new DomainError('invalid_trigger', `NFC rejected: ${result.reason}`);
+  if (!result.ok) throw new DomainError('invalid_trigger', `NFC rejected: ${result.reason}`, { reason: result.reason });
 
   const tag = await db.get<{ venue_id: string | null; last_counter: number; status: string }>(
     `SELECT venue_id, last_counter, status FROM tag_registry WHERE tag_uid = $u`,
     { u: result.uid },
   );
-  if (!tag) throw new DomainError('invalid_trigger', 'unknown tag');
-  if (tag.status !== 'active' || !tag.venue_id) throw new DomainError('invalid_trigger', 'tag is not active');
+  /* A genuine MAC from a UID we never imported is our silicon on somebody
+     else's registry — or a registry row deleted by hand. Either way nothing to
+     open a gate at, and `not_found` says so more plainly than `invalid_trigger`. */
+  if (!tag) throw new DomainError('not_found', 'this Paylez tag is not registered', { uid: result.uid });
+  if (tag.status !== 'active' || !tag.venue_id) {
+    throw new DomainError('invalid_trigger', 'this Paylez tag is not in use', { uid: result.uid, status: tag.status });
+  }
+
+  const today = await db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM transactions
+      WHERE user_id = $u AND trigger_type = 'nfc' AND trigger_ref = $r AND opened_at >= $since`,
+    { u: input.userId, r: `nfc:${result.uid}`, since: plusDays(at, -1) },
+  );
+  if ((today?.n ?? 0) >= NFC_TAPS_PER_TAG_PER_DAY) {
+    throw new DomainError('rate_limited', 'this tag has been tapped enough times today', {
+      retryAfterMinutes: 24 * 60,
+      limit: NFC_TAPS_PER_TAG_PER_DAY,
+    });
+  }
 
   const advanced = await db.run(
-    `UPDATE tag_registry SET last_counter = $c WHERE tag_uid = $u AND last_counter < $c`,
-    { c: result.counter, u: result.uid },
+    `UPDATE tag_registry SET last_counter = $c, last_tap_at = $t
+      WHERE tag_uid = $u AND (last_counter < $c OR (last_tap_at IS NULL AND last_counter <= $c))`,
+    { c: result.counter, t: at, u: result.uid },
   );
   if (advanced.changes === 0) {
     /* Filed outside the transaction — see the note in `verifyQr`. */
-    void at;
     throw new DomainError('replay_detected', 'this tap has already been seen', {
       venueId: tag.venue_id,
       counter: result.counter,
       lastCounter: tag.last_counter,
     });
   }
-  return tag.venue_id;
+  return { venueId: tag.venue_id, uid: result.uid, counter: result.counter };
+}
+
+/**
+ * Which venue a tap URL belongs to, **without** burning its counter.
+ *
+ * For the website's `/t` page, which a phone without the app lands on: it can
+ * name the venue and offer the app, and it must not use the tap up — the app
+ * opened from that page will need it. The MAC is still checked, so a made-up
+ * URL names nothing. Nothing is opened or granted, and the answer is what the
+ * venue's public page says anyway.
+ */
+export async function resolveTag(
+  db: Db,
+  input: { piccHex: string; cmacHex: string; masterKey: Buffer },
+): Promise<{ venueId: string; venueName: string; label: string | null }> {
+  const result = verifyTap(input.masterKey, input.piccHex, input.cmacHex);
+  if (!result.ok) throw new DomainError('invalid_trigger', `NFC rejected: ${result.reason}`, { reason: result.reason });
+  const tag = await db.get<{ venue_id: string | null; status: string; label: string | null; name: string | null; venue_status: string | null }>(
+    `SELECT t.venue_id, t.status, t.label, v.name, v.status AS venue_status
+       FROM tag_registry t LEFT JOIN venues v ON v.id = t.venue_id
+      WHERE t.tag_uid = $u`,
+    { u: result.uid },
+  );
+  if (!tag || tag.status !== 'active' || !tag.venue_id || tag.venue_status !== 'live') {
+    throw new DomainError('not_found', 'this Paylez tag is not in use');
+  }
+  return { venueId: tag.venue_id, venueName: tag.name ?? '', label: tag.label };
+}
+
+/** A venue's own tags, for its owner or manager (`GET /v1/venues/:id/nfc-tags`). */
+export async function tagsAt(db: Db, venueId: string) {
+  return await db.all<{ uid: string; status: string; label: string | null; assigned_at: string | null; last_tap_at: string | null }>(
+    `SELECT tag_uid AS uid, status, label, assigned_at, last_tap_at
+       FROM tag_registry WHERE venue_id = $v ORDER BY assigned_at DESC`,
+    { v: venueId },
+  );
 }
 
 /* ═══════════════════════════════════════════════════ step 2: open PENDING ══ */
@@ -234,14 +322,18 @@ async function openInTransaction(
       venueId = await verifyQr(db, trigger.token, trigger.secret, input.userId, at);
       triggerRef = 'qr';
     } else if (trigger.kind === 'nfc') {
-      venueId = await verifyNfc(db, {
+      const tap = await verifyNfc(db, {
         piccHex: trigger.piccHex,
         cmacHex: trigger.cmacHex,
         masterKey: trigger.masterKey,
         userId: input.userId,
         at,
       });
-      triggerRef = 'nfc';
+      venueId = tap.venueId;
+      /* Which tag, so a venue's taps can be told apart and counted per tag
+         (`NFC_TAPS_PER_TAG_PER_DAY`). The UID is not a secret — the tag answers
+         it to any reader. */
+      triggerRef = `nfc:${tap.uid}`;
     } else if (trigger.kind === 'pass') {
       /* `scanPass` has already checked the counter's `redeem` at this venue. */
       venueId = await claimPass(db, trigger.pass, trigger.byUserId, at);

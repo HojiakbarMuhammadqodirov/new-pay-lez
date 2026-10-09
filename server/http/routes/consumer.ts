@@ -31,6 +31,7 @@ import { CONFIG } from '../../config.ts';
 import { getVenue, trackListing } from '../../domain/venues.ts';
 import { linksOf } from '../../domain/partners.ts';
 import { DomainError } from '../../domain/errors.ts';
+import { tagsOf, taxonomyFor, TAXONOMY_KEYS, under } from '../../domain/categories.ts';
 import { FREE_ASSISTANT_USES_PER_DAY } from '../../domain/settings.ts';
 import { actor, bool, list, oneOf, optStr, qInt, qStr, str } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
@@ -115,18 +116,42 @@ async function conversationFor(ctx: Ctx, userId: string): Promise<string> {
 export const consumerRoutes: Route[] = [
   /* ═══════════════════════════════════════════════════════ the catalogue ══ */
   {
+    /**
+     * The venue taxonomy the Deals filter draws (`domain/categories.ts`):
+     * categories in order, each with its subcategories, keys stable and labels
+     * in the reader's language (`labels` carries all five). Public — the
+     * website's listing form reads it before anybody signs in.
+     */
+    method: 'GET',
+    pattern: '/v1/categories',
+    auth: 'none',
+    handler: async (ctx) => taxonomyFor(ctx.language),
+  },
+  {
     method: 'GET',
     pattern: '/v1/venues',
     auth: 'none',
-    handler: async (ctx) =>
-      await ctx.db.all(
+    handler: async (ctx) => {
+      /* `?category=` is a taxonomy key (`coffee`, `restaurant.kebabs`) or, as
+         before, a raw `category` column word. A key cannot be a WHERE on one
+         column — a venue's list is its own pick or derived from two legacy
+         words — so it is applied to the rows after they are read. */
+      const asked = qStr(ctx, 'category') ?? null;
+      const byKey = asked !== null && TAXONOMY_KEYS.has(asked);
+      const limit = qInt(ctx, 'limit', 50);
+      const rows = await ctx.db.all<Record<string, unknown> & {
+        tags: string | null;
+        category: string;
+        subcategory: string | null;
+        name: string;
+      }>(
         /* `points_per_scan`, `currency` and `phone` travel with the listing too.
            The app's home cards print "N points a visit" and its scan screens the
            same figure straight off this row; with the column missing, its
            tolerant reader turned the absence into 0 and every nearby venue said
            "0 points a visit" against a real server. Additive, so the website
            (which reads this row as well) is unaffected. */
-        `SELECT id, name, category, subcategory, city, address, lat, lng, price_range,
+        `SELECT id, name, category, subcategory, tags, city, address, lat, lng, price_range,
                 image_url, rating, review_count, accepts_vouchers, points_per_scan,
                 currency, phone
            FROM venues
@@ -136,10 +161,16 @@ export const consumerRoutes: Route[] = [
           ORDER BY rating DESC NULLS LAST LIMIT $lim`,
         {
           city: qStr(ctx, 'city') ?? null,
-          cat: qStr(ctx, 'category') ?? null,
-          lim: qInt(ctx, 'limit', 50),
+          cat: byKey ? null : asked,
+          lim: byKey ? 1000 : limit,
         },
-      ),
+      );
+      /* `categories` is every key the venue is filed under — a subcategory
+         implies its category — and is what a client filters by. The raw
+         `tags` column stays on the server. */
+      const out = rows.map(({ tags, ...row }) => ({ ...row, categories: tagsOf({ ...row, tags }) }));
+      return byKey ? out.filter((row) => under(row.categories, asked)).slice(0, limit) : out;
+    },
   },
   {
     /**
@@ -158,6 +189,8 @@ export const consumerRoutes: Route[] = [
           name: venue.name,
           category: venue.category,
           subcategory: venue.subcategory,
+          /* The taxonomy keys, as `GET /v1/venues` sends them. */
+          categories: tagsOf(venue),
           city: venue.city,
           address: venue.address,
           lat: venue.lat,
@@ -217,6 +250,10 @@ export const consumerRoutes: Route[] = [
     auth: 'none',
     handler: async (ctx) => {
       const deal = await deals.getDeal(ctx.db, ctx.params.id);
+      /* A draft is the venue's unpublished work — its promo code, caps and
+         spend included — and this route is public. Paused and expired deals
+         stay readable: a customer may hold a link or a pass for one. */
+      if (deal.status === 'draft') throw new DomainError('not_found', 'no such deal');
       const copy = await deals.copyFor(ctx.db, deal.id, ctx.language);
       const verdict = await deals.claimableNow(ctx.db, deal, viewerOf(ctx));
       return {
@@ -837,6 +874,6 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/assistant/sessions/:id',
     auth: 'user',
-    handler: async (ctx) => await assistant.transcript(ctx.db, ctx.params.id),
+    handler: async (ctx) => await assistant.transcript(ctx.db, ctx.params.id, actor(ctx).user.id),
   },
 ];

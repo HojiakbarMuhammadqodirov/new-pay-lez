@@ -3,6 +3,7 @@ import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
 import { usePalette } from '../theme/context';
 import { BREAKOUT_COLS, BREAKOUT_ROWS, arcadeMilestones, arcadePoints, breakoutWall, localRng } from './arcade';
+import { PerfectBar, RoundClock } from './hud';
 
 /**
  * Breakout — a paddle, a ball, and a wall of bricks to break. One ball: losing
@@ -244,7 +245,9 @@ export function Breakout({
     <div className="round ar-round">
       <div className="round-top">
         <span className="round-count">{fill(copy.breakout.broken, { n: String(count), total: String(total) })}</span>
+        <RoundClock running={phase === 'playing'} />
       </div>
+      <PerfectBar performance={total === 0 ? 0 : (count / total) * 100} label={copy.perfectProgress} />
 
       <div className="ar-field ar-tall">
         <canvas

@@ -53,6 +53,7 @@ import {
   counterRecord,
   exportCsv,
   isNoSession,
+  isNoVenue,
   majorToMinor,
   minorToEuro,
   usePartnerScans,
@@ -73,7 +74,7 @@ import { Button, Card, DxIcon, Drawer, Field, PageHead, Pill, Segmented, Table }
 import { initialsOf } from './dashboardKitHooks';
 import { useDashboard } from './dashboardShell';
 import { DEMO_MODE } from './demoMode';
-import { useCopy, useMoney } from './i18n/context';
+import { useCopy, useCurrencyCode, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import { FX, type FxCode } from './i18n/fx';
 import { metricValue, PD_RANGES, PD_SCAN_PAGE, scanFromApi, type ScanRow } from './partnerMetrics';
@@ -267,7 +268,9 @@ function ScanLog({
       {response === null ? (
         <p className="dx-fine dx-scans-note">
           {scansApi.state.status === 'error'
-            ? isNoSession(scansApi.state.error)
+            ? isNoVenue(scansApi.state.error)
+              ? dashboard.unmeasured.noVenue
+              : isNoSession(scansApi.state.error)
               ? dashboard.unmeasured.noSession
               : dashboard.unmeasured.serverSilent
             : dashboard.unmeasured.asking}
@@ -337,6 +340,10 @@ function Row({ row, currency, timezone }: { row: ScanRow; currency: string; time
   const num = useNum();
   const venueMoney = useVenueMoney();
   const dates = useVenueDates(timezone);
+  /* The till's line is a second reading only when it is a second currency;
+     reading złoty in złoty printed every bill twice, one under the other. */
+  const [reader] = useCurrencyCode();
+  const tillLine = reader !== currency;
 
   return (
     <tr data-uncounted={row.counted ? undefined : 'true'}>
@@ -377,7 +384,7 @@ function Row({ row, currency, timezone }: { row: ScanRow; currency: string; time
           what it took off, named by what it was. */}
       <td data-align="right" className="dx-scans-money">
         <b>{money(row.spent, 'unit')}</b>
-        <span className="dx-scans-sub">{venueMoney(row.spentMinor, currency)}</span>
+        {tillLine && <span className="dx-scans-sub">{venueMoney(row.spentMinor, currency)}</span>}
         {row.discount > 0 && (
           <span className="dx-scans-sub">
             {row.intent === 'earn' ? '' : `${dashboard.acts.intents[row.intent]} · `}

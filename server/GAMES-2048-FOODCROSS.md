@@ -365,12 +365,12 @@ The game's own score only decides `performance` (0–100). Points then follow th
 rulebook's master formula exactly like every other game — `base = max(2,
 round(performance/100 × 18))`, × 1.5 on the day's featured game (once a day),
 × decay by round of the day (1, .65, .45, .3, .2, .12), × plan multiplier, +
-perfect-round 10 / first-play 25 / personal-best 8 — all computed by the server
+perfect-round 10 (decayed with the round since 2026-10-08) / first-play 25 / personal-best 8 — all computed by the server
 and itemised on the `Finish` body. Personal best compares **performance**, per
 game type. The featured rotation (§4.4) cycles the rulebook's eight games — Guess
 Flag, Brain Games, Country Quiz, Word Builder, Memory Match, Bird's Flight, 2048,
 Food Cross — one a day; `featuredGame` on `GET /v1/games/state` names today's.
-Points from games are capped per week (§9.1: Free 450 / Pro 600 / Premium 1000,
+Points from games are capped per week (§9.1: Free 200 / Pro 280 / Premium 450 since the 2026-10-08 rebalance,
 Monday–Sunday UTC); a trim shows up as `capped`.
 
 ---

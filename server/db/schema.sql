@@ -320,8 +320,16 @@ CREATE TABLE IF NOT EXISTS venues (
   id            TEXT PRIMARY KEY,
   owner_user_id TEXT REFERENCES users (id) ON DELETE SET NULL,
   name          TEXT NOT NULL,
+  -- One category key of the taxonomy (`domain/categories.ts`: coffee,
+  -- restaurant, shopping, leisure, beauty, housing, bakery, halal) and a
+  -- subcategory key under it (`restaurant.turkish`) or NULL. `checkKind` is
+  -- the write rule; boot moves older words onto the keys (`normaliseStoredKinds`).
   category      TEXT NOT NULL DEFAULT 'other',
   subcategory   TEXT,
+  -- The customer-facing taxonomy keys (`domain/categories.ts`), a JSON array
+  -- such as ["restaurant.kebabs","halal.kebabs"]. NULL until the venue picks;
+  -- until then `categories.tagsOf` derives a list from category/subcategory.
+  tags          TEXT,
   city          TEXT NOT NULL DEFAULT 'Krakow',
   country_code  TEXT NOT NULL DEFAULT 'PL',
   address       TEXT,
@@ -349,6 +357,16 @@ CREATE TABLE IF NOT EXISTS venues (
   -- partner notification fires on when it flips.
   avg_check_minor INTEGER,
   avg_check_source TEXT NOT NULL DEFAULT 'category' CHECK (avg_check_source IN ('category', 'computed')),
+  -- The owner's own say over the two figures voucher maths runs on (the
+  -- Vouchers screen). `avg_check_owner_minor` is the average transaction they
+  -- typed; `avg_check_auto` = 1 is their switch to the median of their own
+  -- sales instead, flipped when *they* judge there is enough of it. NULL and 0
+  -- leave the rule above in charge, which is every venue that never touched it.
+  -- `voucher_cap_minor` is "most off one voucher": when set it is every rung's
+  -- cap; NULL leaves each rung's own `max_discount_minor`. See `venues.ts`.
+  avg_check_owner_minor INTEGER,
+  avg_check_auto INTEGER NOT NULL DEFAULT 0,
+  voucher_cap_minor INTEGER,
   accepts_vouchers INTEGER NOT NULL DEFAULT 1,
   -- The old database's LoyaltyConfig, which is per-venue scan economics: what a
   -- plain scan pays, and how long before the same customer may earn again. The
@@ -651,7 +669,13 @@ CREATE TABLE IF NOT EXISTS tag_registry (
   key_version  INTEGER NOT NULL DEFAULT 1,
   registered_at TEXT NOT NULL,
   assigned_at  TEXT,
-  revoked_at   TEXT
+  revoked_at   TEXT,
+  -- Where the tag is stuck ("Counter", "Table 4"), set when it is assigned.
+  label        TEXT,
+  -- The last accepted tap. NULL is "never tapped", which is what lets a tag's
+  -- first tap present counter 0 (`last_counter` also defaults to 0); see
+  -- `gate.verifyNfc`. Added by `addColumn` on an older file.
+  last_tap_at  TEXT
 );
 
 -- §3.2 / §13. Idempotency keys on every earning and redemption endpoint, so a
@@ -1325,6 +1349,31 @@ CREATE TABLE IF NOT EXISTS plan_terms (
   price_minor INTEGER NOT NULL,       -- per month, after the discount
   total_minor INTEGER NOT NULL,       -- price_minor * months, charged up front
   PRIMARY KEY (plan_id, months)
+);
+
+-- The price list per market: what a plan costs in each currency it is sold in,
+-- monthly and on any commitment that market quotes.
+--
+-- A table rather than `plans.price_minor` times an exchange rate, because the
+-- pricing strategy sets each market's figure against that market's own shelf
+-- (`landing/uploads/paylez-pricing-strategy.md` §5, §7): Growth is 149 zł in
+-- Kraków and 149 000 so'm in Tashkent, which is about 29% of the Polish price in
+-- real terms and nothing an exchange rate would produce. A converted figure would
+-- be a price nobody chose. `plans.price_minor` / `plans.currency` stay the home
+-- market's (Poland's) monthly price, which is what every older reader expects.
+--
+-- `price_minor` is per month on that commitment, `total_minor` is what one
+-- invoice for it charges (`price_minor * months`), in the currency's own minor
+-- units — grosze for PLN, whole so'm for UZS, which has none. Rebuilt by the
+-- seed on every boot like `plan_terms`, and for the same reason: nothing points
+-- at a row here, so a price taken off the list must leave no trace.
+CREATE TABLE IF NOT EXISTS plan_prices (
+  plan_id     TEXT NOT NULL REFERENCES plans (id) ON DELETE CASCADE,
+  currency    TEXT NOT NULL,
+  months      INTEGER NOT NULL CHECK (months > 0),
+  price_minor INTEGER NOT NULL CHECK (price_minor >= 0),
+  total_minor INTEGER NOT NULL CHECK (total_minor >= 0),
+  PRIMARY KEY (plan_id, currency, months)
 );
 
 CREATE TABLE IF NOT EXISTS subscriptions (

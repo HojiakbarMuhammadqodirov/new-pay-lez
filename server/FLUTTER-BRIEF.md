@@ -146,7 +146,7 @@ in `API.md` §2.
 devices show the same receipt — points, stamp and next-tier line. Every error in
 the table in `API.md` §2 has a message a person at a till can act on.
 
-### §3b. Redeeming the other way round — the customer's pass
+### 1a. Redeeming the other way round — the customer's pass
 
 For a voucher or earned reward, the customer's phone shows the code and the
 counter scans it. Same gate, same confirm; only the trigger changes direction.
@@ -222,9 +222,37 @@ base  = max(2, round(performance / 100 × 18))       // 2..18
       × 1.5   if this is the day's featured game    // once per day
       × decay(roundToday)   1 · 0.65 · 0.45 · 0.3 · 0.2 · 0.12
       × points_multiplier   1 / 1.25 / 1.75
-      + perfect 10 + first-ever play of that game 25 + personal best 8
+      + perfect 10 × decay (10·7·5·3·2·1) + first-ever play of that game 25 + personal best 8
 score = max(1, round(that))
 ```
+
+**2026-10-08 rebalance.** The perfect-round bonus now decays with the round
+(`bonusPerfect` on `Finish` is the decayed whole number). The weekly game cap is
+**200 / 280 / 450** (Free / Pro / Premium; was 450 / 600 / 1 000). Missions tuned
+to 0 are **not served** — #2 Today's game, #3 Warm up, #11 Night owl, #12 On a
+roll, #16 Point hunter, #19 Ten rounds, #20 Unbroken — and claiming one is a 404.
+Empty the tank, Flawless, Mix it up and New record pay 5; Five-day player 30,
+Full deck 40, Quiz master 30. The comeback bonus (100) needs a 7-day absence
+(a freeze-covered day does not count) and pays at most once per rolling 30 days.
+A guest's onboarding stamp carries over on sign-up, and the welcome gift is paid
+once per person.
+
+**2026-10-09, the arcade games' bounds tightened (no shape changed).** Every
+game after the rulebook's eight is priced by the same formula above; the per-game
+numbers are one table now, `ARCADE_ECONOMY` in `server/config.ts`. What moved is
+how fast a **reported** result may arrive, measured from the session's
+`startedAt` to `/finish` on the server's clock: Bounce Ball (`breakout`) credits
+at most **1.2 bricks a second + 4** (was 4 + 4), Doodle Jump **2 platforms a
+second + 5** (was 3 + 5), Zuma **2.5 chain balls a second + 6** (was 5 + 6). The
+rule behind all three is that no game may credit a perfect round sooner than an
+honest perfect quiz (20 s), so none out-earns another per minute. An honest round
+is never near these; a client that finishes a round early by its own clock and
+reports a big number will now see a smaller `performance`. Snake (replayed),
+Food Ninja (event-timed) and the formula itself are unchanged. Canon Numbers'
+web scoring (§30 of the response-shape list) is a row of the same table now,
+`cannon_numbers`, with its figures unchanged: 4 a net hit, one hit a second + 4. And use
+**`nearest`** on `Finish` for the result card's reward line — "you're 60 from
+10% off at Café X" — the website now does.
 
 - **`points_multiplier`** (1 / 1.25 / 1.75) is a **game-round rule only**. It is
   not applied to a scan, a first visit, a stamp card or a new category — those
@@ -500,6 +528,34 @@ Two rendering rules that matter (`API.md` §9):
   identifying someone. `value` is `null`. **Render "not enough data yet", never
   0.** A partner who reads 0% will believe it.
 
+**The partner plans changed (pricing strategy v2, §5).** The ladder is
+**Starter / Growth / Scale** — Chain is retired, and every venue that was on it
+was moved to Scale on the server's next boot, so a cached `plan.code` of `chain`
+is stale, not a fourth tier. Growth is 149 zł a month (119 a month annual) and
+149 000 so'm (119 000); Scale is 349 zł (279) and 349 000 so'm (279 000). Three
+changes to what you read, all additive except one:
+
+- `GET /v1/plans` gained **`prices`** on every plan: `[{currency, months,
+  priceMinor, totalMinor}]`, the per-market price list. If you draw a partner
+  price, draw the row in the venue's currency — **do not convert the złoty
+  figure into so'm**; the strategy prices Tashkent separately. Consumer plans
+  carry `prices: []`.
+- The partner entitlement map has new keys — `deep_analytics` is unchanged;
+  new are `loyalty_budget` (JSON, currency to minor units), `voucher_tiers`,
+  `team_management`, `assistant_level`, `api_access`, `support`, `pass_limit`,
+  `pass_subscribers`, `pass_analytics`, `multi_venue_passes`, `member_deals`.
+  `live_deals` is 9999 (unlimited) on every tier now, Starter included. 9999
+  anywhere means unlimited: write the word, never the number.
+- **`team_seats` is removed** (it was never enforced). If the companion reads it,
+  stop.
+
+Two new refusals, both on routes the companion does not call but worth
+recognising: publishing or resuming a pass past the plan's `pass_limit` is
+`403 entitlement_required` with `entitlement: "pass_limit"`, and a customer
+subscribing to a venue whose passes already hold `pass_subscribers` people gets
+`cap_reached` with `entitlement: "pass_subscribers"` — the same code as a
+sold-out pass, and it should read the same to the customer.
+
 ---
 
 ## 8. Accounts, privacy, subscriptions
@@ -705,6 +761,30 @@ fixed list of seven sections is wrong on most days.
   grades them and says which were right. All right completes the mission; it is
   then claimed like any other.
 - Titles and descriptions arrive in English for now.
+
+## 11. Venue categories — the Deals filter
+
+One taxonomy, defined in `domain/categories.ts` and nowhere else.
+
+- `GET /v1/categories` (public) → `{ version: 1, categories: [{ key, label,
+  labels: { en, pl, ru, uk, uz }, subcategories: [{ key, label, labels }] }] }`.
+  `label` is in the reader's language. Draw the tree in the order sent.
+- Keys: a category is a word (`restaurant`), a subcategory its category, a dot
+  and a word (`restaurant.kebabs`). A subcategory implies its category.
+- Every venue row — `GET /v1/venues` and the `venue` of `GET /v1/venues/:id` —
+  carries `categories: string[]`, the keys it is filed under. Halal cuts across
+  the rest, so a kebab house can be `["restaurant.kebabs", "halal.kebabs"]`.
+  Filter on these: a category matches itself and its subcategories.
+- `GET /v1/venues?category=<key>` filters by the taxonomy server-side (a
+  non-key word still matches the raw `category` column, as before).
+- A venue that has not picked a list (`venues.tags` NULL) is filed by a
+  read-time derivation from its `category` / `subcategory` pair — which, since
+  the boot of 2026-10-09, holds the tree's own keys rather than the old words
+  (§34 of the response-shape list has the mapping and the write rules).
+- Owners pick on the website's listing form; operators in the console. Both
+  write `tags: string[]` on `POST`/`PATCH /v1/partner/venues[/:id]` and
+  `PATCH /v1/admin/venues/:id` (an unknown key is `400 validation_failed`,
+  `field: "tags"`; `null` or `[]` goes back to the derived list).
 
 ## Definition of done, overall
 
@@ -1505,7 +1585,7 @@ turns that into points. The formula is the points rulebook's §4.1:
 3.       × 1.5           if this is the day's featured game     (once per day)
 4.       × decay(roundToday)   1 · 0.65 · 0.45 · 0.3 · 0.2 · 0.12
 5.       × points_multiplier   1 / 1.25 / 1.75
-6.       + perfect 10  + first-ever play of that game 25  + personal best 8
+6.       + perfect 10 × decay  + first-ever play of that game 25  + personal best 8
 7.  score = max(1, round(step 5 + step 6))
 ```
 
@@ -1927,6 +2007,18 @@ cannot be faked (the server plays the turns again, held to the round's own
 duration); Canon Numbers is held server-side; the other three are capped by what
 the level holds and what the round's duration allows — the flight's rule.
 
+**Update — the website's Canon Numbers is a different game now, and the app's
+still works unchanged.** The web rebuilt it as a maths shooter (a sum at the
+top, numbered targets falling, shoot the one that answers the sum; 90 seconds)
+because the block board had no maths in it. The server keeps the held board
+exactly as the table above describes, so an app that plays `fire` events is
+scored as before. A client that wants the new game sends **no** `fire` events
+and finishes with `report: {hits, wrong}` — correct and wrong targets struck;
+performance is `min(100, max(0, hits − wrong) × 4)`, and `hits` is capped at
+one a second of round time plus 4. The server picks the scoring by whether the
+board was fired on. The rules to port are `src/site/games/cannon/config.ts` and
+`goals.ts`.
+
 ### 31. Directory logos — `image_url` is now always our own URL
 
 `GET /v1/guide/services` rows: `image_url` used to be the raw stored value — a
@@ -1936,6 +2028,230 @@ response). It is now **an absolute URL on this API**
 `logo` is the same thing as a path. Load either as a normal network image; the
 `?v=` changes when the logo does, so it is safe to cache hard. `null` means the
 service has no logo — draw your placeholder. Nothing else about the row changed.
+
+### 32. Subscription passes — new, and in-app subscribing is switched off
+
+A venue can now sell a monthly pass ("a coffee a day", "ten coffees a month",
+"15% off and perks"). Everything is additive; nothing existing changed. The table
+and rules are in `server/API.md` §14 and the shapes in `openapi.json` (`passes`).
+
+What the app can use today:
+
+- **A venue's passes**: `GET /v1/venues/{id}/passes` → `{passes, subscribeAvailable}`.
+  Live passes only. Each carries `subscribable` and `unavailableReason`
+  (`payments_unavailable` | `sold_out` | null) and, signed in, `mine`.
+- **My passes**: `GET /v1/me/passes` → `{subscriptions}`, each with `code`
+  (`PS-XXXXXX`, what the customer shows the counter), `status`
+  (`trialing` | `active` | `cancelled` | `expired`), `periodEnd`, `terms` and an
+  `allowance` (`used`, `remaining`, `resetsAt`).
+- **Cancel**: `POST /v1/me/passes/{subscriptionId}/cancel`. The pass stays usable
+  to `periodEnd`.
+- **The partner companion's counter**: `POST /v1/partner/venues/{id}/passes/lookup
+  {code}` (needs `scan`) and `POST /v1/partner/venues/{id}/passes/redeem
+  {code, quantity?, billMinor?, memberId?}` (needs `redeem`, idempotent — send an
+  `Idempotency-Key`). Refusals: `cap_reached` (used up for this window),
+  `conflict` + `reason: wrong_day | outside_hours`, `expired`, `not_found`.
+
+What the app must **not** do: offer a working "Subscribe" button.
+`POST /v1/passes/{passId}/subscribe` answers `409 not_available` with
+`reason: "payments_unavailable"` — there is no payment rail for venue-direct
+subscriptions yet. Draw the pass with a "coming soon" state when
+`subscribable` is false, and treat `not_available` as a sentence, not a crash.
+It is a new error code in the closed set; a client switching exhaustively on
+`error.code` needs a branch for it.
+
+### 33. Usernames are the public name, and profile photos are uploads (2026-10-08)
+
+**Usernames** (`PATCH /v1/me {username}`, unique ignoring case, a reserved
+list, `409 conflict` naming `username` when taken; **the character rules and
+the step being required changed again in §35** — read that one for both):
+
+- **New: `GET /v1/usernames/{name}`** (signed in, 300/hour per account) →
+  `{username, available, mine, reason, message, suggestions}`. `reason` is
+  `length` | `shape` | `reserved` | `taken` | null; `message` is the sentence the
+  PATCH would refuse with; `mine` is true when it is already this account's own
+  handle (and then `available` is true). `suggestions` is up to three handles
+  that are free right now, built from what was typed (or the account's name).
+  It is advice, not a reservation — the PATCH claims the name, and can still
+  409 if somebody took it in between. Debounce it as the user types.
+- **Other people now see the username.** `GET /v1/leaderboard/*` rows (and
+  `you`) and the referral surfaces (`GET /v1/referrals` → `people[].name`,
+  `referredBy.name`; `GET /v1/referrals/codes/{code}` → `name`;
+  `POST /v1/referrals/redeem` → `referredBy.name`) carry `name` = the username
+  when the account has one, else the short name ("Marta K."). Each also gained
+  `username` (the handle alone, or null). Leaderboard `name` used to be the
+  **full display name** on a public, unauthenticated board; it no longer is.
+  Venue-facing lists (customers, passes, team rosters) still show the display
+  name — a venue sees its own customers under their consent, not in public.
+- A guest's username, if it set one, moves to the account it signs up as
+  (`accounts.merge`), and the erased guest row releases it.
+- The server does **not** refuse `POST /v1/me/onboarded` without a username;
+  the step is the client's to require — see §35, which is where the website
+  now asks for it, and how the app should.
+
+**Profile photos:**
+
+- **New: `POST /v1/me/avatar {image}`** — `image` is base64 or a whole `data:`
+  URL. JPEG, PNG or WebP **by the bytes** (an SVG or HTML labelled
+  `image/jpeg` is refused), at most 2 MB decoded; the body limit on this route is
+  raised to match (every other route keeps 1 MB). 30/hour per account. Answers
+  with the whole account like `PATCH /v1/me`, and pays the profile bonus if the
+  photo was the seventh answer. Refusals: `400 validation_failed`, `field:
+  "avatar"`. Send a small square — the app sends a 512 px JPEG.
+- **New: `DELETE /v1/me/avatar`** — clears it (same as `PATCH {avatar: null}`)
+  and deletes the stored bytes. Answers with the whole account.
+- `avatar` on `GET /v1/me` (and on leaderboard rows, venue customer lists, pass
+  scans — anything that reads `display_avatar`) is now, for an uploaded photo,
+  a **path**: `/v1/media/user/{userId}?v={hash}`. Join it to the API base. The
+  `?v=` changes when the photo does, so the response can be (and is) cached
+  `immutable` for a week. It 404s the moment the account clears or replaces the
+  photo or is erased. Older values are left as they were: an `https://` address
+  or a website-made `data:image/…` URL — draw those as they are.
+- Stored in `media_assets` (`entity = 'user'`), so it works the same on SQLite
+  and Postgres and needs no migration or media directory on the server.
+  Erasure deletes it.
+
+**Fixed: `GET /v1/media/venue/{id}` answered 500 for every id.** `media.ts`
+read a `venues.logo` column that does not exist; it reads `venues.image_url`
+now, so a venue picture (including the `base44.app` ones) is fetched once and
+served from our own origin, and an unknown venue is a 404. The app can switch
+venue photos to `/v1/media/venue/{id}` when it wants to stop depending on
+`base44.app`.
+
+### 34. Venue categories — one eight-category tree, and `category` / `subcategory` are its keys (2026-10-09)
+
+The venue taxonomy is now exactly eight categories, served by the public
+**`GET /v1/categories`** (`{version, categories: [{key, label, labels, subcategories: [{key, label, labels}]}]}`,
+`label` in the reader's language, `labels` all five of en/pl/ru/uk/uz):
+
+| Category key | Subcategory keys |
+| --- | --- |
+| `coffee` | `coffee.coffee_shop` |
+| `restaurant` | `restaurant.turkish`, `.indian`, `.polish`, `.asian`, `.pizza`, `.burgers`, `.kebabs`, `.sushi` |
+| `shopping` | `shopping.turkish_store`, `.indian_store`, `.korean_store`, `.beauty_store`, `.electronics`, `.fashion`, `.home` |
+| `leisure` | `leisure.gaming`, `.culture`, `.sports`, `.wellness` |
+| `beauty` | `beauty.hair_salon`, `.barbershop`, `.nail_salon`, `.massage` |
+| `housing` | `housing.student_house`, `.long_term_rentals`, `.hotels` |
+| `bakery` | `bakery.bakery_cafe` |
+| `halal` | `halal.restaurant`, `.meat_store`, `.burgers`, `.kebabs` |
+
+What changed for the app:
+
+- **`venues.category` holds one of the eight category keys, and `subcategory`
+  one of the subcategory keys under it (or `null`).** Every venue response
+  (`GET /v1/venues`, `/v1/venues/{id}`, the partner listing) carries those
+  keys. Label them from `GET /v1/categories` — do not print the raw column.
+  The `categories` list on venue responses (the Deals filter's keys) is
+  unchanged and is derived from the pair when the venue has not picked its
+  own `tags`.
+- **`POST /v1/partner/venues` validates the pair.** `category` must be a
+  category key; `subcategory` (optional) must be a key under it, or just its
+  last part (`turkish` beside `restaurant`), stored as the full key. An older
+  word the app may still send (`cafe`, `barbershop`, `fitness`, `hotels`, …)
+  is **accepted and stored as its key** (`cafe` → `coffee` +
+  `coffee.coffee_shop`), so the shipped app's venue creation keeps working.
+  A word nothing places (`dental`, `language`, `education`) is now a
+  **`400 validation_failed`, `field: "category"`**, with `allowed` listing the
+  eight; a subcategory not under its category is the same 400 with
+  `field: "subcategory"`. **Action for the app:** build the business
+  sign-up's category picker from `GET /v1/categories` and send the keys.
+- **`PATCH /v1/partner/venues/{id}`**: a `subcategory` sent alone must be under
+  the stored category; a new `category` without a fitting `subcategory` beside
+  it **clears** the old subcategory (it belonged to the old category).
+  `PATCH /v1/admin/venues/{id}` follows the same rule.
+- **Existing rows were moved at boot.** Every venue whose old words place it
+  on the tree (`cafe`, `places` + `halal_food`, `housing` + `hotels`, …) now
+  carries the keys, and so does every hot deal that copied its venue's word.
+  A venue whose word places nowhere (`dental`) keeps it — treat a `category`
+  that is not one of the eight as "uncategorised".
+- `GET /v1/deals?category=` and `GET /v1/venues?category=` take the keys
+  (the latter also matches every subcategory under a category key).
+- The average-check defaults (`category_defaults`, the `source: "category"`
+  figure on the partner budget) are keyed on the eight; no field changed.
+
+### 35. A username is required, dots are allowed, and venue sharing is always on (2026-10-09)
+
+The website now makes the username a **required onboarding step**, right after
+the city, and holds every existing player without one at that single step on
+their next visit. The app should do the same (it already has
+`username_gate_screen.dart` — check it against the rules below).
+
+**The rules changed in two ways** (one function on the server, `checkUsername`;
+`GET /v1/usernames/{name}` applies the same one):
+
+- **A dot is allowed.** 3–20 of `a-z 0-9 . _`: runs of letters and digits joined
+  by a single `.` or `_`. Still refused: a separator at either end
+  (`.kasia`, `kasia_`), two together (`kasia..pl`, `kasia._pl`), anything else
+  (`kasia-pl`, Cyrillic). Update the app's local pre-check and its help text —
+  `kasia.nowak` is now valid and the old regex refuses it.
+- **A short word list.** A few roots are refused anywhere in the handle and a
+  few words as a whole part (so `dickens` is fine, `dick_77` is not). Reported as
+  **`reason: "reserved"`** — no new reason value, so an exhaustive switch needs no
+  new branch. The shape message is now
+  `a username is letters and digits, with single dots or underscores between them`.
+
+**Two new endpoints** (both signed in):
+
+- **`GET /v1/usernames`** → `{suggestions: string[]}` — up to three free handles
+  built from the account's name and the part of its address before the `@`.
+  Draw them as chips on the username step **before anything is typed**. Shares
+  the check's 300/hour per account. (`GET /v1/usernames/{name}` still returns
+  three more near what was typed when it is not available.)
+- **`PUT /v1/me/username {username}`** → the whole account (same body as
+  `GET /v1/me`). The same write as `PATCH /v1/me {username}`, on its own route,
+  **20 per hour per account** (`429 rate_limited` past that). `400
+  validation_failed` naming `username` for an absent, misshapen or reserved
+  name; `409 conflict` naming `username` when somebody holds it (any case). A
+  username can be changed, never removed. Prefer this route for the username
+  step and the profile's username edit; `PATCH /v1/me {username}` keeps working.
+
+The server still does **not** refuse `POST /v1/me/onboarded` without a username,
+so an app that has not shipped the step keeps working; the website's gate is the
+client's job, and the app's should be too: **an individual whose `GET /v1/me`
+has `user.username === null` should be shown the username step, alone, before
+anything else**, once onboarding is done. Business owners and operators are
+never asked.
+
+**Venue sharing is always on.** The profile's "Share my profile with the venues
+I visit" switch is gone from the website and should go from the app:
+
+- `GET /v1/me` → `user.venueSharingDefault` is now **always `true`**. Stop
+  drawing a switch for it.
+- `PATCH /v1/me {venueSharingDefault}` is still **accepted** (a boolean, or a
+  400) and **ignored** — sending `false` changes nothing, so an older app's
+  profile save does not break.
+- The boot set every live account back to sharing on: a stored opt-out is not
+  honoured any more. The per-venue withdrawal (`DELETE /v1/me/sharing/{venueId}`,
+  `sharingWithdrawn` on `GET /v1/me/consents`) is unchanged and still stands —
+  that is a "no" about one venue, not the account-wide default. The website
+  also removed its "Sharing with venues" list from the profile; whether the app
+  keeps its per-venue switch is a product decision, not an API one.
+
+### 36. The partner budget and voucher economics — partner companion (2026-10-09)
+
+Additive — nothing an older app reads has been renamed or removed:
+
+- **CORS now allows `PUT`.** The preflight's method list is read off the route
+  table; it was a typed `GET, POST, PATCH, DELETE`, so no browser could reach
+  `PUT …/budget`, `…/tiers`, `…/links` or `…/hours`. The phone sends no
+  preflight and was never affected.
+- `PUT /v1/partner/venues/{id}/budget` also takes **`{loyaltyMinor}`** on its
+  own: the loyalty pool's base, with the voucher pool left where it is (the
+  server works out the total and the split). `{totalMinor, loyaltyBp?}` is
+  unchanged. Sending neither is `400` with `field: "totalMinor"`.
+- New **`PATCH /v1/partner/venues/{id}/voucher-economics`** — `{averageCheckMinor?,
+  averageCheckAuto?, maxVoucherMinor?}`, each optional, `null` clears a figure.
+  Answers with the budget body.
+- The budget body (`GET …/budget`, `overview.budget`) gains
+  `averageCheck.mode` (`manual` | `automatic`), `averageCheck.ownerMinor`,
+  `averageCheck.salesMinor`, and a top-level `maxVoucherMinor`.
+  **`averageCheck.source` can now be `"owner"`** besides `computed` and
+  `category` — a mapper with an exhaustive enum must accept it.
+- Every rung's `maxDiscountMinor` (public ladder and partner ladder) is now the
+  cap it **applies** — the owner's `maxVoucherMinor` when set. The partner
+  ladder also carries `tierMaxDiscountMinor`, the rung's own stored cap: **send
+  that one back** in `PUT …/tiers`, or saving a rung writes the owner's figure
+  into it permanently.
 
 ### What did **not** change
 
@@ -2029,34 +2345,3 @@ after either of them.
       `409 no_energy`.
 - [ ] Any assertion that a fourth Word Builder hint or a sixth assistant ask
       succeeds. Both are 403s now.
-
-### 32. Subscription passes — new, and in-app subscribing is switched off
-
-A venue can now sell a monthly pass ("a coffee a day", "ten coffees a month",
-"15% off and perks"). Everything is additive; nothing existing changed. The table
-and rules are in `server/API.md` §14 and the shapes in `openapi.json` (`passes`).
-
-What the app can use today:
-
-- **A venue's passes**: `GET /v1/venues/{id}/passes` → `{passes, subscribeAvailable}`.
-  Live passes only. Each carries `subscribable` and `unavailableReason`
-  (`payments_unavailable` | `sold_out` | null) and, signed in, `mine`.
-- **My passes**: `GET /v1/me/passes` → `{subscriptions}`, each with `code`
-  (`PS-XXXXXX`, what the customer shows the counter), `status`
-  (`trialing` | `active` | `cancelled` | `expired`), `periodEnd`, `terms` and an
-  `allowance` (`used`, `remaining`, `resetsAt`).
-- **Cancel**: `POST /v1/me/passes/{subscriptionId}/cancel`. The pass stays usable
-  to `periodEnd`.
-- **The partner companion's counter**: `POST /v1/partner/venues/{id}/passes/lookup
-  {code}` (needs `scan`) and `POST /v1/partner/venues/{id}/passes/redeem
-  {code, quantity?, billMinor?, memberId?}` (needs `redeem`, idempotent — send an
-  `Idempotency-Key`). Refusals: `cap_reached` (used up for this window),
-  `conflict` + `reason: wrong_day | outside_hours`, `expired`, `not_found`.
-
-What the app must **not** do: offer a working "Subscribe" button.
-`POST /v1/passes/{passId}/subscribe` answers `409 not_available` with
-`reason: "payments_unavailable"` — there is no payment rail for venue-direct
-subscriptions yet. Draw the pass with a "coming soon" state when
-`subscribable` is false, and treat `not_available` as a sentence, not a crash.
-It is a new error code in the closed set; a client switching exhaustively on
-`error.code` needs a branch for it.

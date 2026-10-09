@@ -148,18 +148,50 @@ export const termsFor = async (db: Db, planId: string): Promise<PlanTerm[]> =>
     }));
 
 /**
+ * One row of a plan's per-market price list (`plan_prices`).
+ *
+ * `priceMinor` is per month on a `months`-long commitment and `totalMinor` is
+ * what one invoice for it charges, both in `currency`'s own minor units.
+ */
+export interface PlanPrice {
+  currency: string;
+  months: number;
+  priceMinor: number;
+  totalMinor: number;
+}
+
+/** A plan's price list, by currency and then shortest commitment first. */
+export const pricesFor = async (db: Db, planId: string): Promise<PlanPrice[]> =>
+  (await db
+    .all<{ currency: string; months: number; price_minor: number; total_minor: number }>(
+      `SELECT currency, months, price_minor, total_minor FROM plan_prices
+        WHERE plan_id = $p ORDER BY currency, months`,
+      { p: planId },
+    ))
+    .map((row) => ({
+      currency: row.currency,
+      months: row.months,
+      priceMinor: row.price_minor,
+      totalMinor: row.total_minor,
+    }));
+
+/**
  * The catalogue.
  *
  * Terms come with the plan rather than from a second endpoint: a price with no
  * term beside it is only one of the four prices this plan has, and a client
  * that has to ask twice will eventually render the first answer on its own.
+ * The per-market price list (`prices`) rides along for the same reason.
  */
-export const plansFor = async (db: Db, audience: Audience): Promise<Array<Plan & { terms: PlanTerm[] }>> =>
+export const plansFor = async (
+  db: Db,
+  audience: Audience,
+): Promise<Array<Plan & { terms: PlanTerm[]; prices: PlanPrice[] }>> =>
   await Promise.all((await db
     .all<Plan>(`SELECT * FROM plans WHERE audience = $a AND active = 1 ORDER BY rank`, {
       a: audience,
     }))
-    .map(async (plan) => ({ ...plan, terms: await termsFor(db, plan.id) })));
+    .map(async (plan) => ({ ...plan, terms: await termsFor(db, plan.id), prices: await pricesFor(db, plan.id) })));
 
 export const freePlan = async (db: Db, audience: Audience): Promise<Plan> => {
   const plan = await db.get<Plan>(

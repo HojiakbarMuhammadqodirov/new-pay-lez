@@ -88,6 +88,7 @@ import * as settings from '../../domain/settings.ts';
 import * as social from '../../domain/social.ts';
 import * as traffic from '../../domain/traffic.ts';
 import { DomainError } from '../../domain/errors.ts';
+import { CATEGORY_KEYS, checkKindPatch, checkTags, parseStored, tagsOf } from '../../domain/categories.ts';
 import { newId } from '../../domain/ids.ts';
 import { actor, bool, int, list, oneOf, optStr, qInt, qStr, str } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
@@ -290,9 +291,11 @@ export const adminRoutes: Route[] = [
     handler: async (ctx) => {
       const uid = ctx.params.uid.toUpperCase();
       const changed = (await ctx.db.run(
-        `UPDATE tag_registry SET venue_id = $v, status = 'active', assigned_at = $t, revoked_at = NULL
+        `UPDATE tag_registry SET venue_id = $v, status = 'active', assigned_at = $t, revoked_at = NULL,
+                label = $l
           WHERE tag_uid = $u AND status != 'revoked'`,
-        { v: str(ctx.body, 'venueId'), t: ctx.at, u: uid },
+        /* `label` is where the sticker goes ("Counter", "Table 4") — NFC.md. */
+        { v: str(ctx.body, 'venueId'), t: ctx.at, u: uid, l: optStr(ctx.body, 'label') ?? null },
       )).changes;
       if (changed === 0) throw new DomainError('not_found', 'no such assignable tag');
       await audit.record(ctx.db, {
@@ -336,7 +339,8 @@ export const adminRoutes: Route[] = [
     auth: 'admin',
     handler: async (ctx) =>
       await ctx.db.all(
-        `SELECT t.tag_uid, t.status, t.last_counter, t.batch, t.assigned_at, v.name AS venue
+        `SELECT t.tag_uid, t.status, t.last_counter, t.batch, t.assigned_at, t.label, t.last_tap_at,
+                v.name AS venue
            FROM tag_registry t LEFT JOIN venues v ON v.id = t.venue_id
           ORDER BY t.registered_at DESC LIMIT $l`,
         { l: qInt(ctx, 'limit', 200) },
@@ -635,8 +639,9 @@ export const adminRoutes: Route[] = [
     pattern: '/v1/admin/venues',
     auth: 'admin',
     handler: async (ctx) =>
-      await ctx.db.all(
-        `SELECT v.id, v.name, v.city, v.category, v.status, v.verified_at, v.created_at,
+      (
+        await ctx.db.all<Record<string, unknown> & { tags: string | null; category: string; name: string }>(
+        `SELECT v.id, v.name, v.city, v.category, v.subcategory, v.tags, v.status, v.verified_at, v.created_at,
                 u.display_name AS owner,
                 (SELECT COUNT(*) FROM venue_visits vv WHERE vv.venue_id = v.id) AS visits,
                 (SELECT COUNT(*) FROM venue_customers vc WHERE vc.venue_id = v.id) AS customers
@@ -644,7 +649,9 @@ export const adminRoutes: Route[] = [
           WHERE v.deleted_at IS NULL AND ($city IS NULL OR v.city = $city)
           ORDER BY v.created_at DESC LIMIT $l`,
         { city: qStr(ctx, 'city') ?? null, l: qInt(ctx, 'limit', 200) },
-      ),
+        )
+        /* `tags` is the venue's own pick, `categories` what the app files it under. */
+      ).map((row) => ({ ...row, tags: parseStored(row.tags), categories: tagsOf(row) })),
   },
   {
     method: 'GET',
@@ -879,6 +886,14 @@ export const adminRoutes: Route[] = [
     pattern: '/v1/admin/category-defaults/:category',
     auth: 'admin',
     handler: async (ctx) => {
+      /* One row per taxonomy category (`domain/categories.ts`): a default
+         under any other word is one no venue can be looked up by. */
+      if (!CATEGORY_KEYS.includes(ctx.params.category)) {
+        throw new DomainError('validation_failed', `unknown category: ${ctx.params.category}`, {
+          field: 'category',
+          allowed: CATEGORY_KEYS,
+        });
+      }
       await ctx.db.run(
         `INSERT INTO category_defaults (category, avg_check_minor, currency) VALUES ($c, $m, $cur)
            ON CONFLICT (category) DO UPDATE SET avg_check_minor = excluded.avg_check_minor`,
@@ -1298,8 +1313,8 @@ export const adminRoutes: Route[] = [
     pattern: '/v1/admin/venues/:id',
     auth: 'admin',
     handler: async (ctx) => {
-      const live = await ctx.db.get<{ id: string }>(
-        `SELECT id FROM venues WHERE id = $v AND deleted_at IS NULL`,
+      const live = await ctx.db.get<{ id: string; category: string }>(
+        `SELECT id, category FROM venues WHERE id = $v AND deleted_at IS NULL`,
         { v: ctx.params.id },
       );
       if (!live) throw new DomainError('not_found', 'venue not found');
@@ -1335,17 +1350,32 @@ export const adminRoutes: Route[] = [
        * `COALESCE`s an absent key, so a form that sends only what it changed
        * changes only that.
        */
+      /* A category key (`domain/categories.ts`) and its subcategory, checked
+         exactly as the owner's form is — a new category clears a subcategory
+         that belonged to the old one. */
+      const kind = checkKindPatch(
+        {
+          category: optStr(ctx.body, 'category'),
+          subcategory: optStr(ctx.body, 'subcategory'),
+          clearSubcategory: ctx.body.subcategory === null,
+        },
+        live.category,
+      );
       const patch = {
         name: optStr(ctx.body, 'name'),
-        category: optStr(ctx.body, 'category'),
+        category: kind.category,
+        subcategory: kind.subcategory,
+        /* Taxonomy keys; `null` or `[]` goes back to the derived list. */
+        tags: ctx.body.tags === undefined ? undefined : ctx.body.tags === null ? [] : checkTags(ctx.body.tags),
         city: optStr(ctx.body, 'city'),
         address: optStr(ctx.body, 'address'),
         phone: optStr(ctx.body, 'phone'),
         email: optStr(ctx.body, 'email'),
       };
-      const edited = Object.values(patch).some((value) => value !== undefined);
+      const edited = Object.values(patch).some((value) => value !== undefined) || kind.clearSubcategory;
       if (edited) {
         await partners.updateVenue(ctx.db, {
+          clear: kind.clearSubcategory ? ['subcategory'] : [],
           venueId: ctx.params.id,
           actorId: actor(ctx).user.id,
           patch,
@@ -1353,11 +1383,12 @@ export const adminRoutes: Route[] = [
         });
       }
 
-      return await ctx.db.get(
-        `SELECT id, name, city, category, address, phone, email, status, verified_at
+      const row = await ctx.db.get<Record<string, unknown> & { tags: string | null; category: string; name: string }>(
+        `SELECT id, name, city, category, subcategory, tags, address, phone, email, status, verified_at
            FROM venues WHERE id = $v`,
         { v: ctx.params.id },
       );
+      return row ? { ...row, tags: parseStored(row.tags), categories: tagsOf(row) } : row;
     },
   },
   {

@@ -307,15 +307,46 @@ export function startScheduler(db: Db): () => void {
     setInterval(async () => void await runEveryMinute(db), 60_000),
     setInterval(async () => void await runFrequent(db), 5 * 60_000),
     setInterval(async () => void await runHourly(db), 60 * 60_000),
-    /* Twelve hours, which is the "at least twice a day" the rate sync has to
-       meet. `setInterval` rather than a wall-clock schedule because every job
-       here works from what is due *now* rather than from a cursor, so which
-       twelve hours it lands in does not matter and a restart simply resets the
-       phase. */
-    setInterval(async () => void await runTwiceDaily(db), 12 * 60 * 60_000),
+    /* The rate sync asks whether it is due rather than running every twelve
+       hours. It was `setInterval(runTwiceDaily, 12h)`: a restart reset the
+       phase, nothing ran at boot, and a server restarted more often than twice
+       a day never synced. `rates.isDue` reads the last attempt from the
+       database against fixed UTC slots, so it survives restarts, does not
+       drift, and catches up at boot. See `SCHEDULE` in `domain/rates.ts`. */
+    setInterval(() => void runRatesIfDue(db), rates.SCHEDULE.checkEveryMinutes * 60_000),
     setInterval(async () => void await runDaily(db), 24 * 60 * 60_000),
     setInterval(async () => void await runWeekly(db), 7 * 24 * 60 * 60_000),
   ];
+  /* Once at boot, a few seconds in, so a deploy that missed a slot (or a
+     fresh database) has rates without waiting for the next check. */
+  const boot = setTimeout(() => void runRatesIfDue(db), 5_000);
+  boot.unref();
   for (const timer of timers) timer.unref();
-  return () => timers.forEach(clearInterval);
+  return () => {
+    clearTimeout(boot);
+    timers.forEach(clearInterval);
+  };
+}
+
+/**
+ * [runTwiceDaily] when `rates.isDue` says so. Never throws: it runs off a
+ * timer, and an unhandled rejection there would take the process down for the
+ * sake of a converter.
+ */
+export async function runRatesIfDue(db: Db, at: Iso = now()): Promise<JobReport | null> {
+  try {
+    if (!(await rates.isDue(db, at))) return null;
+    const report = await runTwiceDaily(db, at);
+    const result = report.detail.rates as rates.SyncResult;
+    console.log(
+      `rates sync ${result.status}: ${result.written} written` +
+        (result.missing.length ? `, missing ${result.missing.join(' ')}` : '') +
+        (result.rejected.length ? `, held ${result.rejected.map((r) => r.code).join(' ')}` : '') +
+        (result.detail ? ` (${result.detail})` : ''),
+    );
+    return report;
+  } catch (error) {
+    console.error('rates sync crashed:', (error as Error).message);
+    return null;
+  }
 }

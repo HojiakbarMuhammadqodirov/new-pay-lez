@@ -43,7 +43,8 @@
  *    completable.
  * 4. **Not served at all.** A mission nobody can complete *in this build* is
  *    omitted rather than shown locked (`Def.shown`): the venue Pass and
- *    order-ahead (#52–54) do not exist, and the first gift card (#51) is served
+ *    order-ahead (#52–54) do not exist, the learning modules (#66–68) have no
+ *    screen in the app, and the first gift card (#51) is served
  *    only to an account whose plan grants gift cards (§9.4). A locked row that
  *    names a feature or a paid tier the app has no way to reach is a dead end in
  *    front of a store reviewer, and the app ships with no purchase path. Their
@@ -342,13 +343,17 @@ class Facts {
    * Read off `game_events.correct`, which the server marks as each answer
    * arrives. "In a row" is within a round: the last answer of one round and the
    * first of the next are not a streak of anything.
+   *
+   * **Paid rounds only** (`life_spent > 0`), like every other play fact here: a
+   * practice round costs nothing and moves no mission. This one used to join
+   * every session, so a run of practice rounds on an empty tank completed it.
    */
   longestRunToday(): Promise<number> {
     return this.once('longestRunToday', async () => {
       const rows = await this.db.all<{ session_id: string; correct: number }>(
         `SELECT e.session_id, e.correct FROM game_events e
            JOIN game_sessions s ON s.id = e.session_id
-          WHERE s.user_id = $u AND e.correct IS NOT NULL
+          WHERE s.user_id = $u AND s.life_spent > 0 AND e.correct IS NOT NULL
             AND e.created_at >= $f AND e.created_at < $t
           ORDER BY e.session_id, e.seq`,
         { u: this.userId, f: this.dayStart, t: this.dayEnd },
@@ -632,7 +637,21 @@ interface Def {
 const notInThisBuild = async (): Promise<boolean> => false;
 
 /** Whether `def` is served to the person `f` describes. */
-const isShown = async (f: Facts, def: Def): Promise<boolean> => (def.shown ? await def.shown(f) : true);
+const isShown = async (f: Facts, def: Def): Promise<boolean> =>
+  !zeroReward(def) && (def.shown ? await def.shown(f) : true);
+
+/**
+ * A claimable mission tuned to pay **nothing** is not served (2026-10-08
+ * rebalance). A "+0" row asks for effort and pays for none, and it is the
+ * tunable — not a code change — that retires it: set `CONFIG.missions.rewards`
+ * to 0 and the row, its claim and its read all become the same 404 as an
+ * unserved mission (rule 4 above). Auto-paid mirrors carry their own figure
+ * and campaigns theirs, so only a static claimable mission with a configured
+ * 0 is affected.
+ */
+function zeroReward(def: Def): boolean {
+  return def.autoPaid !== true && CONFIG.missions.rewards[def.id] === 0;
+}
 
 /** "At least `target` of something", clamped for display. */
 const count = (n: number, target: number): Eval => ({ progress: n, target, done: n >= target });
@@ -1350,6 +1369,11 @@ const LEARNING: readonly Def[] = learning.MODULES.map((module) => ({
   band: 'learning' as const,
   title: module.title,
   description: `Complete the module (${module.questions.length} questions)`,
+  /* Not in this build (#66–68, removed from the app 2026-10-08): the app has no
+     screen to take a module in, so the row could only sit there unfinishable.
+     The modules, their grading and their routes stay; with the mission hidden,
+     a claim of it, and a read of its module, is a 404 like any unserved one. */
+  shown: notInThisBuild,
   evaluate: async (f: Facts): Promise<Eval> => {
     const progress = (await f.learning()).get(module.id);
     return {

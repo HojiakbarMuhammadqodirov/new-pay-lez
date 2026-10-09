@@ -46,6 +46,7 @@ import {
   chain,
   exportCsv,
   isNoSession,
+  isNoVenue,
   minorToEuro,
   noSession,
   readyOr,
@@ -101,7 +102,7 @@ import { Figure, RemindNotes } from './dashboardScreens';
 import { PD_SEED, SEED_REPEAT } from './dashboardSeed';
 import { useDashboard } from './dashboardShell';
 import { DEMO_MODE } from './demoMode';
-import { useCopy, useLanguage, useMoney } from './i18n/context';
+import { useCopy, useCurrency, useLanguage, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import {
   PD_RANGES,
@@ -134,6 +135,7 @@ function refusalText(cause: unknown, dashboard: DashboardCopy): string {
 function stateNote(state: ApiState<unknown>, dashboard: DashboardCopy): string {
   if (state.status === 'loading') return dashboard.unmeasured.asking;
   if (state.status === 'error') {
+    if (isNoVenue(state.error)) return dashboard.unmeasured.noVenue;
     return isNoSession(state.error) ? dashboard.unmeasured.noSession : dashboard.unmeasured.serverSilent;
   }
   return '';
@@ -667,6 +669,11 @@ function OverviewBody({
   const dashboard = useCopy().dashboard;
   const copy = dashboard.overview;
   const money = useMoney();
+  /* "for every 1 zł you spend": one of the reader's own units, written by the
+     formatter so the sentence names the currency being read rather than a
+     złoty the Polish copy used to spell out. */
+  const reader = useCurrency();
+  const one = money(1 / reader.rate, 'exact');
   const num = useNum();
   const dates = useDates(timezone);
   const monthName = useMonthName();
@@ -1012,6 +1019,7 @@ function OverviewBody({
                       month,
                       revenue: money(totals.attributedMoney, 'soft'),
                       n: roi.toFixed(1),
+                      one,
                     })
                   : fill(copy.roiBad, {
                       cost: money(costTotal, 'exact'),

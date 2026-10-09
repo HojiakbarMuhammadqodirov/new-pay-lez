@@ -29,6 +29,14 @@ import type { Auth, Route } from './http/router.ts';
 
 type Schema = Record<string, unknown>;
 
+/** A venue's kind, as `domain/categories.ts` states it. */
+const KIND_CATEGORY =
+  'One category key of the venue taxonomy (`GET /v1/categories`): `coffee`, `restaurant`, `shopping`, ' +
+  '`leisure`, `beauty`, `housing`, `bakery`, `halal`. A word an older client sends (`cafe`) is placed on the ' +
+  'tree and stored as its key; anything else is a 400 naming `category`.';
+const KIND_SUBCATEGORY =
+  'A subcategory key under the category (`restaurant.turkish`), or its last part (`turkish`); stored as the full key.';
+
 const ref = (name: string): Schema => ({ $ref: `#/components/schemas/${name}` });
 const arrayOf = (schema: Schema): Schema => ({ type: 'array', items: schema });
 
@@ -146,7 +154,9 @@ const SCHEMAS: Record<string, Schema> = {
             nullable: true,
             description:
               'The handle, as typed. Unique across the platform, 3–20 characters of ' +
-              '`a-z 0-9 _` folded case-insensitively. Null until they pick one.',
+              '`a-z 0-9 . _` folded case-insensitively. Null until they pick one — and a ' +
+              'player with null is asked for one before anything else (the website does; ' +
+              'the app should).',
           },
           language: str('The app language they chose. Drives every localised response.'),
           city: {
@@ -217,10 +227,11 @@ const SCHEMAS: Record<string, Schema> = {
               'and false for proved, Google, guest and pre-`PAYLEZ_VERIFY_SINCE` accounts.',
           ),
           venueSharingDefault: bool(
-            '§1.4’s standing answer: may a venue I visit be told who I am. **On by default**, ' +
-              'and this is the account-wide setting rather than the per-venue grant — that is ' +
-              '`GET /v1/me/consents`. A boolean because it is one; the column is an integer ' +
-              'only because SQLite has no boolean.',
+            '§1.4’s standing answer: may a venue I visit be told who I am. **Always `true`** ' +
+              'since 2026-10-08 — sharing with visited venues cannot be switched off, so a ' +
+              'client should draw no switch for it. `PATCH /v1/me` still accepts the key from ' +
+              'older clients and ignores it. The per-venue grant is a separate record, on ' +
+              '`GET /v1/me/consents`.',
           ),
           leaderboardOptIn: bool(),
           referralCode: { type: 'string', nullable: true },
@@ -249,9 +260,15 @@ const SCHEMAS: Record<string, Schema> = {
           '`streak_freezes` 2/5/unlimited, `profile_badge`, ' +
           '`exclusive_deals`, `deal_early_access_hours` 0/0/24, `gift_card_priority`, ' +
           '`monthly_stipend`, `priority_support`, `assistant`.\n\n' +
-          'Partner keys: `live_deals`, `active_campaigns`, `push_quota`, `venues`, ' +
-          '`team_seats`, `vouchers`, `deep_analytics`, `benchmarks`, `assistant`, ' +
-          '`identified_profiles`, `export_csv`.\n\n' +
+          'Partner keys, starter/growth/scale (pricing strategy §5; 9999 means unlimited): ' +
+          '`live_deals` 9999/9999/9999, `deep_analytics` (deal analytics; false is "basic"), ' +
+          '`active_campaigns` 1/9999/9999, `loyalty_budget` (JSON, currency to minor units: ' +
+          'growth {"PLN":390000,"UZS":2000000}, scale {"PLN":1200000,"UZS":6000000}; absent on starter), ' +
+          '`voucher_tiers`, `push_quota` 2/4/10, `identified_profiles`, `export_csv`, `benchmarks`, ' +
+          '`venues` 1/3/9999, `team_management`, `assistant`, `assistant_level` ""/standard/advanced, ' +
+          '`api_access`, `support` email/chat/manager, `passes`, `pass_limit` 0/2/9999, ' +
+          '`pass_subscribers` 0/200/9999, `pass_analytics` ""/basic/full, `multi_venue_passes`, ' +
+          '`member_deals`, `vouchers`. `team_seats` is gone: it was never enforced.\n\n' +
           'Four keys are **gone**, not renamed in place: `points_expiry_months` (points ' +
           'never expire on any plan), `round_decay` (the old *per-game* repeat curve; the ' +
           'decay curve that exists now is per round of the day, is not an entitlement, and ' +
@@ -296,8 +313,8 @@ const SCHEMAS: Record<string, Schema> = {
     properties: {
       id: str(),
       name: str(),
-      category: str(),
-      subcategory: { type: 'string', nullable: true },
+      category: str(KIND_CATEGORY),
+      subcategory: { type: 'string', nullable: true, description: KIND_SUBCATEGORY },
       city: str(),
       address: { type: 'string', nullable: true },
       lat: { type: 'number', nullable: true },
@@ -1400,8 +1417,9 @@ const DOCS: Record<string, Doc> = {
       'none of them is a complete account, it just has not been paid for finishing one. ' +
       '**Nothing here is verified**; there is no code sent to the number.\n\n' +
       'Four fields have rules worth knowing before the form is drawn.\n\n' +
-      '`username` is unique platform-wide (3–20 of `a-z 0-9 _`, single underscores between ' +
-      'runs, some names reserved) and a clash is a `409` naming the field.\n\n' +
+      '`username` is unique platform-wide (3–20 of `a-z 0-9 . _`, single dots or underscores ' +
+      'between runs, some names reserved) and a clash is a `409` naming the field. ' +
+      '`PUT /v1/me/username` is the same write on a route of its own, rate-limited.\n\n' +
       '`birthDate` is accepted twice — the answer and one correction — after which a ' +
       '*different* day is a `409` naming support; resending the day already stored costs ' +
       'nothing, so a client may safely PATCH its whole profile on every save. ' +
@@ -1427,7 +1445,7 @@ const DOCS: Record<string, Doc> = {
     tags: ['me'],
     body: {
       name: str(),
-      username: str('Unique. 3–20 characters of `a-z 0-9 _`.'),
+      username: str('Unique. 3–20 characters of `a-z 0-9 . _`.'),
       language: str(),
       city: str(
         'Suggested by `GET /v1/cities`, not restricted to it. Off that list, send ' +
@@ -1464,6 +1482,53 @@ const DOCS: Record<string, Doc> = {
       'this succeeds, which is how a client knows whether to offer onboarding at all.',
     tags: ['me'],
     response: ref('Onboarded'),
+  },
+  'GET /v1/usernames/{name}': {
+    summary: 'Whether a username can be had, as the user types',
+    description:
+      'Applies exactly the rules the write applies, so "available" never precedes a refusal: ' +
+      '3–20 characters of `a-z 0-9 . _`, runs of letters and digits joined by single dots or ' +
+      'underscores, unique ignoring case, a reserved list, and a short list of words nobody ' +
+      'needs to be called (reported as `reserved`). `mine` is the account asking about its own ' +
+      'handle, which is available to it. When not available, `suggestions` holds up to three ' +
+      'handles free right now. **Advice, not a reservation** — the write claims the name and ' +
+      'can still `409`. Debounce it. 300 per hour per account.',
+    tags: ['me'],
+    response: obj({
+      username: str('What was asked about, trimmed, not folded.'),
+      available: bool(),
+      mine: bool(),
+      reason: { type: 'string', nullable: true, enum: ['length', 'shape', 'reserved', 'taken', null] },
+      message: { type: 'string', nullable: true, description: 'The sentence the write would refuse with.' },
+      suggestions: arrayOf(str()),
+    }),
+  },
+  'GET /v1/usernames': {
+    summary: 'Three free usernames for this account, before anything is typed',
+    description:
+      'Built from the account’s name and the part of its address before the `@`, checked ' +
+      'against the table in one query. What a "create your username" step opens with. ' +
+      'Advice, not a reservation. Shares the check’s 300 per hour per account.',
+    tags: ['me'],
+    response: obj({ suggestions: arrayOf(str()) }),
+  },
+  'PUT /v1/me/username': {
+    summary: 'Set or change the username',
+    description:
+      'The same write as `PATCH /v1/me {username}` — one rule — on a route of its own, bounded ' +
+      'like a write (20 per hour per account), because a handle is what other people know ' +
+      'somebody by. A username cannot be removed, only changed. The website asks for one as a ' +
+      'required onboarding step after the city, and asks an existing player without one once, ' +
+      'before anything else.',
+    tags: ['me'],
+    body: { username: str('3–20 of `a-z 0-9 . _`; unique ignoring case.') },
+    required: ['username'],
+    response: ref('Me'),
+    errors: [
+      [400, '`validation_failed` naming `username` — absent, the wrong length or shape, or reserved.'],
+      [409, '`conflict` naming `username` — somebody else holds it, in any case.'],
+      [429, 'More than 20 changes in an hour.'],
+    ],
   },
   'POST /v1/me/password': {
     summary: 'Change the password',
@@ -1567,10 +1632,20 @@ const DOCS: Record<string, Doc> = {
     tags: ['catalogue'],
     query: [
       { name: 'city', description: 'Filter by city.' },
-      { name: 'category', description: 'Filter by category.' },
+      { name: 'category', description: 'A taxonomy key (`halal`, `restaurant.kebabs`) — matches a category and every subcategory under it.' },
       { name: 'limit', description: 'Default 50.', schema: int() },
     ],
     response: arrayOf(ref('Venue')),
+  },
+  'GET /v1/categories': {
+    summary: 'The venue taxonomy',
+    description:
+      'The eight categories in order, each with its subcategories. Keys are stable and never translated ' +
+      '(`restaurant`, `restaurant.turkish`); `label` is in the reader’s language and `labels` carries all five ' +
+      '(en, pl, ru, uk, uz). A venue’s `category` is one of these category keys and its `subcategory` one of the ' +
+      'subcategory keys under it.',
+    tags: ['catalogue'],
+    response: { type: 'object' },
   },
   'GET /v1/venues/{id}': { summary: 'Venue detail', tags: ['catalogue'], response: ref('VenueDetail') },
   'GET /v1/deals': {
@@ -2666,6 +2741,39 @@ const DOCS: Record<string, Doc> = {
     tags: ['partner'],
     response: ref('Budget'),
   },
+  'PUT /v1/partner/venues/{id}/budget': {
+    summary: 'Set the month’s budget, or the loyalty pool on its own',
+    description:
+      'Send `totalMinor` (and optionally `loyaltyBp`) to cut both pools from one total, **or** `loyaltyMinor` alone ' +
+      'to set the loyalty pool’s base and leave the voucher pool where it is — the server works out the total and ' +
+      'the split (to one basis point of the total, the split’s stored resolution). Either is refused with ' +
+      '`409 conflict` when it would leave a pool below what it has already spent or reserved.',
+    tags: ['partner'],
+    body: {
+      totalMinor: minor('The total both pools are cut from'),
+      loyaltyBp: int('The loyalty share in basis points, 0–10000'),
+      loyaltyMinor: minor('The loyalty pool’s base; the voucher pool is left alone'),
+    },
+    response: ref('Budget'),
+  },
+  'PATCH /v1/partner/venues/{id}/voucher-economics': {
+    summary: 'The owner’s average transaction, its automatic switch, and “most off one voucher”',
+    description:
+      'Each key is optional and `null` clears a figure. `averageCheckMinor` is the average transaction the owner ' +
+      'types; `averageCheckAuto: true` replaces it with the median of the venue’s confirmed sales over the last ' +
+      '30 days (whatever there are — the owner judged it enough), falling back to the typed figure while there ' +
+      'are none. `maxVoucherMinor`, when set, is every rung’s cap; the rungs keep their own caps underneath ' +
+      '(`tierMaxDiscountMinor` on the partner ladder). Every voucher reserve and estimate uses these. Answers ' +
+      'with the same body as `GET …/budget`, where `averageCheck` carries `mode`, `ownerMinor` and `salesMinor` ' +
+      'and the body carries `maxVoucherMinor`.',
+    tags: ['partner'],
+    body: {
+      averageCheckMinor: { type: 'integer', nullable: true, description: 'Minor units of the venue’s currency, ≥ 1, or null' },
+      averageCheckAuto: bool('Use the median of the venue’s own sales'),
+      maxVoucherMinor: { type: 'integer', nullable: true, description: 'Minor units, ≥ 1, or null for each rung’s own cap' },
+    },
+    response: ref('Budget'),
+  },
   'POST /v1/partner/venues/{id}/budget/topup': {
     summary: 'Urgent lever: add money to a pool',
     tags: ['partner'],
@@ -2781,7 +2889,8 @@ const DOCS: Record<string, Doc> = {
     tags: ['partner'],
     body: {
       name: str(),
-      category: str(),
+      category: str(KIND_CATEGORY),
+      subcategory: str(KIND_SUBCATEGORY),
       city: str(),
       timezone: str('An IANA zone, e.g. `Europe/Warsaw`.'),
       currency: str('ISO 4217.'),
@@ -2791,7 +2900,7 @@ const DOCS: Record<string, Doc> = {
     },
     required: ['name', 'category', 'city'],
     response: { type: 'object' },
-    errors: [[400, '`validation_failed` naming the field — `timezone`, `currency`, `links`, `languages`, `description`.']],
+    errors: [[400, '`validation_failed` naming the field — `category` (off the tree, with `allowed`), `subcategory` (not under the category), `timezone`, `currency`, `links`, `languages`, `description`.']],
   },
   'PATCH /v1/partner/venues/{id}': {
     summary: 'Edit the listing',
@@ -2803,7 +2912,8 @@ const DOCS: Record<string, Doc> = {
     tags: ['partner'],
     body: {
       name: str(),
-      subcategory: { type: 'string', nullable: true },
+      category: str(KIND_CATEGORY + ' A new category without a `subcategory` beside it clears the old subcategory.'),
+      subcategory: { type: 'string', nullable: true, description: KIND_SUBCATEGORY + ' Sent alone, it must be under the stored category.' },
       address: { type: 'string', nullable: true },
       priceRange: { type: 'string', nullable: true },
       phone: { type: 'string', nullable: true },
@@ -2814,7 +2924,7 @@ const DOCS: Record<string, Doc> = {
       languages: arrayOf(str()),
     },
     response: { type: 'object' },
-    errors: [[400, '`validation_failed` naming the field — including a `null` sent for `name`, `category` or `city`.']],
+    errors: [[400, '`validation_failed` naming the field — including a `null` sent for `name`, `category` or `city`, a category off the tree and a subcategory not under its category.']],
   },
   'GET /v1/partner/venues/{id}/deals': { summary: 'This venue’s deals, with funnel and translation state', tags: ['partner'], response: arrayOf({ type: 'object' }) },
 
@@ -2853,10 +2963,16 @@ const DOCS: Record<string, Doc> = {
   'GET /v1/plans': {
     summary: 'Available plans and their entitlements',
     description:
-      'Consumer: Free, Pro, Premium. Partner: Starter, Growth, Chain. **No plan is sold ' +
-      'with a free trial** — `trial_days` is 0 on all of them. Each plan carries its ' +
-      '`terms`, the commitment ladder it is sold on (1, 3, 6 and 12 months, at 0/10/18/25 ' +
-      'percent off the monthly price), so a client never has to ask twice for a price.',
+      'Consumer: Free, Pro, Premium. Partner: Starter, Growth, Scale (Chain is retired and its ' +
+      'subscribers were moved to Scale). **No plan is sold with a free trial** — `trial_days` ' +
+      'is 0 on all of them. Each plan carries its `terms`, the commitment ladder it is sold on ' +
+      '(1, 3, 6 and 12 months at 0/10/18/25 percent off; consumer plans only), and its `prices`: ' +
+      'the per-market price list as `{currency, months, priceMinor, totalMinor}` rows — ' +
+      '`priceMinor` per month on that commitment, `totalMinor` one invoice, in the currency’s own ' +
+      'minor units (UZS has none). Partner: Growth PLN 14900 monthly / 11900 a month annual, ' +
+      'UZS 149000 / 119000; Scale PLN 34900 / 27900, UZS 349000 / 279000; Starter has none. ' +
+      'Show a market’s own row when the reader’s currency has one: a so’m price is not a ' +
+      'converted złoty one. `price_minor` / `currency` stay the home-market (PLN) monthly price.',
     tags: ['billing'],
     query: [{ name: 'audience', description: '`consumer` or `partner`.' }],
     response: arrayOf({ type: 'object' }),

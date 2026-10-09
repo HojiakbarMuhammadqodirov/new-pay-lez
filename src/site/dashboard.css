@@ -1876,6 +1876,31 @@ textarea.dx-input {
   background: var(--dx-soft);
 }
 
+/* The Monthly / Annual switch and the saving beside it. */
+.dx-plan-bar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* What one annual invoice charges, under the per-month figure. */
+.dx-plan-billed {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--dx-muted);
+}
+
+/* "Everything in Growth, plus" over a later tier's list. */
+.dx-plan-plus {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dx-ink);
+}
+
 .dx-plan-feats {
   display: flex;
   flex-direction: column;

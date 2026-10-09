@@ -16,13 +16,14 @@
 
 /** Ids, not names. The names are copy and live in the dictionaries. */
 export type BusinessCategory =
-  | 'cafe'
+  | 'coffee'
   | 'restaurant'
-  | 'barbershop'
+  | 'shopping'
+  | 'leisure'
   | 'beauty'
-  | 'dental'
-  | 'language'
-  | 'fitness';
+  | 'housing'
+  | 'bakery'
+  | 'halal';
 
 export type BusinessCountry = 'pl' | 'ua' | 'ge' | 'tr' | 'uz' | 'az';
 
@@ -79,6 +80,14 @@ export interface BusinessProfile {
    * the list, which clears the key.
    */
   unmapped?: { category?: string; subcategory?: string; country?: string };
+  /**
+   * The app's taxonomy keys (`GET /v1/categories`) — `coffee.coffee_shop`,
+   * `halal.kebabs` — which is what the Deals filter files the venue under.
+   * Separate from `category`, which the average-check defaults are keyed on.
+   * Absent until a listing has been read from a server that knows them; a save
+   * then leaves the server's list alone.
+   */
+  tags?: string[];
 }
 
 /**
@@ -91,7 +100,7 @@ export interface BusinessProfile {
 export function blankBusiness(): BusinessProfile {
   return {
     name: '',
-    category: 'cafe',
+    category: 'coffee',
     subcategory: 0,
     description: '',
     price: '',

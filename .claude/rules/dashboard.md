@@ -89,6 +89,19 @@ dark dashboard** (glass sheets over an aurora, mint on near-black).
   map's total is the overview's visits, and the Passes subscribers are the
   Customers roster's people. It is not `npm run demo:seed` (see
   `server/demo/README.md`).
+- **No venue is not no session.** `chain()` reports an empty venue list as
+  `no-partner-venue` (`isNoVenue`); `isNoSession` is true for both, so demo
+  stand-ins and hidden controls behave alike, and only the sentence differs.
+  The frame itself draws `NoVenue` (a "Set up your venue" panel, no rail) when
+  the directory is ready and empty outside `?demo=1`, and `foldServer` drops a
+  cached listing whose `venueId` the server no longer lists, so the router
+  sends that owner to setup.
+- **The budget is a store.** Every budget write in `api/partner.ts` goes
+  through `announcing()`, and `usePartnerBudget` subscribes to the version, so
+  the rail's card (outside the re-mounted page) re-reads after a save; the
+  shell's `refresh()` bumps it too. The rail's plan name is the venue's
+  `GET …/subscription` (`usePartnerSubscription`, read once by the frame and
+  handed to `PlanSheet`), never `useAuth().plan`, which is the consumer plan.
 - **`partnerMetrics.ts` derives figures; it does not transcribe them.** A pool
   has exactly three states (spent, set aside, available), and `npm run verify`
   checks they sum to the budget. A figure shown twice is computed once.

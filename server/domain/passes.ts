@@ -578,7 +578,18 @@ export async function updatePass(
 async function assertPublishable(db: Db, row: PassRow): Promise<Venue> {
   const venue = await getVenue(db, row.venue_id);
   requireVerified(venue);
-  entitlements.requireEntitlement(await entitlements.entitlementsFor(db, { venueId: venue.id }), 'passes');
+  const ent = await entitlements.entitlementsFor(db, { venueId: venue.id });
+  entitlements.requireEntitlement(ent, 'passes');
+  /* How many passes the plan sells at once — Growth's "2 passes" (pricing
+     strategy §5). Live and paused both count: a paused pass still has members
+     and comes back with one press, so it is on the shelf. This row is not, and
+     a missing key is no ceiling rather than none allowed. */
+  const onShelf = (await db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM subscription_passes
+      WHERE venue_id = $v AND status IN ('live', 'paused') AND id <> $i`,
+    { v: venue.id, i: row.id },
+  ))?.n ?? 0;
+  entitlements.requireCapacity(ent, 'pass_limit', Number(onShelf), Number.POSITIVE_INFINITY);
   const missing = missingOf(row);
   if (missing.length) {
     throw new DomainError('validation_failed', 'the pass is not ready to publish', { missing });
@@ -819,6 +830,19 @@ export async function subscribe(
     if (holding) throw new DomainError('conflict', 'you already hold this pass');
     if (pass.subscriber_cap !== null && (await holdersOf(db, pass.id, at)) >= pass.subscriber_cap) {
       throw new DomainError('cap_reached', 'this pass is sold out', { subscriberCap: pass.subscriber_cap });
+    }
+    /* The venue's plan bounds its members across every pass it sells —
+       Growth's "200 subscribers" (pricing strategy §5). Answered as the same
+       `cap_reached` a sold-out pass gives, because to the person at the counter
+       it is the same fact. Renewals never come through here, so nobody already
+       holding a pass loses it when a venue moves down a tier. */
+    const venueLimit = entitlements.entNumber(
+      await entitlements.entitlementsFor(db, { venueId: pass.venue_id }, at),
+      'pass_subscribers',
+      Number.POSITIVE_INFINITY,
+    );
+    if ((await holdingCount(db, { venueId: pass.venue_id }, at)) >= venueLimit) {
+      throw new DomainError('cap_reached', 'this venue’s passes are full', { entitlement: 'pass_subscribers', limit: venueLimit });
     }
 
     const heldBefore = await db.get(`SELECT 1 FROM pass_subscriptions WHERE pass_id = $p AND user_id = $u`, {

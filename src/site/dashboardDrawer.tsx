@@ -27,7 +27,6 @@ import {
 } from './api/partner';
 import { ApiError } from './api/client';
 import { DEAL_KINDS } from './content';
-import { FX } from './i18n/fx';
 import { DEMO_AUDIENCES, DEMO_CAMPAIGNS, DEMO_DEALS, DEMO_QUOTA, DEMO_VENUE } from './dashboardDemo';
 import {
   clockOf,
@@ -41,7 +40,7 @@ import {
   resetDate,
   weekdaysOf,
 } from './dashboardDealsModel';
-import { useNum } from './dashboardFormat';
+import { fromZloty, rescaled, useNum, useRescaleOnCurrency } from './dashboardFormat';
 import { Button, Drawer, Eyebrow, Field, Input, Segmented, Textarea, Toggle, UnitField } from './dashboardKit';
 import { useDashboard } from './dashboardShell';
 import type { DrawerKind, DrawerPrefill } from './dashboardShell';
@@ -250,7 +249,11 @@ function DealBody({
   const [notifyTime, setNotifyTime] = useState('09:00');
   const [stop, setStop] = useState(prefill?.capClaims ? 1 : 0);
   const [stopClaims, setStopClaims] = useState(prefill?.capClaims ?? 200);
-  const [stopMoney, setStopMoney] = useState(400);
+  /* 400 zł in the reader's currency, not a bare 400 that takes whatever
+     symbol is chosen — and kept the same money if the currency is switched
+     with the drawer open. */
+  const [stopMoney, setStopMoney] = useState(() => fromZloty(400, currency.rate));
+  useRescaleOnCurrency((ratio) => setStopMoney((value) => Math.max(1, Math.round(value * ratio))));
 
   /*
    * How big the chosen audience is, from `GET …/audiences`. Both figures are
@@ -767,13 +770,20 @@ function CampaignBody({
   const [visits, setVisits] = useState(prefill?.visitsRequired ?? 4);
   const [rewardKind, setRewardKind] = useState<'item' | 'amount'>('item');
   const [rewardItem, setRewardItem] = useState(prefill?.rewardLabel ?? '');
-  const [rewardAmount, setRewardAmount] = useState(10);
+  const [rewardAmount, setRewardAmount] = useState(() => fromZloty(10, currency.rate));
   /* Held in the reader's currency, like every other typed amount here. */
-  const [cost, setCost] = useState(() => Math.max(1, Math.round((5 / FX.PLN.rate) * currency.rate)));
+  const [cost, setCost] = useState(() => fromZloty(5, currency.rate));
   const [project, setProject] = useState(40);
   const [priority, setPriority] = useState(1);
   const [expiry, setExpiry] = useState(prefill?.rewardValidDays ?? 60);
-  const [minSpend, setMinSpend] = useState(15);
+  const [minSpend, setMinSpend] = useState(() => fromZloty(15, currency.rate));
+  /* The three amounts are the reader's currency; a switch with the drawer open
+     keeps them the same money rather than the same digits. */
+  useRescaleOnCurrency((ratio) => {
+    setRewardAmount((value) => rescaled(value, ratio));
+    setCost((value) => rescaled(value, ratio));
+    setMinSpend((value) => rescaled(value, ratio));
+  });
   /*
    * Two fields an edit sends only when they were touched. The server's priority
    * runs 0–100 and this control offers 1–5, so a campaign at priority 20 opens

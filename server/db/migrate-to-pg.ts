@@ -116,7 +116,7 @@ async function main(): Promise<void> {
   /* `schema_meta` is written by `migrate()` before this ever runs, and the
      plans and word bank are product configuration `seedPlatform` writes. Those
      three are expected and are replaced rather than treated as occupancy. */
-  const expected = new Set(['schema_meta', 'plans', 'plan_terms', 'plan_entitlements',
+  const expected = new Set(['schema_meta', 'plans', 'plan_terms', 'plan_prices', 'plan_entitlements',
                             'word_bank', 'category_defaults']);
   const unexpected = occupied.filter((o) => !expected.has(o.split(' ')[0]));
   if (unexpected.length) {

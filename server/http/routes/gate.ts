@@ -23,7 +23,7 @@ import * as fraud from '../../domain/fraud.ts';
 import * as gate from '../../domain/gate.ts';
 import * as team from '../../domain/team.ts';
 import { DomainError } from '../../domain/errors.ts';
-import { actor, int, oneOf, optStr, str } from '../input.ts';
+import { actor, int, oneOf, optStr, qStr, str } from '../input.ts';
 import type { Route } from '../router.ts';
 
 /** The NFC master key, from the environment. See `crypto/nfc.ts`. */
@@ -72,11 +72,14 @@ export const gateRoutes: Route[] = [
       ),
   },
   {
-    /* §3.3. The two parameters the tag's own URL carries. */
+    /* §3.3. The two parameters the tag's own URL carries (`NFC.md`). The
+       hourly bound is per account; the per-tag daily one is in the domain,
+       because it has to read the tag before it can count against it. */
     method: 'POST',
     pattern: '/v1/gate/tap',
     auth: 'user',
     idempotent: true,
+    limit: { perHour: gate.NFC_TAPS_PER_HOUR, by: 'account' },
     handler: async (ctx) =>
       await gate.openTransaction(
         ctx.db,
@@ -95,6 +98,34 @@ export const gateRoutes: Route[] = [
           at: ctx.at,
         },
       ),
+  },
+  {
+    /* `NFC.md`: the website's `/t` page, for a phone without the app. Names the
+       tag's venue after checking its MAC, and does not burn the counter — the
+       app opened from that page still needs the tap. Public, so bounded per
+       connection. */
+    method: 'GET',
+    pattern: '/v1/gate/tags/resolve',
+    auth: 'none',
+    limit: { perHour: 120, by: 'connection' },
+    handler: async (ctx) =>
+      await gate.resolveTag(ctx.db, {
+        piccHex: qStr(ctx, 'picc_data') ?? qStr(ctx, 'picc') ?? '',
+        cmacHex: qStr(ctx, 'cmac') ?? '',
+        masterKey: masterKey(),
+      }),
+  },
+  {
+    /* `NFC.md`: the venue's own tags, for the owner's or a manager's screen.
+       Read only — importing, assigning and revoking are the operator's
+       (`/v1/admin/tags`), because a tag is a piece of hardware we shipped. */
+    method: 'GET',
+    pattern: '/v1/venues/:id/nfc-tags',
+    auth: 'user',
+    handler: async (ctx) => {
+      await team.requireManage(ctx.db, ctx.params.id, actor(ctx).user.id);
+      return await gate.tagsAt(ctx.db, ctx.params.id);
+    },
   },
   {
     /* The counter tool's fallback: a customer whose phone is flat still earns,

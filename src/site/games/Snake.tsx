@@ -18,6 +18,7 @@ import {
   type Dir,
   type SnakeState,
 } from './arcade';
+import { PerfectBar, RoundClock } from './hud';
 
 /**
  * Snake — eat, grow, and do not hit the wall or yourself.
@@ -206,8 +207,10 @@ export function Snake({
   return (
     <div className="round ar-round">
       <div className="round-top">
-        <span className="round-count">{fill(copy.snake.eaten, { n: String(eaten) })}</span>
+        <span className="round-count">{fill(copy.snake.eaten, { n: `${eaten} / ${SNAKE_PERFECT}` })}</span>
+        <RoundClock running={phase === 'playing'} />
       </div>
+      <PerfectBar performance={eaten * SNAKE_PER_FOOD} label={copy.perfectProgress} />
 
       <div className="ar-field ar-square">
         <canvas

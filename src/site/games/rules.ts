@@ -42,7 +42,8 @@ import {
   QUIZ_SPEED_BONUS,
 } from '../auth/player';
 import type { LocalCountry, WordList } from './banks';
-import { CANNON_PERFECT, CANNON_TURNS, DOODLE_PERFECT, SNAKE_PERFECT } from './arcade';
+import { DOODLE_PERFECT, SNAKE_PERFECT } from './arcade';
+import { CANNON_PERFECT, ROUND_SECONDS as CANNON_SECONDS } from './cannon/config';
 import type { Dictionary } from '../i18n/en';
 import { fill } from '../i18n/currency';
 
@@ -85,7 +86,7 @@ export function rulesFor(entry: Game, games: Dictionary['games']): [rule: string
      the same constants the screens and the server's scale use. */
   if (entry.kind === 'snake') return [games.snake.rule, fill(games.snake.reward, { n: String(SNAKE_PERFECT) })];
   if (entry.kind === 'cannon') {
-    return [fill(games.cannon.rule, { turns: String(CANNON_TURNS) }), fill(games.cannon.reward, { n: String(CANNON_PERFECT) })];
+    return [fill(games.cannon.rule, { seconds: String(CANNON_SECONDS) }), fill(games.cannon.reward, { n: String(CANNON_PERFECT) })];
   }
   if (entry.kind === 'breakout') return [games.breakout.rule, games.breakout.reward];
   if (entry.kind === 'doodle') return [games.doodle.rule, fill(games.doodle.reward, { n: String(DOODLE_PERFECT) })];

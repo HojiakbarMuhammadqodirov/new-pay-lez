@@ -42,6 +42,7 @@ import { ApiError } from './api/client';
 import {
   extendDeal,
   isNoSession,
+  isNoVenue,
   minorToEuro,
   publishDeal,
   readyOr,
@@ -222,7 +223,7 @@ export function Deals() {
         <EmptyState
           icon="deals"
           title={dashboard.empty.deals.title}
-          body={isNoSession(state.error) ? dashboard.unmeasured.noSession : dashboard.unmeasured.serverSilent}
+          body={isNoVenue(state.error) ? dashboard.unmeasured.noVenue : isNoSession(state.error) ? dashboard.unmeasured.noSession : dashboard.unmeasured.serverSilent}
         />
       );
     }

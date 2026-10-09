@@ -66,6 +66,22 @@ export function shortName(displayName: string | null | undefined): string {
   return initial ? `${parts[0]} ${initial}.` : parts[0];
 }
 
+/**
+ * How one person is named to **other people**: the username when they have
+ * picked one, "Marta K." when they have not.
+ *
+ * The username is what the account chose to be called in public — unique,
+ * ASCII, chosen for exactly this — so it wins wherever it exists. The short
+ * name is the fallback for the accounts that predate usernames (and for a
+ * partner owner, who is never asked), and it is still never the full name and
+ * never the address. Empty only when there is neither; each caller supplies
+ * its own word ("Player", "a friend") for that.
+ */
+export function publicName(username: string | null | undefined, displayName: string | null | undefined): string {
+  const handle = String(username ?? '').trim();
+  return handle || shortName(displayName);
+}
+
 export async function codeFor(db: Db, userId: string): Promise<string> {
   const existing = await db.get<{ referral_code: string | null }>(
     `SELECT referral_code FROM users WHERE id = $u`,
@@ -110,6 +126,7 @@ export type BindRefusal =
 interface Referrer {
   id: string;
   display_name: string;
+  username: string | null;
   referral_code: string;
 }
 
@@ -120,7 +137,7 @@ async function referrerFor(db: Db, code: string): Promise<Referrer | undefined> 
      merged away, a banned account's invites are not something to pay for, and
      an erased one is nobody. All three read as "no such code". */
   return await db.get<Referrer>(
-    `SELECT id, display_name, referral_code FROM users
+    `SELECT id, display_name, username, referral_code FROM users
       WHERE UPPER(referral_code) = $c AND status = 'active' AND deleted_at IS NULL`,
     { c: code },
   );
@@ -203,7 +220,7 @@ export async function bind(
      VALUES ($i, $r, $u, $c, 'pending', $t)`,
     { i: newId('ref'), r: referrer.id, u: input.newUserId, c: referrer.referral_code, t: at },
   );
-  return { ok: true, referrerName: shortName(referrer.display_name) };
+  return { ok: true, referrerName: publicName(referrer.username, referrer.display_name) };
 }
 
 /** The refusal as the HTTP layer says it: a status, a sentence, and `reason`. */
@@ -261,7 +278,10 @@ export async function lookup(db: Db, raw: string) {
   const code = referrer.referral_code;
   return {
     code,
-    name: shortName(referrer.display_name),
+    name: publicName(referrer.username, referrer.display_name),
+    /* The handle on its own, or null — so a client can write "@kasia" rather
+       than guess whether `name` is a handle or a short name. */
+    username: referrer.username,
     link: inviteLink(code),
     inviteeReward: CONFIG.earn.inviteeJoin,
     referrerReward: CONFIG.earn.referrerFirstVisit,
@@ -304,12 +324,13 @@ export async function referralProgress(db: Db, userId: string) {
      is not listed. */
   const people = await db.all<{
     display_name: string | null;
+    username: string | null;
     status: string;
     created_at: string;
     completed_at: string | null;
     paid: number | null;
   }>(
-    `SELECT u.display_name, r.status, r.created_at, r.completed_at,
+    `SELECT u.display_name, u.username, r.status, r.created_at, r.completed_at,
             (SELECT SUM(l.delta) FROM points_ledger l
               WHERE l.user_id = $u AND l.source_kind = 'referral' AND l.source_ref = r.id
                 AND l.status = 'committed'
@@ -323,8 +344,8 @@ export async function referralProgress(db: Db, userId: string) {
     { u: userId },
   );
 
-  const own = await db.get<{ status: string; referrer_name: string | null }>(
-    `SELECT r.status, u.display_name AS referrer_name
+  const own = await db.get<{ status: string; referrer_name: string | null; referrer_username: string | null }>(
+    `SELECT r.status, u.display_name AS referrer_name, u.username AS referrer_username
        FROM referrals r LEFT JOIN users u ON u.id = r.referrer_id
       WHERE r.referred_id = $u`,
     { u: userId },
@@ -346,7 +367,8 @@ export async function referralProgress(db: Db, userId: string) {
     friendMilestoneAt: CONFIG.earn.friendMilestoneAt,
     friendMilestone: CONFIG.earn.friendMilestone,
     people: people.map((p) => ({
-      name: shortName(p.display_name),
+      name: publicName(p.username, p.display_name),
+      username: p.username,
       status: p.status === 'completed' ? ('completed' as const) : ('joined' as const),
       joinedAt: p.created_at,
       completedAt: p.completed_at,
@@ -357,7 +379,8 @@ export async function referralProgress(db: Db, userId: string) {
        code?" exactly when `POST /v1/referrals/redeem` would take one. */
     referredBy: own
       ? {
-          name: shortName(own.referrer_name),
+          name: publicName(own.referrer_username, own.referrer_name),
+          username: own.referrer_username,
           status: own.status === 'completed' ? ('completed' as const) : ('joined' as const),
         }
       : null,
@@ -431,8 +454,15 @@ export async function listReferrals(db: Db, input: { status?: string; limit?: nu
 export interface BoardRow {
   rank: number;
   userId: string;
-  /** Display name only — never the real one, never the email (§8.2). */
+  /**
+   * How the row is named to everybody reading the board: the username when the
+   * account has one, otherwise "Marta K." (`publicName`) — never the full name,
+   * never the email (§8.2). This was the raw display name, which put somebody's
+   * whole name on a public, unauthenticated board.
+   */
   name: string;
+  /** The handle alone, or null for an account that has not picked one. */
+  username: string | null;
   avatar: string | null;
   points: number;
   isYou: boolean;
@@ -480,15 +510,22 @@ export interface Board {
  * about in the root `CLAUDE.md`.
  */
 async function weeklyPoints(db: Db, since: Iso, where: { city?: string; country?: string } = {}) {
-  return await db.all<{ user_id: string; points: number; name: string; avatar: string | null; opted: number }>(
-    `SELECT l.user_id, SUM(l.delta) AS points, u.display_name AS name,
+  return await db.all<{
+    user_id: string;
+    points: number;
+    name: string;
+    username: string | null;
+    avatar: string | null;
+    opted: number;
+  }>(
+    `SELECT l.user_id, SUM(l.delta) AS points, u.display_name AS name, u.username,
             u.display_avatar AS avatar, u.leaderboard_opt_in AS opted
        FROM points_ledger l JOIN users u ON u.id = l.user_id
       WHERE l.reason = 'game_win' AND l.status = 'committed' AND l.created_at >= $s
         AND u.status = 'active' AND u.deleted_at IS NULL
         AND ($city IS NULL OR u.city = $city)
         AND ($country IS NULL OR u.country_code = $country)
-      GROUP BY l.user_id, u.display_name, u.display_avatar, u.leaderboard_opt_in
+      GROUP BY l.user_id, u.display_name, u.username, u.display_avatar, u.leaderboard_opt_in
       ORDER BY points DESC`,
     { s: since, city: where.city ?? null, country: where.country ?? null },
   );
@@ -556,7 +593,8 @@ export async function board(
   const ranked = rows.map((row, index) => ({
     rank: index + 1,
     userId: row.user_id,
-    name: row.name || 'Player',
+    name: publicName(row.username, row.name) || 'Player',
+    username: row.username,
     avatar: row.avatar,
     points: row.points,
     isYou: row.user_id === input.userId,
@@ -593,7 +631,8 @@ export async function friendsBoard(db: Db, input: { userId: string; at?: Iso }):
   const ranked = rows.map((row, index) => ({
     rank: index + 1,
     userId: row.user_id,
-    name: row.name || 'Player',
+    name: publicName(row.username, row.name) || 'Player',
+    username: row.username,
     avatar: row.avatar,
     points: row.points,
     isYou: row.user_id === input.userId,

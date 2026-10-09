@@ -20,43 +20,64 @@
  * that claimed a restriction the server does not apply would be the first
  * thing on the screen that was not true.
  *
- * ## The four states, and why the last two are separate
+ * ## No points, on purpose
  *
- * - **Nothing to do** — verified, or an account with no address at all (a
- *   provisional one). The component renders nothing.
+ * Confirming pays nothing, and the panel does not hint that it might: the
+ * server's `CONFIG.earn` says why in so many words ("a reward for clicking a
+ * link in an email was paying for a formality"). Confirmation is idempotent
+ * there too — `confirm` stamps `email_verified_at` with a guarded `UPDATE … IS
+ * NULL`, so a second confirm, a retry or a race answers `granted: false` and
+ * changes nothing. If a bonus is ever added it belongs in that guarded branch,
+ * and this panel would then read the figure from the answer, not restate it.
+ *
+ * ## The states, and why each is separate
+ *
+ * - **Nothing to do** — verified when the screen opened, or an account with no
+ *   address at all (a provisional one). The component renders nothing: a
+ *   permanent "confirmed ✓" card is a panel that exists to say nothing happened.
+ * - **Just confirmed, here** — a ticked panel that stays until the player leaves
+ *   the screen. Without it the press that worked was indistinguishable from the
+ *   panel vanishing because something broke.
  * - **Asking** — a code field, and a resend.
- * - **Refused by the cooldown**, which is `sent: false` and **not an error**:
- *   asking again too soon is what an honest person does when a message is
- *   slow, so it says so rather than reading as a fault.
- * - **A wrong code**, which is an error and says how many tries are left —
- *   because the server kills the code after five and somebody on their fourth
- *   ought to know.
+ * - **Cooling down** — the server refuses a resend inside its cooldown with
+ *   `sent: false` and `nextSendAt`, which is **not an error**: asking again too
+ *   soon is what an honest person does when a message is slow. The resend
+ *   button counts down to that moment instead of staying pressable and being
+ *   refused again.
+ * - **A refusal** — each of the server's reasons in the player's language
+ *   (wrong with tries left, too many tries, expired, nothing sent, the hourly
+ *   ceiling). The server's own `message` is English and was printed verbatim to
+ *   readers of four other languages.
  *
  * The code never comes back in a response, local server included: a local
  * server logs it to its console, which is where a development sign-up reads it.
  */
-import { useCallback, useState } from 'react';
-import { confirmCode, sendCode, type CodeSent } from './api/consumer';
+import { useCallback, useId, useState } from 'react';
+import { confirmCode, sendCode } from './api/consumer';
 import { ApiError } from './api/client';
 import { useAuth } from './auth/context';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
+/* The refusal sentences and the cooldown are shared with `EmailCodeStep`,
+   the step right after sign-up — see `emailCode.ts`. */
+import { CODE_LENGTH, explainCodeError as explain, useResendCooldown } from './emailCode';
 
-/** Six digits, and nothing else is a code. */
-const CODE_LENGTH = 6;
-
-type State =
-  | { kind: 'idle' }
-  | { kind: 'working' }
-  | { kind: 'sent'; sent: CodeSent }
-  | { kind: 'error'; message: string };
+type Note = { kind: 'status' | 'error'; text: string } | null;
 
 export function VerifyEmail({ where }: { where: 'play' | 'wallet' }) {
   const copy = useCopy().auth.verify;
   const { account, emailVerifiedAt, spendNeedsVerifiedEmail, refreshAccount } = useAuth();
-  const [state, setState] = useState<State>({ kind: 'idle' });
+  const fieldId = useId();
+  const [busy, setBusy] = useState<'send' | 'confirm' | null>(null);
+  const [note, setNote] = useState<Note>(null);
   const [code, setCode] = useState('');
+  /* Confirmed on this screen, this visit — see "The states" above. `gated`
+     is whether spending was held for it *before* the confirm: the session's
+     own flag turns false the moment the refresh lands, and the line saying
+     what just opened up must not vanish with it. */
+  const [done, setDone] = useState<{ gated: boolean } | null>(null);
+  const { left: cooling, hold } = useResendCooldown();
 
   /*
    * Who this is for.
@@ -71,54 +92,63 @@ export function VerifyEmail({ where }: { where: 'play' | 'wallet' }) {
   const needed = account !== null && Boolean(account.email) && emailVerifiedAt === null;
 
   const send = useCallback(() => {
-    setState({ kind: 'working' });
+    setBusy('send');
+    setNote(null);
     sendCode()
-      .then((sent) => setState({ kind: 'sent', sent }))
-      .catch((error: unknown) =>
-        setState({
-          kind: 'error',
-          message:
-            error instanceof ApiError && error.status === 0
-              ? copy.offline
-              : error instanceof ApiError
-                ? error.message
-                : copy.failed,
-        }),
-      );
-  }, [copy.offline, copy.failed]);
+      .then((sent) => {
+        hold(sent.nextSendAt);
+        setNote({ kind: 'status', text: sent.sent ? copy.onItsWay : copy.tooSoon });
+      })
+      .catch((error: unknown) => {
+        /* "Already confirmed" — on the phone, or in another tab. Not a failure:
+           ask the session again and let the done state say so. */
+        if (error instanceof ApiError && error.code === 'conflict') {
+          setDone({ gated: spendNeedsVerifiedEmail });
+          void refreshAccount();
+          return;
+        }
+        setNote({ kind: 'error', text: explain(error, copy) });
+      })
+      .finally(() => setBusy(null));
+  }, [copy, hold, refreshAccount, spendNeedsVerifiedEmail]);
 
   const submit = useCallback(() => {
-    setState({ kind: 'working' });
+    setBusy('confirm');
+    setNote(null);
     confirmCode(code)
       .then(() => {
         /* The session's own copy of the stamp is what every other screen reads,
-           so the panel does not hide itself — it asks for the account again and
-           disappears because the answer changed. One source of truth, and the
-           Play screen's own gauge and the wallet's buttons come right with it. */
+           so it is asked for again rather than assumed — the wallet's buttons
+           and the Play screen's gate come right from the same answer. `done`
+           is what keeps this panel on screen to say so. */
         setCode('');
+        setDone({ gated: spendNeedsVerifiedEmail });
         void refreshAccount();
       })
-      .catch((error: unknown) => {
-        const detail = error instanceof ApiError ? error.detail : undefined;
-        const left = typeof detail?.attemptsLeft === 'number' ? detail.attemptsLeft : null;
-        setState({
-          kind: 'error',
-          message:
-            error instanceof ApiError && error.status === 0
-              ? copy.offline
-              : left !== null
-                ? fill(copy.wrongWithTries, { n: String(left) })
-                : error instanceof ApiError
-                  ? error.message
-                  : copy.failed,
-        });
-      });
-  }, [code, copy, refreshAccount]);
+      .catch((error: unknown) => setNote({ kind: 'error', text: explain(error, copy) }))
+      .finally(() => setBusy(null));
+  }, [code, copy, refreshAccount, spendNeedsVerifiedEmail]);
+
+  if (done) {
+    return (
+      <section className="vfy" data-where={where} data-state="done" role="status">
+        <span className="vfy-kicker">
+          <i>
+            <Icon name="check" size={13} strokeWidth={2.4} />
+          </i>
+          {copy.doneKicker}
+        </span>
+        <p className="vfy-line">
+          {account?.email ? <b>{account.email}</b> : null} {copy.doneLine}
+          {done.gated ? ` ${copy.doneSpend}` : ''}
+        </p>
+      </section>
+    );
+  }
 
   if (!needed) return null;
 
-  const working = state.kind === 'working';
-  const ready = code.replace(/\D/g, '').length === CODE_LENGTH;
+  const ready = code.length === CODE_LENGTH;
 
   return (
     <section className="vfy" data-where={where}>
@@ -139,56 +169,71 @@ export function VerifyEmail({ where }: { where: 'play' | 'wallet' }) {
         className="vfy-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (ready && !working) submit();
+          if (ready && busy === null) submit();
         }}
       >
-        <label className="field vfy-code">
-          <span className="field-label">{copy.codeLabel}</span>
-          <input
-            /* `inputMode` rather than `type="number"`, which would strip a
-               leading zero and put spinners on a credential. `autoComplete`
-               is the one-time-code hint every mobile keyboard and password
-               manager reads, which is what makes the code fillable from the
-               notification shade rather than from the inbox. */
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={CODE_LENGTH + 2}
-            placeholder={copy.codePlaceholder}
-            value={code}
-            onChange={(event) => {
-              setCode(event.target.value);
-              if (state.kind === 'error') setState({ kind: 'idle' });
-            }}
-            aria-invalid={state.kind === 'error' ? true : undefined}
-          />
-        </label>
-
-        <div className="vfy-acts">
-          <button type="submit" className="btn btn-solid" disabled={!ready || working}>
-            {working ? copy.working : copy.confirm}
-          </button>
-          <button type="button" className="link-btn" onClick={send} disabled={working}>
-            {copy.resend}
-          </button>
+        {/*
+          The label sits over the whole row rather than inside the field's own
+          box. Inside, it was held to the well's six-digit width and wrapped to
+          two lines in every language but English, pushing the well down and the
+          buttons out of line with it.
+        */}
+        <div className="field vfy-field">
+          <label className="field-label" htmlFor={fieldId}>
+            {copy.codeLabel}
+          </label>
+          <div className="vfy-row">
+            <input
+              id={fieldId}
+              className="vfy-input"
+              /* `inputMode` rather than `type="number"`, which would strip a
+                 leading zero and put spinners on a credential. `autoComplete`
+                 is the one-time-code hint every mobile keyboard and password
+                 manager reads, which is what makes the code fillable from the
+                 notification shade rather than from the inbox. Digits only, so
+                 a code pasted as "123 456" out of a mail client still counts as
+                 six — which is why there is no `maxLength`: it truncates a paste
+                 before `onChange` sees it, and the slice below is the cap. */
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder={copy.codePlaceholder}
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value.replace(/\D/g, '').slice(0, CODE_LENGTH));
+                if (note?.kind === 'error') setNote(null);
+              }}
+              aria-invalid={note?.kind === 'error' ? true : undefined}
+              aria-describedby={`${fieldId}-note`}
+            />
+            <button type="submit" className="btn btn-solid vfy-confirm" disabled={!ready || busy !== null}>
+              {busy === 'confirm' ? copy.working : copy.confirm}
+            </button>
+          </div>
         </div>
+
+        <p className="vfy-resend">
+          <span>{copy.notArrived}</span>
+          {/* Disabled through the cooldown with the time left as its label, so
+              the press cannot be made only to be told "too soon" again. */}
+          <button
+            type="button"
+            className="link-btn"
+            onClick={send}
+            disabled={busy !== null || cooling !== null}
+          >
+            {cooling !== null ? fill(copy.resendIn, { t: cooling }) : copy.resend}
+          </button>
+        </p>
       </form>
 
-      {/* A cooldown refusal is not an error — see the header. */}
-      {state.kind === 'sent' && !state.sent.sent && (
-        <p className="field-help" role="status">
-          {copy.tooSoon}
-        </p>
-      )}
-      {state.kind === 'sent' && state.sent.sent && (
-        <p className="field-help" role="status">
-          {copy.onItsWay}
-        </p>
-      )}
-      {state.kind === 'error' && (
-        <p className="field-error" role="alert">
-          {state.message}
-        </p>
-      )}
+      <p
+        id={`${fieldId}-note`}
+        className={note?.kind === 'error' ? 'field-error' : 'field-help'}
+        role={note?.kind === 'error' ? 'alert' : 'status'}
+        hidden={note === null}
+      >
+        {note?.text}
+      </p>
     </section>
   );
 }

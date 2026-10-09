@@ -47,7 +47,12 @@ export type Route =
   | 'admin'
   /* `/i/<code>` — a friend's invite to the app. The one route with a parameter
      in its path; see `inviteCodeFromPath`. */
-  | 'invite';
+  | 'invite'
+  /* `/t?picc_data=…&cmac=…` — a venue's NFC sticker, tapped by a phone that
+     has no app (see `tag.tsx`). */
+  | 'tag'
+  /* `/delete-account` — the deletion URL Google Play requires. */
+  | 'delete-account';
 
 const ROUTES: Record<string, Route> = {
   '#/l-earn': 'learn',
@@ -65,6 +70,8 @@ const ROUTES: Record<string, Route> = {
   '#/dashboard': 'dashboard',
   '#/admin': 'admin',
   '#/invite': 'invite',
+  '#/t': 'tag',
+  '#/delete-account': 'delete-account',
 };
 
 export const PATHS: Record<Route, string> = {
@@ -84,6 +91,8 @@ export const PATHS: Record<Route, string> = {
   dashboard: '#/dashboard',
   admin: '#/admin',
   invite: '#/invite',
+  tag: '#/t',
+  'delete-account': '#/delete-account',
 };
 
 /*
@@ -150,6 +159,10 @@ export const URL_PATHS: Record<Route, string> = {
      recognises and `normalizeAddress` leaves alone — rewriting it to `/i`
      would throw away the only thing the page is about. */
   invite: '/i',
+  /* The address printed on every sticker (`server/NFC.md`); the two
+     parameters ride in `search`, which `normalizeAddress` keeps. */
+  tag: '/t',
+  'delete-account': '/delete-account',
 };
 
 /** `URL_PATHS` read the other way. Two routes sharing a path would lose one of
@@ -271,6 +284,8 @@ export const ANCHOR_ROUTES: Array<[prefix: string, route: Route]> = [
   ['profile-', 'profile'],
   ['welcome-', 'onboarding'],
   ['invite-', 'invite'],
+  ['tag-', 'tag'],
+  ['delete-', 'delete-account'],
 ];
 
 /** The route a hash names, section anchors included. Exported for `verify`. */
@@ -417,7 +432,26 @@ export function navigate(route: Route, replace = false): void {
 /** The three routes that only exist for somebody in particular. */
 const PRIVATE: Route[] = ['business-setup', 'dashboard', 'admin', 'profile', 'onboarding'];
 
+/**
+ * Whether this account is a player who has not chosen a username yet.
+ *
+ * Exported because three places must agree on it: the gate below,
+ * `awaitsServer` in `auth/mirror.ts` (a stale mirror without a handle waits for
+ * the server before routing on that), and the welcome screen, which decides
+ * from it whether to show the whole flow or the one step.
+ */
+export function needsUsername(account: Account | null): boolean {
+  return account !== null && account.type === 'individual' && !account.profile.username.trim();
+}
+
 export function resolveRoute(route: Route, account: Account | null): Route {
+  /*
+   * Two pages that answer to whoever arrives, in any state. A sticker is tapped
+   * by strangers, and the deletion page is the one Google Play links to: a
+   * person half-way through onboarding who wants their account gone must not
+   * be held at the welcome flow first. Both are fixed points.
+   */
+  if (route === 'tag' || route === 'delete-account') return route;
   if (account === null) {
     /*
      * Analytics is a venue owner's tool, not a public page.
@@ -518,6 +552,21 @@ export function resolveRoute(route: Route, account: Account | null): Route {
    * against exactly that and caught it.
    */
   if (account.type === 'individual' && account.onboardedAt === null) return 'onboarding';
+
+  /*
+   * …and a player without a username is asked for one, once, before anything
+   * else.
+   *
+   * The username is what other people see — the board, an invite — and an
+   * account that predates the onboarding step that asks for it (or finished
+   * that step on a client that did not) would otherwise be shown as blank, or
+   * as "Marta K.", for ever. So it is held at the same screen the step lives
+   * on, which renders only that step for an account already onboarded, and is
+   * released the moment the save lands — the next render resolves past this
+   * clause. One question, not a second welcome round. Players only: an owner
+   * and an operator are never on a board.
+   */
+  if (needsUsername(account)) return 'onboarding';
 
   /* Nobody else has a console. Checked before the sign-in clause below so the
      answer does not depend on which of the two the address bar happens to say. */

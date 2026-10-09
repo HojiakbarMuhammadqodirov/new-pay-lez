@@ -8,8 +8,11 @@
  *   reports, so a tick here and a tick there must do the same thing to the
  *   same board, or the server would score a different game from the one the
  *   player saw. `npm run verify` and `verify:api` pin the same cases on both.
- * - **Canon Numbers' shot** only *predicts* here; the board the server answers
- *   with replaces it, new row and all.
+ * - **Canon Numbers is not here any more.** The web game is a real-time maths
+ *   shooter whose rules are `cannon/config.ts` and `cannon/goals.ts`, and it is
+ *   reported like the physics games. The server still holds the old turn-based
+ *   board for the Flutter app (`cannonFire` in `server/domain/arcade.ts`); the
+ *   browser never plays it, so its copy was removed rather than left to rot.
  * - **The three physics games** draw the level the server dealt (bricks,
  *   platforms, chain) and report what happened; their physics live in their
  *   components.
@@ -100,86 +103,6 @@ export function snakeStep(state: SnakeState, list: number[], turn?: Dir): SnakeS
 /** Rulebook-scale performance for a snake round: 4 a food, so 25 is perfect. */
 export const SNAKE_PER_FOOD = 4;
 export const SNAKE_PERFECT = Math.ceil(100 / SNAKE_PER_FOOD);
-
-/* ═══════════════════════════════════════════════════════════ Canon Numbers ══ */
-
-export const CANNON_COLS = 6;
-export const CANNON_ROWS = 8;
-export const CANNON_TURNS = 30;
-export const CANNON_PER_BLOCK = 4;
-export const CANNON_PERFECT = Math.ceil(100 / CANNON_PER_BLOCK);
-
-export const cannonShots = (turn: number): number => 3 + Math.floor(turn / 5);
-
-export function cannonRow(rng: Rng, n: number): number[] {
-  return Array.from({ length: CANNON_COLS }, (_, c) => {
-    const r = rng(n * CANNON_COLS + c);
-    const present = r % 100 < 45 + Math.min(30, n * 2);
-    return present ? 1 + ((r >>> 8) % (2 + Math.floor(n / 3))) : 0;
-  });
-}
-
-export interface CannonState {
-  board: number[];
-  turn: number;
-  spawns: number;
-  destroyed: number;
-  over: boolean;
-}
-
-function spawnTop(board: number[], row: number[]): number[] {
-  const next = board.slice();
-  for (let c = 0; c < CANNON_COLS; c += 1) next[c] = row[c];
-  return next;
-}
-
-export function cannonStart(rng: Rng): CannonState {
-  let board = new Array<number>(CANNON_COLS * CANNON_ROWS).fill(0);
-  board = spawnTop(board, cannonRow(rng, 0));
-  board = [...new Array<number>(CANNON_COLS).fill(0), ...board.slice(0, -CANNON_COLS)];
-  board = spawnTop(board, cannonRow(rng, 1));
-  return { board, turn: 0, spawns: 2, destroyed: 0, over: false };
-}
-
-/** The cells each ball of a shot up `col` would hit, without moving anything. */
-export function cannonHits(board: number[], col: number, turn: number): number[] {
-  const scratch = board.slice();
-  const hits: number[] = [];
-  for (let shot = 0; shot < cannonShots(turn); shot += 1) {
-    let target = -1;
-    for (let r = CANNON_ROWS - 1; r >= 0; r -= 1) {
-      if (scratch[r * CANNON_COLS + col] > 0) {
-        target = r * CANNON_COLS + col;
-        break;
-      }
-    }
-    if (target < 0) break;
-    scratch[target] -= 1;
-    hits.push(target);
-  }
-  return hits;
-}
-
-/** One shot — exactly the server's `cannonFire`. */
-export function cannonFire(state: CannonState, col: number, rng: Rng): { state: CannonState; hits: number[] } {
-  const board = state.board.slice();
-  const hits = cannonHits(board, col, state.turn);
-  let destroyed = state.destroyed;
-  for (const target of hits) {
-    board[target] -= 1;
-    if (board[target] === 0) destroyed += 1;
-  }
-  const moved = [...new Array<number>(CANNON_COLS).fill(0), ...board.slice(0, -CANNON_COLS)];
-  const bottom = moved.slice(-CANNON_COLS).some((value) => value > 0);
-  const lost = board.slice(-CANNON_COLS).some((value) => value > 0);
-  const turn = state.turn + 1;
-  const over = bottom || lost || turn >= CANNON_TURNS;
-  const next = over ? moved : spawnTop(moved, cannonRow(rng, state.spawns));
-  return {
-    state: { board: next, turn, spawns: over ? state.spawns : state.spawns + 1, destroyed, over },
-    hits,
-  };
-}
 
 /* ═══════════════════════════════════════════════════════════════ Breakout ══ */
 

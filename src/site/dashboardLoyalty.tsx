@@ -36,12 +36,13 @@ import { ApiError } from './api/client';
 import {
   euroToMinor,
   isNoSession,
+  isNoVenue,
   minorToEuro,
   readyOr,
   rebalanceBudget,
   sendReminder,
-  setBudget,
   setCampaignStatus,
+  setLoyaltyBudget,
   usePartnerBudget,
   usePartnerCampaigns,
   usePartnerRemind,
@@ -192,7 +193,7 @@ export function Campaigns() {
         <EmptyState
           icon="campaigns"
           title={dashboard.empty.campaigns.title}
-          body={isNoSession(state.error) ? dashboard.unmeasured.noSession : dashboard.unmeasured.serverSilent}
+          body={isNoVenue(state.error) ? dashboard.unmeasured.noVenue : isNoSession(state.error) ? dashboard.unmeasured.noSession : dashboard.unmeasured.serverSilent}
         />
       );
     }
@@ -504,8 +505,12 @@ function RemindPress({
 /**
  * What the month has for loyalty, and what is left of it.
  *
- * The field sets the **loyalty share** and leaves the total alone: `setBudget`
- * takes a total and a split in basis points, so moving one side moves the other.
+ * The field sets the **loyalty pool** and leaves the voucher pool where it is
+ * (`setLoyaltyBudget`); the server works out the total and the split. It used
+ * to send the current total with a new split, and on a venue whose total was
+ * still 0 every split of nothing is nothing — the owner typed a budget, was
+ * told it was saved, and still had none. It also took the money out of the
+ * voucher pool, which is the Vouchers screen's figure, not this one's.
  * It is typed in the reader's currency and converted where the request needs
  * the venue's minor units; the Save appears only once the field differs from
  * what the server holds, because a field that writes on every keystroke would
@@ -591,11 +596,7 @@ function BudgetCard({
                   variant="primary"
                   disabled={busy !== null}
                   onClick={() =>
-                    void run('budget', acts.budgetSaved, () => {
-                      const minor = toMinor(typed);
-                      const bp = budget.total > 0 ? Math.round((minor / budget.total) * 10_000) : 0;
-                      return setBudget(budget.venueId, budget.total, Math.max(0, Math.min(10_000, bp)));
-                    })
+                    void run('budget', acts.budgetSaved, () => setLoyaltyBudget(budget.venueId, toMinor(typed)))
                   }
                 >
                   {acts.save}
@@ -605,7 +606,8 @@ function BudgetCard({
             <span className="dx-camp-alloc-note">
               {fill(acts.budgetShareNote, {
                 loyalty: money(typed / reader.rate, 'exact'),
-                voucher: money(Math.max(0, total - typed / reader.rate), 'exact'),
+                /* The voucher pool does not move when this field does. */
+                voucher: money(toEuro(budget.voucher.base), 'exact'),
               })}
             </span>
           </div>

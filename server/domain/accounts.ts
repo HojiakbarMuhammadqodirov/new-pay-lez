@@ -212,6 +212,31 @@ export async function merge(db: Db, provisionalId: string, realId: string, at: I
       r: realId,
       p: provisionalId,
     });
+    /* A handle the guest picked travels with the points, unless the account
+       it lands on already has one. Released from the guest row first either
+       way: `idx_users_username_norm` is unique, and an erased guest holding a
+       name nobody can ever sign into would be a name lost to everybody. */
+    if (guest.username_norm) {
+      await db.run(`UPDATE users SET username = NULL, username_norm = NULL WHERE id = $p`, { p: provisionalId });
+      await db.run(
+        `UPDATE users SET username = $un, username_norm = $unn
+          WHERE id = $r AND username_norm IS NULL`,
+        { un: guest.username, unn: guest.username_norm, r: realId },
+      );
+    }
+    /* **Onboarding travels too** (2026-10-08). The guest's welcome gift moves
+       with the ledger above, so the account it lands on has been paid for
+       onboarding — and without the stamp it would be sent through onboarding
+       again and paid a second time. The earlier stamp wins; an account already
+       onboarded keeps its own. `completeOnboarding` also refuses to pay where
+       the ledger already holds an onboarding entry, so the two guards cover
+       each other. */
+    if (guest.onboarded_at) {
+      await db.run(
+        `UPDATE users SET onboarded_at = $o WHERE id = $r AND onboarded_at IS NULL`,
+        { o: guest.onboarded_at, r: realId },
+      );
+    }
     await db.run(
       `UPDATE users SET status = 'erased', display_name = 'Merged guest', deleted_at = $t WHERE id = $p`,
       { t: at, p: provisionalId },
@@ -583,7 +608,20 @@ export async function completeOnboarding(db: Db, userId: string, at: Iso = now()
         { t: at, u: userId },
       )).changes === 1;
 
-    if (claimed) {
+    /* **Once per person, not once per row** (2026-10-08). The stamp above is
+       once per `users` row, but a guest's onboarding entry moves onto the real
+       account at sign-up (`merge`), so the ledger is the record of whether this
+       person was ever paid for it. `source_kind` alone, not the ref: the ref is
+       the guest's id on a merged entry. */
+    const paidBefore =
+      claimed &&
+      (await db.get<{ id: string }>(
+        `SELECT id FROM points_ledger WHERE user_id = $u AND source_kind = 'onboarding' LIMIT 1`,
+        { u: userId },
+      )) !== undefined;
+    const pays = claimed && !paidBefore;
+
+    if (pays) {
       await ledger.earn(db, {
         userId,
         points: CONFIG.earn.onboarding,
@@ -596,11 +634,11 @@ export async function completeOnboarding(db: Db, userId: string, at: Iso = now()
 
     const user = await getUser(db, userId);
     return {
-      granted: claimed,
+      granted: pays,
       /* Read back rather than assumed: on the losing side of a race the stamp is
          the winner's timestamp, and that is the one the client should hold. */
       onboardedAt: user.onboarded_at ?? at,
-      points: claimed ? CONFIG.earn.onboarding : 0,
+      points: pays ? CONFIG.earn.onboarding : 0,
       balance: await ledger.balance(db, userId),
     };
   });
@@ -1134,8 +1172,8 @@ function checkOccupation(value: string): Occupation {
 /* ─────────────────────────────────────────────────────────── the handle ── */
 
 /**
- * Three to twenty, `a-z 0-9 _`, starting and ending on a letter or a digit and
- * never two underscores together.
+ * Three to twenty, `a-z 0-9 . _`, starting and ending on a letter or a digit and
+ * never two separators together.
  *
  * The ceiling is a display constraint — a handle has to fit beside an avatar on
  * a leaderboard row — and the floor is that two characters is not a name, it is
@@ -1153,7 +1191,58 @@ function checkOccupation(value: string): Occupation {
  */
 const USERNAME_MIN = 3;
 const USERNAME_MAX = 20;
-const USERNAME_SHAPE = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
+/*
+ * Runs of `a-z 0-9` joined by **one** `.` or `_`. The dot arrived with the
+ * website's username step (2026-10-08) because it is how people already write
+ * a handle elsewhere — `kasia.nowak` — and refusing it sent them to an
+ * underscore they had never chosen. The separator rule is unchanged and is
+ * the part that matters: no leading, trailing or doubled separator, so
+ * `kasia.`, `.kasia`, `kasia..pl` and `kasia._pl` are all refused, which keeps
+ * `kasia_pl` and `kasia.pl` the only two ways to put a break in that name.
+ */
+const USERNAME_SHAPE = /^[a-z0-9]+(?:[._][a-z0-9]+)*$/;
+
+/**
+ * A light word list, and deliberately light.
+ *
+ * A handle is printed on a public board beside other people's, so the few
+ * words nobody needs to be called are refused — in the five languages this
+ * product speaks, transliterated, because the shape is ASCII. It is **not** a
+ * moderation system: it cannot be, at twenty characters of ASCII, and pretending
+ * otherwise produces the Scunthorpe problem. So two lists with two rules:
+ *
+ * - `BLOCKED_ROOTS` are refused **anywhere** in the folded handle (separators
+ *   and digits stripped). Only roots long and specific enough not to sit inside
+ *   an ordinary word — no `ass`, no `cunt` (Scunthorpe), no `hui` (Huizen).
+ * - `BLOCKED_WORDS` are refused only as a **whole part** of the handle — one of
+ *   the runs between separators, digits stripped — so `dick` is refused and
+ *   `dickens` is not.
+ *
+ * The refusal is reported as `reserved`, the reason that already exists, and
+ * not as a new one: a client switching exhaustively on `reason` must not need a
+ * release to keep working, and "not available" is the true sentence either way.
+ * The website keeps the same two lists in `src/site/auth/users.ts`.
+ */
+const BLOCKED_ROOTS = [
+  'fuck', 'nigger', 'nigga', 'faggot', 'kurwa', 'jebac', 'jebany', 'pierdol',
+  'blyat', 'blyad', 'pizdec', 'pizda', 'yebat', 'pidor', 'pidar', 'huesos', 'zalupa',
+  'hitler', 'rapist',
+];
+const BLOCKED_WORDS = new Set([
+  'shit', 'cunt', 'bitch', 'whore', 'slut', 'dick', 'cock', 'pussy', 'asshole',
+  'bastard', 'porn', 'sex', 'nazi', 'chuj', 'huj', 'cipa', 'dupa', 'suka', 'khuy', 'hui',
+  'huy', 'mudak', 'gandon', 'shlyukha', 'jalap', 'qotoq', 'sik', 'kys',
+]);
+
+/** Whether a folded handle carries a word from the two lists above. */
+function isBlockedUsername(norm: string): boolean {
+  const squashed = norm.replace(/[^a-z]/g, '');
+  if (BLOCKED_ROOTS.some((root) => squashed.includes(root))) return true;
+  return norm
+    .split(/[._]/)
+    .map((part) => part.replace(/[0-9]/g, ''))
+    .some((part) => BLOCKED_WORDS.has(part));
+}
 
 /**
  * Handles the product needs to keep, or that would be a lie to hand out.
@@ -1208,12 +1297,155 @@ function checkUsername(value: string): { username: string; norm: string } {
   if (norm.length < USERNAME_MIN || norm.length > USERNAME_MAX) {
     invalid(`a username is ${USERNAME_MIN} to ${USERNAME_MAX} characters`);
   }
-  if (!USERNAME_SHAPE.test(norm)) {
-    invalid('a username is letters, digits and single underscores between them');
-  }
-  if (RESERVED_USERNAMES.has(norm)) invalid('that username is reserved');
+  if (!USERNAME_SHAPE.test(norm)) invalid(USERNAME_MESSAGES.shape);
+  if (RESERVED_USERNAMES.has(norm) || isBlockedUsername(norm)) invalid(USERNAME_MESSAGES.reserved);
 
   return { username, norm };
+}
+
+/** Why a handle cannot be had, in a word a client can switch on. */
+export type UsernameProblem = 'length' | 'shape' | 'reserved' | 'taken';
+
+export interface UsernameCheck {
+  /** What was asked about, trimmed — not folded, so it echoes what was typed. */
+  username: string;
+  available: boolean;
+  /** True when it is already this account's own handle (also `available`). */
+  mine: boolean;
+  reason: UsernameProblem | null;
+  /** The same sentence `PATCH /v1/me` would refuse with, or null. */
+  message: string | null;
+  /** Up to three free handles near the one asked for. Empty when it is free. */
+  suggestions: string[];
+}
+
+const USERNAME_MESSAGES: Record<UsernameProblem, string> = {
+  length: `a username is ${USERNAME_MIN} to ${USERNAME_MAX} characters`,
+  /* "characters" is deliberately absent from this one and present in
+     `length`: the website tells the two apart by that word (`profileRefusal`
+     in `src/site/auth/mirror.ts`). */
+  shape: 'a username is letters and digits, with single dots or underscores between them',
+  reserved: 'that username is reserved',
+  taken: 'that username is taken',
+};
+
+/** The shape rules alone, in `checkUsername`'s order, without throwing. */
+function usernameShapeProblem(norm: string): Exclude<UsernameProblem, 'taken'> | null {
+  if (norm.length < USERNAME_MIN || norm.length > USERNAME_MAX) return 'length';
+  if (!USERNAME_SHAPE.test(norm)) return 'shape';
+  if (RESERVED_USERNAMES.has(norm) || isBlockedUsername(norm)) return 'reserved';
+  return null;
+}
+
+/**
+ * The nearest shaped stem to whatever was typed: lower-cased, a lone `.` kept,
+ * any other run of what is not `a-z 0-9` turned into one underscore, trimmed of
+ * separators and cut to leave room for a suffix. `Kasia.PL` → `kasia.pl`;
+ * `Kasia Nowak!` → `kasia_nowak`; `!!` → '' (the caller then falls back to the
+ * account's own name, then to `player`).
+ */
+function usernameStem(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, (run) => (run === '.' ? '.' : '_'))
+    .replace(/^[._]+|[._]+$/g, '')
+    .slice(0, USERNAME_MAX - 4)
+    .replace(/[._]+$/g, '');
+}
+
+/**
+ * Up to `count` handles near the stems given that nobody holds right now.
+ *
+ * Candidates are each stem bare, then with a short number. The numbers are
+ * drawn rather than counted up, because `kasia1`…`kasia9` are exactly the ones
+ * everybody before was offered. One query checks them all, and nothing
+ * misshapen, reserved or blocked is ever offered — the rules are
+ * `usernameShapeProblem`'s, the same ones the write applies.
+ */
+async function freeHandlesNear(db: Db, stems: string[], avoid: string, count: number): Promise<string[]> {
+  const usable = [...new Set(stems.filter((stem) => usernameShapeProblem(stem) === null))];
+  if (usable.length === 0) usable.push('player');
+  const candidates = new Set<string>(usable);
+  for (let i = 0; candidates.size < 12 + usable.length && i < 200; i += 1) {
+    const stem = usable[i % usable.length];
+    const digits = 10 + Math.floor(Math.random() * (candidates.size < 6 ? 90 : 9990));
+    candidates.add(`${stem}${digits}`.slice(0, USERNAME_MAX));
+  }
+  const shaped = [...candidates].filter((c) => usernameShapeProblem(c) === null && c !== avoid);
+  const params: Record<string, string> = {};
+  shaped.forEach((c, i) => (params[`c${i}`] = c));
+  const held = shaped.length
+    ? await db.all<{ n: string }>(
+        `SELECT username_norm AS n FROM users WHERE username_norm IN (${shaped.map((_, i) => `$c${i}`).join(', ')})`,
+        params,
+      )
+    : [];
+  const heldSet = new Set(held.map((row) => row.n));
+  return shaped.filter((c) => !heldSet.has(c)).slice(0, count);
+}
+
+/**
+ * `GET /v1/usernames` — three free handles for this account, before anything
+ * has been typed. What the website's username step opens with.
+ *
+ * Built from the account's own name and the part of its address before the
+ * `@`, because those are the two things a person has already told us they are
+ * called. The address part is only ever offered back **to the account that
+ * owns it**, as a suggestion it has to choose; nobody else sees it unless they
+ * do. Advice, not a reservation, exactly like the check below.
+ */
+export async function usernameSuggestions(db: Db, userId: string): Promise<{ suggestions: string[] }> {
+  const me = await getUser(db, userId);
+  const local = String(me.email ?? '').split('@')[0] ?? '';
+  return {
+    suggestions: await freeHandlesNear(
+      db,
+      [usernameStem(me.display_name), usernameStem(local)],
+      me.username_norm ?? '',
+      3,
+    ),
+  };
+}
+
+/**
+ * `GET /v1/usernames/:name` — whether a handle can be had, and if not, three
+ * that can.
+ *
+ * **Advice, not a reservation.** Two people can both be told `kasia` is free;
+ * the write (`PATCH /v1/me`) is what claims it, and `idx_users_username_norm`
+ * is what makes the second claim a 409. The point of this endpoint is the
+ * as-you-type answer that saves most people from ever seeing that 409.
+ *
+ * The rules are `checkUsername`'s — one copy, so this cannot say "available"
+ * about a name the write would refuse. Suggestions are built from what was
+ * typed (or the account's name when that leaves nothing), checked against the
+ * table in one query, and never include a reserved or misshapen handle.
+ */
+export async function usernameAvailability(db: Db, userId: string, value: string): Promise<UsernameCheck> {
+  const username = value.trim();
+  const norm = foldUsername(username);
+  const me = await getUser(db, userId);
+
+  let reason: UsernameProblem | null = usernameShapeProblem(norm);
+  const mine = reason === null && me.username_norm === norm;
+  if (reason === null && !mine) {
+    const taken = await db.get(`SELECT 1 FROM users WHERE username_norm = $n AND id <> $u`, { n: norm, u: userId });
+    if (taken) reason = 'taken';
+  }
+  if (reason === null) {
+    return { username, available: true, mine, reason: null, message: null, suggestions: [] };
+  }
+
+  /* Near what was typed — or the account's name when that leaves nothing, or
+     when what was typed is a blocked word, which would only be offered back
+     with a number on it. `freeHandlesNear` falls back to `player` after that. */
+  let stem = usernameStem(username);
+  if (usernameShapeProblem(stem) !== null) stem = usernameStem(me.display_name);
+  const suggestions = await freeHandlesNear(db, [stem], norm, 3);
+
+  return { username, available: false, mine: false, reason, message: USERNAME_MESSAGES[reason], suggestions };
 }
 
 /* ───────────────────────────────────────────────────────────── the city ── */

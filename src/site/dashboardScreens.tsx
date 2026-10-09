@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
 import { metricValue } from './partnerMetrics';
-import { isNoSession, type Metric, type RemindStatus } from './api/partner';
+import { isNoSession, isNoVenue, type Metric, type RemindStatus } from './api/partner';
 import type { ApiError } from './api/client';
 import type { ApiState } from './api/useApi';
 import { useNum } from './dashboardFormat';
@@ -98,7 +98,9 @@ function Unmeasured({ id, error }: { id: EmptyId; error?: ApiError }) {
 
   const reason = error === undefined
     ? null
-    : isNoSession(error)
+    : isNoVenue(error)
+      ? dashboard.unmeasured.noVenue
+      : isNoSession(error)
       ? dashboard.unmeasured.noSession
       : dashboard.unmeasured.serverSilent;
 

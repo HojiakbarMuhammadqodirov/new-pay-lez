@@ -486,6 +486,14 @@ export async function migrate(db: PgDb): Promise<void> {
      account visits a venue and `gate.confirm` writes the grant — and a venue
      it has never visited learns nothing either way. */
   await add('users', 'venue_sharing_default', 'INTEGER NOT NULL DEFAULT 1');
+  /* Sharing with visited venues is always on — the profile switch is gone and
+     `PATCH /v1/me` no longer writes the column, so this takes back every stored
+     opt-out on each boot. The reasoning, and why it is safe unguarded, is
+     `sharingAlwaysOn` in `db.ts`; this is the same statement. */
+  await db.run(
+    `UPDATE users SET venue_sharing_default = 1
+      WHERE venue_sharing_default <> 1 AND status <> 'erased' AND deleted_at IS NULL`,
+  );
   await add('users', 'username_norm', 'TEXT');
   /* FIFO's tiebreak. **This list and the one in `db.ts` are one list written
      twice** — `CREATE TABLE IF NOT EXISTS` is a no-op on a database that already
@@ -509,6 +517,15 @@ export async function migrate(db: PgDb): Promise<void> {
   await add('word_bank', 'tiles', 'TEXT');
   await add('word_bank', 'accept', 'TEXT');
   await add('word_bank', 'decoys', 'INTEGER NOT NULL DEFAULT 0');
+  /* A venue's taxonomy keys. Same line in `db.ts`, for the reason `seq` gives. */
+  await add('venues', 'tags', 'TEXT');
+  /* The owner's voucher economics. Same lines in `db.ts`, for the reason `seq` gives. */
+  await add('venues', 'avg_check_owner_minor', 'INTEGER');
+  await add('venues', 'avg_check_auto', 'INTEGER NOT NULL DEFAULT 0');
+  await add('venues', 'voucher_cap_minor', 'INTEGER');
+  /* NFC tags (`NFC.md`). Same lines in `db.ts`, for the reason `seq` gives. */
+  await add('tag_registry', 'label', 'TEXT');
+  await add('tag_registry', 'last_tap_at', 'TEXT');
 
   await db.exec(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_norm ON users (username_norm)',

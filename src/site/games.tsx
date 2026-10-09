@@ -9,7 +9,7 @@ import {
 import { GAMES, POINTS_SLIDES, type GameId } from './content';
 import { useApi } from './api/useApi';
 import { hasToken } from './api/client';
-import { abandonRound, finishRound, sendMove, startRound, type ServerGameType } from './api/consumer';
+import { abandonRound, finishRound, sendMove, startRound, type Finish, type Referrals, type ServerGameType } from './api/consumer';
 import { SCOPES, type Scope, type Board as ServerBoard } from './api/board';
 import { cheapestCost, GIFT_CARDS_PATH, nextRung, type GiftCardStock } from './api/wallet';
 import { Icon } from './icons';
@@ -516,10 +516,18 @@ const SLIDE_MS = 15_000;
 /**
  * Three ways to earn, as slides inside the "Your points" card.
  *
- * **Static on purpose.** These are informational lines, not a progress list:
- * nothing is fetched and nothing is hidden when it is done, so the card reads
- * the same whether or not the server answers. The figures are `POINTS_SLIDES`
- * in `content.ts`; the words are `copy.games.tasks`, one hole for the figure.
+ * **Informational, not a progress list:** nothing is hidden when it is done,
+ * and the card reads the same whether or not the server answers. The figures
+ * are `POINTS_SLIDES` in `content.ts`; the words are `copy.games.tasks`, one
+ * hole for the figure.
+ *
+ * **Except the invite's figure, which is the server's.** `GET /v1/referrals`
+ * carries `referrerReward` straight from `CONFIG.earn` — the same answer the
+ * invite card further down this page prints — so a reward moved on the server
+ * is a reward this line follows. `INVITE_POINTS` stays as the fallback for a
+ * request that is in flight, refused or never made (no token): the line must
+ * still read as a sentence, and the constant is the server's value as of
+ * writing, not an invention.
  *
  * A horizontal track moved by `transform` — one slide wide per step, looping
  * to the first after the last — with dots under it for which one is showing.
@@ -532,6 +540,13 @@ function PointsSlider() {
   const tasks = useCopy().games.tasks;
   const [at, setAt] = useState(0);
   const count = POINTS_SLIDES.length;
+  const referrals = useApi<Referrals>(hasToken() ? '/v1/referrals' : null);
+  const inviteReward =
+    referrals.state.status === 'ready' && Number.isFinite(referrals.state.data.referrerReward)
+      ? referrals.state.data.referrerReward
+      : null;
+  const pointsOf = (slide: (typeof POINTS_SLIDES)[number]) =>
+    slide.copyKey === 'invite' && inviteReward !== null ? inviteReward : slide.points;
 
   useEffect(() => {
     const tick = () => setAt((i) => (i + 1) % count);
@@ -557,7 +572,7 @@ function PointsSlider() {
           {POINTS_SLIDES.map((slide, i) => (
             <p className="play-slide" key={slide.copyKey} aria-hidden={i !== at}>
               {fill(tasks[slide.copyKey], {
-                reward: fill(tasks.exact, { points: String(slide.points) }),
+                reward: fill(tasks.exact, { points: String(pointsOf(slide)) }),
               })}
             </p>
           ))}
@@ -948,6 +963,7 @@ function Result({
   paid,
   balance,
   cheapest,
+  nearest,
   streak,
   scoreLine,
   nextPays,
@@ -975,6 +991,14 @@ function Result({
    * case rather than quoting a price nobody set.
    */
   cheapest: number | null;
+  /**
+   * The nearest **venue voucher** the server found above the new balance, or
+   * null/absent. Preferred over `cheapest` when present: a named discount at a
+   * named place is the reward connection the rulebook asks every game to end
+   * on, and it is a partner-funded voucher every plan can buy — the gift-card
+   * shelf behind `cheapest` is Pro and Premium only.
+   */
+  nearest?: Finish['nearest'];
   streak: number;
   /** Replaces the "n / m correct" line for a round that does not ask questions. */
   scoreLine?: string;
@@ -1038,7 +1062,15 @@ function Result({
       ) : (
         points === 0 && <p className="result-points">{copy.resultNone}</p>
       )}
-      {short !== null && (
+      {paid && nearest ? (
+        <p className="result-toward">
+          {fill(copy.resultTowardVenue, {
+            points: String(nearest.pointsNeeded),
+            pct: String(nearest.discountPct),
+            venue: nearest.venueName,
+          })}
+        </p>
+      ) : short !== null && (
         <p className="result-toward">
           {short > 0 ? fill(copy.resultToward, { points: String(short) }) : copy.resultAfford}
         </p>
@@ -1222,8 +1254,14 @@ function Board() {
             {shown.map((row) => (
               <li key={row.userId} data-me={row.isYou ? 'true' : undefined}>
                 <span className="play-rank">{row.rank}</span>
+                {/* A player is their username here — the name they chose to
+                    be seen by, with the `@` that says so. An account that has
+                    not picked one yet (it is asked at its next sign-in) falls
+                    back to the server's short name, "Marta K.", never a full
+                    name. Your own row says "You" and carries your handle. */}
                 <span className="play-who">
-                  <b>{row.isYou ? copy.boardYou : row.name}</b>
+                  <b>{row.isYou ? copy.boardYou : row.username ? `@${row.username}` : row.name}</b>
+                  {row.isYou && row.username && <span>@{row.username}</span>}
                 </span>
                 <span className="play-score">
                   <b>{row.points}</b>
@@ -1343,6 +1381,12 @@ export function GamesApp() {
      * identical on the figure alone.
      */
     paid: boolean;
+    /**
+     * The server's nearest venue voucher above the new balance (`Finish.nearest`),
+     * on a server round; absent offline. When present it is the reward line —
+     * rulebook §1's "+40 points · you're 60 from 10% off at Café Bratysławska".
+     */
+    nearest?: Finish['nearest'];
   } | null>(null);
 
   /*
@@ -1891,6 +1935,7 @@ export function GamesApp() {
           points: done.score,
           balance: done.balance,
           paid: done.paid,
+          nearest: done.nearest ?? null,
         });
       })
       .catch(() => {
@@ -2321,6 +2366,7 @@ export function GamesApp() {
               paid={result.paid}
               balance={result.balance}
               cheapest={cheapest}
+              nearest={result.nearest}
               streak={player.streak}
               scoreLine={
                 game.kind === 'flight'
@@ -2382,11 +2428,12 @@ export function GamesApp() {
             />
           ) : playing && game && game.kind === 'cannon' ? (
             <CannonNumbers
-              session={session ?? undefined}
-              serverBoard={(content as { board: number[] } | null) ?? undefined}
-              onDone={(points, correct, won, destroyed) => {
-                setArcadeCount(destroyed);
-                finishScored(points, correct, won);
+              /* Reported, like Breakout: `{hits, wrong}` goes to `/finish` and
+                 the server bounds it by the round's duration. The session's
+                 `board` is the held game the app plays; this screen ignores it. */
+              onDone={(points, correct, won, net, report) => {
+                setArcadeCount(net);
+                finishReported(points, correct, won, report);
               }}
               onQuit={quitRound}
             />

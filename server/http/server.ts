@@ -57,13 +57,27 @@ export function createApi(options: ServerOptions) {
   const secret = options.secret ?? CONFIG.server.secret;
   const origins = options.origins ?? CONFIG.server.origins;
   const limited = options.limits ?? true;
+  /*
+   * The methods a preflight allows, **read off the route table** rather than
+   * typed. The list was typed once, as `GET, POST, PATCH, DELETE`, and every
+   * `PUT` route in the table — the partner budget, the voucher ladder, links,
+   * hours, the console's settings — was then unreachable from a browser on
+   * another origin: the preflight came back without the method, the browser
+   * refused to send the request, and `fetch` threw before any response
+   * existed. The site reads a throw as "the server is not there", so an owner
+   * typing a budget was told the server could not be reached by a server that
+   * was answering every other call. `curl` and the phone send no preflight,
+   * which is why nothing else noticed. Ask the code what it can serve.
+   */
+  const allowMethods = corsMethods(options.routes);
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const started = Date.now();
     const url = new URL(req.url ?? '/', 'http://localhost');
     const method = (req.method ?? 'GET').toUpperCase();
 
-    cors(req, res, origins);
+    securityHeaders(res);
+    cors(req, res, origins, allowMethods);
     if (method === 'OPTIONS') {
       res.writeHead(204).end();
       return;
@@ -71,8 +85,11 @@ export function createApi(options: ServerOptions) {
 
     /* A request id on every response, echoed from the client's if it sent one.
        Support tickets about points arrive with a screenshot; this is what makes
-       one findable in a log. */
-    const requestId = String(req.headers['x-request-id'] ?? randomUUID());
+       one findable in a log. Echoed only when it looks like an id: it is
+       written into the log line and a response header, so an arbitrary
+       client string there is log forgery waiting to happen. */
+    const offered = String(req.headers['x-request-id'] ?? '');
+    const requestId = /^[A-Za-z0-9._:-]{1,64}$/.test(offered) ? offered : randomUUID();
     res.setHeader('x-request-id', requestId);
 
     const found = router.match(method, url.pathname);
@@ -82,7 +99,7 @@ export function createApi(options: ServerOptions) {
     }
 
     try {
-      const { parsed: body, raw: rawBody } = await readBody(req);
+      const { parsed: body, raw: rawBody } = await readBody(req, found.route.maxBody ?? MAX_BODY);
       const actor = await authenticate(options.db, req);
 
       if (found.route.auth !== 'none') {
@@ -270,7 +287,7 @@ function send(res: ServerResponse, status: number, payload: unknown): void {
   res.end(body);
 }
 
-function readBody(req: IncomingMessage): Promise<{ parsed: Record<string, unknown>; raw: string }> {
+function readBody(req: IncomingMessage, maxBody: number): Promise<{ parsed: Record<string, unknown>; raw: string }> {
   if (req.method === 'GET' || req.method === 'HEAD') return Promise.resolve({ parsed: {}, raw: '' });
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -278,8 +295,9 @@ function readBody(req: IncomingMessage): Promise<{ parsed: Record<string, unknow
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
       /* A body limit, because the process that holds the ledger should not be
-         killable by one large POST. */
-      if (size > MAX_BODY) {
+         killable by one large POST. Per route since the photo upload: see
+         `Route.maxBody`. */
+      if (size > maxBody) {
         reject(new DomainError('bad_request', 'body too large'));
         req.destroy();
         return;
@@ -306,7 +324,34 @@ function readBody(req: IncomingMessage): Promise<{ parsed: Record<string, unknow
   });
 }
 
-function cors(req: IncomingMessage, res: ServerResponse, origins: readonly string[]): void {
+/**
+ * Defaults every response carries. This API answers JSON (and, at
+ * `/v1/media`, image bytes whose handler sets its own caching and CSP over
+ * these), never a page, so the strictest values cost nothing:
+ *
+ * - `no-store`: a response here is somebody's balance, email or session
+ *   token, and a shared proxy or a browser's disk cache must not keep it.
+ * - `nosniff` + a CSP of `default-src 'none'`: a JSON body opened directly
+ *   in a browser is never interpreted as HTML or script.
+ * - `frame-ancestors 'none'` / `X-Frame-Options`: nothing frames the API.
+ * - HSTS: ignored by browsers over plain http, so it only ever pins https.
+ *
+ * Set first with `setHeader`, so a handler's `writeHead` overrides any of them.
+ */
+function securityHeaders(res: ServerResponse): void {
+  res.setHeader('cache-control', 'no-store');
+  res.setHeader('x-content-type-options', 'nosniff');
+  res.setHeader('x-frame-options', 'DENY');
+  res.setHeader('content-security-policy', "default-src 'none'; frame-ancestors 'none'");
+  res.setHeader('referrer-policy', 'no-referrer');
+  res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
+}
+
+/** Every method the route table serves, plus the preflight's own — see `allowMethods`. */
+export const corsMethods = (routes: readonly Route[]): string =>
+  [...new Set([...routes.map((route) => route.method.toUpperCase()), 'OPTIONS'])].join(', ');
+
+function cors(req: IncomingMessage, res: ServerResponse, origins: readonly string[], methods: string): void {
   const origin = req.headers.origin;
   /* An allow-list, not `*`: the session travels in a cookie on the web surface
      and `*` with credentials is both refused by browsers and wrong. */
@@ -316,7 +361,7 @@ function cors(req: IncomingMessage, res: ServerResponse, origins: readonly strin
     res.setHeader('vary', 'origin');
   }
   res.setHeader('access-control-allow-headers', 'content-type, authorization, idempotency-key, x-request-id, accept-language');
-  res.setHeader('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+  res.setHeader('access-control-allow-methods', methods);
   res.setHeader('access-control-max-age', '600');
 }
 

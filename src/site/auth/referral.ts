@@ -46,10 +46,24 @@ export function captureReferral(): void {
     if (raw === null) return;
     url.searchParams.delete('ref');
     window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    rememberReferral(raw);
+  } catch {
+    /* Storage unavailable: the invite is lost, the page is not. */
+  }
+}
+
+/**
+ * Keep a code somebody chose to follow — from `?ref=` above, or from the
+ * `/i/<code>` page the phone app's links open on the web. That page used to
+ * show the code and send everybody to the app store, so an app-made invite
+ * opened on a laptop could not reach the web sign-up at all.
+ */
+export function rememberReferral(raw: string): void {
+  try {
     if (!LOOKS_LIKE_CODE.test(raw)) return;
     localStorage.setItem(KEY, JSON.stringify({ code: normalizeReferral(raw), at: Date.now() }));
   } catch {
-    /* Storage unavailable: the invite is lost, the page is not. */
+    /* Storage unavailable: the sign-up form's field still takes it typed. */
   }
 }
 

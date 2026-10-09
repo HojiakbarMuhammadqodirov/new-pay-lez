@@ -231,6 +231,19 @@ export const en = {
       /* The step after sign-up, before the welcome round. */
       title: 'Check your inbox',
       later: 'I will do it later',
+      /* The Earn page's panel (`VerifyEmail.tsx`): the resend row, one
+         sentence per refusal the server can give, and the ticked state. */
+      notArrived: 'Not there, or expired?',
+      resendIn: 'Send again in {t}',
+      expired: 'That code has expired. Ask for a new one below.',
+      spent: 'Too many wrong tries on that code. Ask for a new one below.',
+      noCode: 'There is no code waiting for you. Ask for one below.',
+      hourly: 'We have sent several codes this hour. Try again in an hour.',
+      otherAddress: 'That code was sent to a different address. Ask for a new one.',
+      slowDown: 'Too many attempts. Wait a few minutes and try again.',
+      doneKicker: 'Email confirmed',
+      doneLine: 'is confirmed. Thank you.',
+      doneSpend: 'Vouchers and gift cards are open to you now.',
     },
     /* "Forgot password?" — two steps on the sign-in card. */
     reset: {
@@ -1369,18 +1382,31 @@ export const en = {
        `GET /v1/referrals`. */
     inviteCard: {
       kicker: 'Invite friends',
-      rule: 'Share your link. When a friend signs up with it and makes their first visit to a partner venue, you both get {n} points.',
+      /* The figures are the server's (`GET /v1/referrals`), never typed here. */
+      ruleBoth: 'Share your link. When a friend signs up with it and makes their first visit to a partner venue, you both get {n} points.',
+      ruleSplit: 'Share your link. When a friend signs up with it and makes their first visit to a partner venue, you get {mine} points and they get {theirs}.',
+      linkLabel: 'Your invite link',
       codeLabel: 'Your code',
       copy: 'Copy link',
       copied: 'Link copied',
+      copyManual: 'Copying is blocked here. The link is selected: copy it by hand.',
       share: 'Share',
       shareText: 'Join me on Paylez — play, earn points and spend them at local places: {link}',
-      progress: '{joined} joined · {visited} visited · {points} points earned',
-      milestone: 'Bring {n} friends who visit and get a {bonus}-point bonus.',
-      unavailable: 'Your invite link could not be loaded. Try again later.',
+      joined: 'Joined',
+      visited: 'Visited',
+      earned: 'Points earned',
+      goal: '{done} of {n} friends have visited. At {n} you get a {bonus}-point bonus.',
+      goalDone: 'Bonus earned: {bonus} points for {n} friends who visited.',
+      goalLabel: 'Friends who visited, toward the bonus',
+      friends: 'Your friends',
+      statusJoined: 'Signed up',
+      statusVisited: 'Visited',
+      statusPaid: 'Visited · +{n}',
+      unavailable: 'Your invite link could not be loaded.',
+      retry: 'Try again',
     },
     names: [
-      'Birds Flight',
+      "Pico's Flight",
       'Memory Match',
       'Guess the Flag',
       'Country & Capital',
@@ -1567,6 +1593,13 @@ export const en = {
     /* Never a bare score: what the points are *for* is the reason to play the
        next round, so the card always says how far off the nearest reward is. */
     resultToward: '{points} more and the first voucher is yours.',
+    /* The server's nearest venue voucher above the new balance — the rulebook's
+       "you're 60 from 10% off at Café Bratysławska". Preferred over the line
+       above whenever a server round names one. */
+    resultTowardVenue: 'You’re {points} from {pct}% off at {venue}.',
+    /* The arcade games' header bar: how far the round is toward performance
+       100, where its points stop growing (`PerfectBar` in `games/hud.tsx`). */
+    perfectProgress: 'Progress to a perfect round',
     resultAfford: 'You have enough for a voucher — go and spend it.',
     resultSpend: 'Spend points',
     resultStreak: 'Streak: {streak} days',
@@ -1694,16 +1727,21 @@ export const en = {
       resultScore: '{n} foods eaten',
     },
     cannon: {
-      rule: 'Fire up a column to knock blocks down to zero · {turns} volleys',
-      reward: 'Every block destroyed counts · {n} is a perfect round',
-      destroyed: 'Destroyed {n}',
-      turn: 'Volley {n} / {total}',
-      boardLabel: 'Canon Numbers board. Each number is how many hits a block still needs.',
-      fireLabel: 'Fire up column {n}',
-      over: 'Round over — banking your round.',
-      failed: 'That volley did not reach the server. Fire again.',
-      hint: 'Each volley fires {n} balls up a column. Blocks move down after every volley — do not let one reach the bottom.',
-      resultScore: '{n} blocks destroyed',
+      /* `games/CannonNumbers.tsx`: a sum at the top, falling numbers, shoot
+         the one that answers it. Equations are drawn in digits and symbols, so
+         only `multiple` carries words. */
+      rule: 'Shoot the number that answers the sum · {seconds} seconds',
+      reward: 'Each right answer scores, a wrong one costs a point · {n} is a perfect round',
+      score: 'Score {n}',
+      timeLabel: '{n} seconds left',
+      goalLabel: 'Shoot the answer',
+      multiple: 'Any multiple of {n}',
+      fieldLabel: 'Canon Numbers field. Tap or click a number to fire at it. On a keyboard, the left and right arrows aim and Space fires.',
+      intro: 'Solve the sum at the top, then tap the falling number that answers it — the cannon fires where you tap. A wrong number costs a point, and the sums get harder as you score.',
+      keys: 'Keyboard: ← → to aim, Space to fire',
+      start: 'Start',
+      over: 'Time! Banking your round.',
+      resultScore: 'Score: {n}',
     },
     breakout: {
       rule: 'Keep the ball up and break the wall · one ball',
@@ -1823,6 +1861,9 @@ export const en = {
       namePlaceholder: 'The name above your door',
       category: 'Category',
       subcategory: 'Subcategory',
+      appCategories: 'Categories in the app',
+      appCategoriesHelp: 'Where customers find you on the Deals filter. Pick a category, or a more exact kind under it — a kebab house can be under Restaurant and Halal.',
+      appCategoriesWhole: 'All of {category}',
       description: 'Description',
       descriptionPlaceholder: 'Two or three lines on what you do and who comes to you.',
       descriptionHelp: 'Paylez translates this for customers reading in another language.',
@@ -1861,23 +1902,26 @@ export const en = {
 
     /* Index-aligned with `BUSINESS_CATEGORIES` in `content.ts`. */
     categories: [
-      'Café',
+      'Coffee',
       'Restaurant',
-      'Barbershop',
-      'Beauty salon',
-      'Dental clinic',
-      'Language school',
-      'Fitness',
+      'Shopping',
+      'Leisure',
+      'Beauty',
+      'Housing',
+      'Bakery',
+      'Halal',
     ],
-    /* One array per category, in the same order. */
+    /* One array per category, in the same order, index-aligned with each
+       category's `subs` keys in `BUSINESS_CATEGORIES`. */
     subcategories: [
-      ['Specialty coffee', 'Bakery café', 'Brunch spot', 'Tea house'],
-      ['Polish', 'Georgian', 'Turkish', 'Pizza', 'Sushi'],
-      ['Classic barber', 'Beard and shave', 'Kids cuts'],
-      ['Nails', 'Hair', 'Brows and lashes', 'Massage'],
-      ['General dentistry', 'Orthodontics', 'Implants'],
-      ['Polish for foreigners', 'English', 'Exam prep'],
-      ['Gym', 'Yoga studio', 'Boxing club'],
+      ['Coffee shop'],
+      ['Turkish', 'Indian', 'Polish', 'Asian', 'Pizza', 'Burgers', 'Kebabs', 'Sushi'],
+      ['Turkish store', 'Indian store', 'Korean store', 'Beauty store', 'Electronics', 'Fashion', 'Home'],
+      ['Gaming', 'Culture', 'Sports', 'Wellness'],
+      ['Hair salon', 'Barbershop', 'Nail salon', 'Massage'],
+      ['Student house', 'Long-term rentals', 'Hotels'],
+      ['Bakery cafe'],
+      ['Restaurant', 'Meat store', 'Burgers', 'Kebabs'],
     ],
     countries: ['Poland', 'Ukraine', 'Georgia', 'Turkey', 'Uzbekistan', 'Azerbaijan'],
     spokenLanguages: ['Polish', 'English', 'Ukrainian', 'Russian', 'Turkish', 'Uzbek'],
@@ -2504,6 +2548,9 @@ export const en = {
       /** The other reason: there is a session, and the server did not answer. */
       serverSilent:
         'The server did not answer, so nothing here can be shown. This is not a zero — we could not ask.',
+      /** Signed in, and the account owns no venue — a setup job, not a sign-in one. */
+      noVenue:
+        'You are signed in, but this account has no venue on Paylez yet, so there is nothing here to read. Set up your venue and these figures start filling in.',
       /** While the request is in flight. */
       asking: 'Reading your figures from the server…',
       /** A metric the min-cohort floor withheld. Never render this as 0. */
@@ -2652,7 +2699,7 @@ export const en = {
       costTotal: 'Total',
       returnLabel: 'Sales we can tie back to Paylez',
       roiGood:
-        'Paylez cost you {cost} in {month} and can be tied to about {revenue} in sales. That is {n}× back for every 1 you spend.',
+        'Paylez cost you {cost} in {month} and can be tied to about {revenue} in sales. That is {n}× back for every {one} you spend.',
       roiBad:
         'Paylez cost you {cost} in {month} and can be tied to about {revenue} in sales. That is {gap} more than we can show back. Most of your visits were regulars who may have come anyway.',
 
@@ -3192,6 +3239,20 @@ export const en = {
       maxTitle: 'Most off one voucher',
       maxNote:
         'No single voucher takes more than this off a bill, however large the order.',
+      /* The owner's two figures (`Economics` in dashboardVouchers.tsx). */
+      avgAuto: 'Automatic — use my sales',
+      avgAutoOn: 'Worked out from your {n} sales in the last 30 days, and updated as more come in.',
+      avgAutoWaiting:
+        'Automatic is on, but there are no sales in the last 30 days yet. Your own figure is used until there are.',
+      avgOwner: 'Your own figure. Turn on automatic once you think enough of your sales have been recorded.',
+      avgSales: 'Your sales in the last 30 days say {amount} ({n} sales).',
+      avgSaved: 'Average transaction saved. Voucher estimates now use it.',
+      avgCleared: 'Your figure is cleared. The typical figure for venues like yours is used again.',
+      avgAutoSaved: 'Average transaction is now worked out from your sales.',
+      avgManualSaved: 'Average transaction is your own figure again.',
+      maxSaved: 'Saved. No voucher takes more than this off a bill now.',
+      maxCleared: 'Cleared. Each tier uses its own limit again.',
+      maxPerTier: 'Not set, so each tier uses its own limit — the largest is {amount}. Type a figure to use one for every tier.',
       tiersTitle: 'Who reaches each tier',
       tiersLede:
         'Tiers do not hold money. Points decide who gets there, so raising a number sends less of the budget that way.',
@@ -3960,13 +4021,21 @@ export const en = {
     },
 
     /*
+     * What the frame shows a signed-in owner whose account owns no venue —
+     * instead of eleven screens each saying the device is not signed in.
+     */
+    setup: {
+      title: 'Set up your venue',
+      body: 'You are signed in, but this account has no venue on Paylez yet. Everything on this dashboard is read from your venue — its deals, budget, customers and scans — so the first step is to describe it. It takes a few minutes, and our team reviews it before it appears in the app.',
+      action: 'Set up your venue',
+    },
+
+    /*
      * The plan panel — `dashboardPlan.tsx`, item 24.
      *
-     * `rows` is index-aligned with `PARTNER_PLAN_ROWS` in `content.ts`, which
-     * holds the *order* of the comparison and none of its figures: every number
-     * comes from `plan_entitlements` on the server. A row added there needs a
-     * label here in all five languages, and the missing ones are build errors
-     * rather than raw entitlement keys on somebody's screen.
+     * The comparison's row labels live in the top-level `partnerPlans.rows`, keyed by
+     * the entitlement key `PARTNER_PLAN_ROWS` in `content.ts` names; every
+     * figure comes from the server.
      *
      * `howToMove` is a sentence and not a button on purpose — see the file's
      * own header. `SubscribeButton` is built for the consumer ladder and
@@ -4004,19 +4073,8 @@ export const en = {
         apple: 'Paid via the App Store',
         google: 'Paid via Google Play',
       },
-      /* Index-aligned with `PARTNER_PLAN_ROWS`. */
-      rows: [
-        'Live hot deals at once',
-        'Loyalty campaigns running',
-        'Push notifications a month',
-        'Team seats',
-        'Venues on the account',
-        'Deep analytics',
-        'Named customers',
-        'The assistant',
-        'Benchmarks against your city',
-        'CSV export',
-      ],
+      /* The row labels, prices and level words are `partnerPlans`, shared
+         with the pricing table on `#/business`. */
     },
 
     ranges: ['Last 7 days', 'Last 14 days', 'Last 30 days', 'Last quarter'],
@@ -4026,7 +4084,7 @@ export const en = {
       intro: 'Subscriptions your customers buy from you — a coffee a day, a monthly bundle, a members’ club.',
       introStrong: 'You keep all of it. Paylez takes no commission.',
       included: 'Included in {plan}',
-      lockedPill: 'Growth and Chain plans',
+      lockedPill: 'Growth and Scale plans',
       lockedTitle: 'Passes come with the Growth plan',
       seePlan: 'See the Growth plan',
       lockedBody:
@@ -4856,50 +4914,31 @@ export const en = {
     pricing: {
       eyebrow: 'Pricing',
       title: 'You pay for redemptions, not for seats.',
-      lede: 'Every plan includes the portal and unlimited customer records. The monthly fee buys the marketing tools — the vouchers themselves are only ever funded when they are used.',
-      perMonth: '/ month',
-      quoted: 'Quoted',
-      tiers: [
-        {
-          name: 'Single site',
-          note: 'One venue',
-          body: 'Play & Earn placement, vouchers and the reports that matter.',
-          features: [
-            'Your voucher in the daily pool',
-            'Owner dashboard and core reports',
-            'Unlimited customer records',
-            'QR redemption at the till',
-          ],
-          action: 'Start free',
-        },
-        {
-          name: 'Growth',
-          note: 'Up to 5 sites',
-          body: 'The full marketing toolkit, per-site logins and in-store QR campaigns.',
-          features: [
-            'Everything in Single site',
-            'Push, offers, promo codes and gift cards',
-            'Built audiences and per-campaign revenue',
-            'Per-site logins for managers',
-          ],
-          action: 'Become a partner',
-        },
-        {
-          name: 'Group',
-          note: '6 sites and up',
-          body: 'Multi-site rollout, POS integration and a named contact.',
-          features: [
-            'Everything in Growth',
-            'POS integration and rollout support',
-            'Group-level reporting and exports',
-            'Named account contact',
-          ],
-          action: 'Become a partner',
-        },
-      ],
+      lede: 'Every plan includes unlimited hot deals and the owner dashboard. The monthly fee buys the marketing tools — the vouchers themselves are only ever funded when they are used.',
+      /*
+       * The tiers themselves — names, prices, what each includes — are the
+       * server's (`GET /v1/plans?audience=partner`, drawn through
+       * `partnerPlans.ts`, the same as the dashboard's plan sheet). What is
+       * written here is only the sentence under each name, keyed by the plan's
+       * code; a tier the server adds without one is drawn without it.
+       */
+      blurbs: {
+        starter: 'Unlimited hot deals, a loyalty campaign and the owner dashboard, free for one venue.',
+        growth: 'The full marketing toolkit: your customer list, benchmarks, tiered vouchers and passes of your own.',
+        scale: 'For groups: unlimited venues and passes, team roles, API access and a dedicated account manager.',
+      },
+      venues: {
+        one: 'One venue',
+        upTo: 'Up to {n} venues',
+        unlimited: 'Unlimited venues',
+      },
+      annualNote: 'or {amount} a month billed yearly',
+      startFree: 'Start free',
+      becomePartner: 'Become a partner',
+      unavailable: 'The price list could not be loaded just now. Write to us and we will send it:',
       featured: 'Most chosen',
       footnote:
-        'Vouchers are funded on redemption on every plan, including the free one. Prices exclude VAT.',
+        'Vouchers are funded on redemption on every plan, including the free one.',
     },
 
     cta: {
@@ -5353,11 +5392,6 @@ export const en = {
       unavailable: 'Notifications are not switched on yet. Check back soon.',
       unreachable: 'We could not reach the server. Try again later.',
     },
-    sharing: {
-      title: 'Share my profile with the venues I visit',
-      help: 'A venue you have actually been to can see your name, your photo and what you have spent there — never your balance, and never a venue you have not visited. Turning this off stops new venues seeing you; the ones that already can are switched off on their own card.',
-      failed: 'That did not save. Try again in a moment.',
-    },
     /*
      * ── the board's opt-out ──
      *
@@ -5369,7 +5403,7 @@ export const en = {
      */
     board: {
       title: 'Show me on the weekly board',
-      help: 'Your display name, your avatar and your weekly points. Turn it off and you still see the board and your own rank — other people just do not see you on it.',
+      help: 'Your username, your avatar and your weekly points. Turn it off and you still see the board and your own rank — other people just do not see you on it.',
       failed: 'That did not save. Try again in a moment.',
     },
     eyebrow: 'Your account',
@@ -5386,16 +5420,22 @@ export const en = {
 
     username: 'Username',
     usernameHelp:
-      'Letters, digits and single underscores, {min}–{max} characters. It has to be yours alone — this is the name on a leaderboard row.',
+      'Letters and digits, with single dots or underscores between them, {min}–{max} characters. It has to be yours alone — this is the name other players see on the leaderboard.',
     usernamePlaceholder: 'dilnoza',
     /* Keyed by `UsernameError`. A clash comes back naming the field, the way a
        409 does. */
     usernameErrors: {
       length: 'A username is {min} to {max} characters.',
-      shape: 'Letters, digits and single underscores between them — nothing at either end.',
+      shape: 'Letters and digits, with single dots or underscores between them — nothing at either end.',
       reserved: 'That username is reserved.',
       taken: 'That username is taken.',
     },
+    /* The live check under the field (`UsernameField`). `{name}` is the handle as typed. */
+    usernameChecking: 'Checking…',
+    usernameFree: '@{name} is free.',
+    usernameMine: 'That is your username.',
+    usernameIdeas: 'Free right now:',
+    usernameUnchecked: 'We could not check this right now. It will be checked when you save.',
 
     /* The label is "Status" and the column is `occupation`. See the note above
        the block: the two are allowed to differ, and here they have to. */
@@ -5535,21 +5575,6 @@ export const en = {
     stripEnergyValue: '{n} of {max}',
     /* `{fields}` is names from `fieldNames`, joined with commas. */
     gapsView: 'Still blank: {fields}.',
-    sharingTitle: 'Sharing with venues',
-    sharingLede:
-      'These venues can see who you are — your name and photo — when you pay there. Stopping takes effect straight away.',
-    sharingNone: 'You are not sharing your details with any venue.',
-    /* `{date}` is a day, written in the reader's language. */
-    sharingSince: 'Since {date}',
-    sharingStop: 'Stop sharing',
-    sharingAsk: 'Stop sharing with {venue}?',
-    sharingYes: 'Stop',
-    sharingKeep: 'Keep sharing',
-    sharingStopped: 'You stopped sharing with {venue}.',
-    sharingLoading: 'Checking which venues can see you…',
-    sharingOffline: 'We could not reach the server to check this.',
-    sharingRetry: 'Try again',
-    sharingFailed: 'That did not go through. Try again.',
   },
 
   /* ───────────────────────────────────────────────────────── onboarding ── */
@@ -5581,6 +5606,14 @@ export const en = {
       placeListed: 'Show me on the leaderboard',
       placeListedNote: 'Your name and your weekly points, visible to other players. Off unless you turn it on, and you can change it any time in your profile.',
       placeSaving: 'Saving…',
+      /* Step two: the username — required, after the city. The "return" pair is
+         the same step shown alone to a player who predates it. */
+      handleTitle: 'Create a username',
+      handleLede: 'This is the name other players see — on the leaderboard and when you invite a friend. Your real name stays private.',
+      handleReturnTitle: 'Choose your username',
+      handleReturnLede: 'Players now appear under a username instead of their name. Pick yours once — you can change it later on your profile.',
+      handleNote: 'You can change it later on your profile.',
+      handleSaving: 'Saving…',
       back: 'Back',
 
     gameTitle: 'Which country is this?',
@@ -5749,6 +5782,69 @@ export const en = {
     ],
     action: 'Create an account',
     note: 'No plan has a trial — the free tier is the trial, and it does not expire. Plans are chosen in the app once you have an account.',
+  },
+
+  /*
+   * The partner plans — the dashboard's plan sheet and the `#/business`
+   * pricing table, both drawn through `partnerPlans.ts` from the server's
+   * price list (pricing strategy §5).
+   *
+   * `rows` is keyed by the entitlement key `PARTNER_PLAN_ROWS` in `content.ts`
+   * names, so a row added there without a label here is a build error rather
+   * than a raw key on somebody's screen. `levels` are the words a graded row
+   * takes ("Standard", "Advanced"). No amount is written here: every price
+   * and budget arrives through a hole.
+   */
+  partnerPlans: {
+    rows: {
+      live_deals: 'Hot deals',
+      deep_analytics: 'Deal analytics',
+      active_campaigns: 'Loyalty campaigns',
+      loyalty_budget: 'Loyalty budget a month',
+      voucher_tiers: 'Discount vouchers with tiers',
+      push_quota: 'Push notifications a month',
+      identified_profiles: 'Customer list and segments',
+      benchmarks: 'Performance benchmarks',
+      venues: 'Venues',
+      team_management: 'Team management and roles',
+      assistant_level: 'AI assistant',
+      api_access: 'API access',
+      support: 'Support',
+      pass_limit: 'Passes you sell (your own subscription)',
+      pass_subscribers: 'Pass subscribers',
+      pass_analytics: 'Pass analytics (cohorts, churn, LTV)',
+      multi_venue_passes: 'Multi-venue passes',
+      member_deals: 'Member-only deals for Pro and Premium users',
+    },
+    levels: {
+      basic: 'Basic',
+      full: 'Full',
+      standard: 'Standard',
+      advanced: 'Advanced',
+      email: 'Email',
+      chat: 'Chat and email',
+      manager: 'Dedicated account manager',
+      preview: 'Preview only',
+    },
+    unlimited: 'Unlimited',
+    /* One feature line on a card: "Push notifications a month: 4". */
+    line: '{label}: {value}',
+    everythingIn: 'Everything in {plan}, plus',
+    perMonth: '/ month',
+    billing: 'Billing period',
+    monthly: 'Monthly',
+    annual: 'Annual',
+    save: 'Save {pct}% yearly',
+    billedYearly: '{total} billed once a year',
+    noCommission: 'Paylez takes no commission on what your passes earn: 0% on every plan.',
+    vat: 'Prices exclude VAT.',
+    converted:
+      'Plans are priced in złoty in Poland and in so’m in Uzbekistan; in any other currency you see the złoty price converted and rounded.',
+    /* Under a converted price: each market's own figure, keyed by currency. */
+    markets: {
+      PLN: '{amount} in Poland',
+      UZS: '{amount} in Uzbekistan',
+    },
   },
 
   footer: {

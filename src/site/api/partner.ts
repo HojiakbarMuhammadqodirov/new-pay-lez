@@ -37,7 +37,7 @@
  * conventions, and it reads its divisor from `i18n/fx.ts` like everything else
  * that touches a rate, so a złoty figure round-trips to the same złoty figure.
  */
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useMemo, useSyncExternalStore } from 'react';
 import { ApiError, call, hasToken } from './client';
 import { useApi, type ApiResult, type ApiState } from './useApi';
 import { FX, type FxCode } from '../i18n/fx';
@@ -206,6 +206,14 @@ export interface BudgetBody {
      * finished.
      */
     issuedTotal?: number;
+    /**
+     * The rung's **own** stored cap. `maxDiscountMinor` beside it is the one
+     * the rung applies, which is the owner's "most off one voucher" whenever
+     * that is set — so a save of the rung must send this one back, or it would
+     * write the owner's figure into every rung for good. Absent on an older API,
+     * where the two are the same number.
+     */
+    tierMaxDiscountMinor?: number;
   }>;
   /*
    * `source` says where the figure came from — the venue's own confirmed
@@ -213,7 +221,24 @@ export interface BudgetBody {
    * there are too few of those — and the screen says which in words. Optional
    * for the reason every take-up field is.
    */
-  averageCheck: { minor: number; currency: string; source?: 'computed' | 'category'; samples?: number };
+  averageCheck: {
+    minor: number;
+    currency?: string;
+    /** `owner` is the figure the owner typed on the Vouchers screen. */
+    source?: 'computed' | 'category' | 'owner';
+    samples?: number;
+    /** Which of the owner's two settings is in force. Absent on an older API. */
+    mode?: 'manual' | 'automatic';
+    /** What the owner typed, in minor units, or null. */
+    ownerMinor?: number | null;
+    /** The median of the last 30 days' sales — what automatic uses — or null with none. */
+    salesMinor?: number | null;
+  };
+  /**
+   * The owner's "most off one voucher", minor units of the venue's currency,
+   * or null where each rung keeps its own cap. Absent on an older API.
+   */
+  maxVoucherMinor?: number | null;
   /**
    * What expired vouchers handed back to this month's voucher pool, in minor
    * units of the budget's currency (`vouchers.returnedToBudget`). Optional, so
@@ -723,7 +748,29 @@ export const NO_SESSION = 'no-partner-session';
 
 export const noSession = (why: string): ApiError => new ApiError(0, NO_SESSION, why);
 
-export const isNoSession = (error: ApiError): boolean => error.code === NO_SESSION;
+/**
+ * Signed in, and the account owns no venue — a different state from "no
+ * session", and it was reported as one. `chain()` used to answer an empty venue
+ * list with `no-partner-session`, so an owner whose venue had been removed (or
+ * who never finished setup) read "this device is not signed in" on every panel
+ * while plainly signed in. The fix for them is Business setup, not signing in
+ * again, and the screens have to be able to say which.
+ */
+export const NO_VENUE = 'no-partner-venue';
+
+export const noVenue = (why: string): ApiError => new ApiError(0, NO_VENUE, why);
+
+export const isNoVenue = (error: ApiError): boolean => error.code === NO_VENUE;
+
+/**
+ * Whether there is **no real venue to ask about** — no session, or a session
+ * that owns none. Both cases mean the same thing to every caller that branches
+ * on this (the demo stand-ins in `readyOr`, the controls that hide rather than
+ * refuse): nothing real could be wrong. Only the *sentence* differs, and the
+ * readers that print one check `isNoVenue` first.
+ */
+export const isNoSession = (error: ApiError): boolean =>
+  error.code === NO_SESSION || error.code === NO_VENUE;
 
 /**
  * The answer when there is one; a stand-in only when there was nobody to ask.
@@ -948,8 +995,82 @@ export const usePartnerDeals = (venueId: string | null) =>
 export const usePartnerCampaigns = (venueId: string | null) =>
   useVenueApi<CampaignResponse[]>(venueId, '/campaigns');
 
-export const usePartnerBudget = (venueId: string | null) =>
-  useVenueApi<BudgetBody>(venueId, '/budget');
+/* ══════════════════════════════════════════════ the budget, kept current ══ */
+
+/*
+ * A counter every budget write bumps, so that every reader of the pool re-reads.
+ *
+ * `useApi` holds no cache, and the frame's `refresh()` re-mounts only the page —
+ * the rail's plan card sits outside it and kept showing the month as it was
+ * before a save on Vouchers or Loyalty until somebody reloaded. A store rather
+ * than a prop because the writes live here and the readers are scattered (rail,
+ * screens, plan sheet): the write announces itself and no caller has to
+ * remember to. It changes once per save, never per frame, so
+ * `useSyncExternalStore` costs one re-render of the hooks that subscribe.
+ */
+let budgetVersion = 0;
+const budgetListeners = new Set<() => void>();
+
+const subscribeBudget = (listener: () => void) => {
+  budgetListeners.add(listener);
+  return () => {
+    budgetListeners.delete(listener);
+  };
+};
+
+const readBudgetVersion = () => budgetVersion;
+
+/** Tell every budget reader the pool moved. The writes below call it, and so does the frame's `refresh()`. */
+export function budgetChanged(): void {
+  budgetVersion += 1;
+  budgetListeners.forEach((listener) => listener());
+}
+
+/** A write's answer, passed through after announcing it. A refused write moved nothing and says nothing. */
+function announcing<T>(write: Promise<T>): Promise<T> {
+  return write.then((answer) => {
+    budgetChanged();
+    return answer;
+  });
+}
+
+export function usePartnerBudget(venueId: string | null): ApiResult<BudgetBody> {
+  const version = useSyncExternalStore(subscribeBudget, readBudgetVersion, readBudgetVersion);
+  const path = venueId === null ? null : `/v1/partner/venues/${encodeURIComponent(venueId)}/budget`;
+  const result = useApi<BudgetBody>(path, [version]);
+  const unavailable = useMemo<ApiResult<BudgetBody>>(
+    () => ({
+      state: { status: 'error', error: noSession('This device has no partner session on the API.') },
+      reload: () => undefined,
+    }),
+    [],
+  );
+  return path === null ? unavailable : result;
+}
+
+/**
+ * `GET …/subscription` — the **venue's** partner plan (Starter, Growth, Scale),
+ * which is not the signed-in person's consumer plan on the session. The rail's
+ * card read `useAuth().plan` and so said "Free" over a venue on Growth.
+ *
+ * Owner-only on the server: a manager's read is a 403, which every reader shows
+ * as "not known" rather than as a tier.
+ */
+export interface VenuePlan {
+  subscription: {
+    id: string;
+    status: string;
+    source: string;
+    started_at: string;
+    renews_at: string | null;
+    cancel_at: string | null;
+  } | null;
+  plan: { id: string; code: string; name: string; rank: number };
+  entitlements: Record<string, string>;
+}
+
+export const usePartnerSubscription = (venueId: string | null) =>
+  useVenueApi<VenuePlan>(venueId, '/subscription');
 
 export const usePartnerCustomers = (venueId: string | null) =>
   useVenueApi<CustomersResponse>(venueId, '/customers');
@@ -1010,7 +1131,7 @@ export function chain<T>(
   if (venue.state.data === null) {
     return {
       status: 'error',
-      error: noSession('This API session owns no venue.'),
+      error: noVenue('This API session owns no venue.'),
     };
   }
   return report.state;
@@ -1481,10 +1602,12 @@ export interface TierDraft {
  * it is switched off rather than removed.
  */
 export const setVoucherTiers = (venueId: string, tiers: TierDraft[]) =>
-  call<BudgetBody['tiers']>(`/v1/partner/venues/${encodeURIComponent(venueId)}/tiers`, {
-    method: 'PUT',
-    body: { tiers },
-  });
+  announcing(
+    call<BudgetBody['tiers']>(`/v1/partner/venues/${encodeURIComponent(venueId)}/tiers`, {
+      method: 'PUT',
+      body: { tiers },
+    }),
+  );
 
 /**
  * Set the month's budget, and the split between the two pools.
@@ -1498,10 +1621,42 @@ export const setVoucherTiers = (venueId: string, tiers: TierDraft[]) =>
  * the floor is.
  */
 export const setBudget = (venueId: string, totalMinor: number, loyaltyBp?: number) =>
-  call<BudgetBody>(`/v1/partner/venues/${encodeURIComponent(venueId)}/budget`, {
-    method: 'PUT',
-    body: loyaltyBp === undefined ? { totalMinor } : { totalMinor, loyaltyBp },
-  });
+  announcing(
+    call<BudgetBody>(`/v1/partner/venues/${encodeURIComponent(venueId)}/budget`, {
+      method: 'PUT',
+      body: loyaltyBp === undefined ? { totalMinor } : { totalMinor, loyaltyBp },
+    }),
+  );
+
+/**
+ * Set the **loyalty** pool's base and leave the voucher pool where it is — the
+ * Loyalty screen's one money field. The server works out the total and the
+ * split; sending the current total and a new split instead cannot set up a
+ * budget that is still 0, because every split of nothing is nothing.
+ */
+export const setLoyaltyBudget = (venueId: string, loyaltyMinor: number) =>
+  announcing(
+    call<BudgetBody>(`/v1/partner/venues/${encodeURIComponent(venueId)}/budget`, {
+      method: 'PUT',
+      body: { loyaltyMinor },
+    }),
+  );
+
+/**
+ * The owner's voucher economics: the average transaction they type, the switch
+ * to their own sales, and "most off one voucher". `null` clears a figure and
+ * an absent key leaves it. Answers with the budget body.
+ */
+export const setVoucherEconomics = (
+  venueId: string,
+  patch: { averageCheckMinor?: number | null; averageCheckAuto?: boolean; maxVoucherMinor?: number | null },
+) =>
+  announcing(
+    call<BudgetBody>(`/v1/partner/venues/${encodeURIComponent(venueId)}/voucher-economics`, {
+      method: 'PATCH',
+      body: patch,
+    }),
+  );
 
 /**
  * Move available money from one pool to the other.
@@ -1516,10 +1671,12 @@ export const rebalanceBudget = (
   from: 'loyalty' | 'voucher',
   amountMinor: number,
 ) =>
-  call<BudgetBody>(`/v1/partner/venues/${encodeURIComponent(venueId)}/budget/rebalance`, {
-    method: 'POST',
-    body: { from, amountMinor },
-  });
+  announcing(
+    call<BudgetBody>(`/v1/partner/venues/${encodeURIComponent(venueId)}/budget/rebalance`, {
+      method: 'POST',
+      body: { from, amountMinor },
+    }),
+  );
 
 /* ════════════════════════════════════════════════════════════════ the month ══ */
 

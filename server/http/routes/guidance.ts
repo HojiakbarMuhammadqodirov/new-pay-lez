@@ -311,13 +311,12 @@ export const guidanceRoutes: Route[] = [
        *
        * `stale` is the server's own judgement on that pair, in one boolean,
        * because the threshold is a server-side decision (`CONFIG.rates.staleHours`)
-       * and a client comparing dates would be a second copy of it.
+       * and a client comparing dates would be a second copy of it. It is judged
+       * on the last *successful* write (`rates.isStale`): judged on the attempt,
+       * a sheet failing every attempt for a week read as fresh.
        */
       const sync = await rates.lastSync(ctx.db);
-      const attempted = sync.attemptedAt ?? sync.ratesUpdatedAt;
-      const stale =
-        attempted === null ||
-        Date.parse(ctx.at) - Date.parse(attempted) > CONFIG.rates.staleHours * 3_600_000;
+      const stale = rates.isStale(sync.ratesUpdatedAt, ctx.at, CONFIG.rates.staleHours);
 
       return {
         base,

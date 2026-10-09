@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { Icon } from './icons';
 import { useAuth } from './auth/context';
 import { matchCities, savePlace, useCities, type City } from './api/profile';
@@ -6,7 +6,9 @@ import { hasToken } from './api/client';
 import { finishRound, sendMove, startRound } from './api/consumer';
 import { EmailCodeStep, useEmailCodeGate } from './EmailCodeStep';
 import { GAMES } from './content';
-import { PROFILE_BONUS, WELCOME_POINTS } from './auth/users';
+import { PROFILE_BONUS, USERNAME_MAX, USERNAME_MIN, WELCOME_POINTS } from './auth/users';
+import { needsUsername } from './router';
+import { UsernameField, type HandleStatus } from './UsernameField';
 
 import { LANGUAGES, LANGUAGE_ORDER, useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -43,8 +45,9 @@ import '../components/GlobeHero/ui/flagFont.css';
  *   the profile form asks it from the served list (`GET /v1/cities`), and asking
  *   twice with two different lists is how the two answers start to disagree.
  *
- * So: language, three rounds of flags, the payoff. Three steps, the way the
- * phone counts them.
+ * So: language, place, username, the flags, the payoff — five on the counter.
+ * (The city step did arrive later, as `PlaceStep`, skippable; the note above is
+ * why it is skippable. The username after it is not — see `HandleStep`.)
  *
  * **The questions are the real bank.** `buildFlagRound` draws through
  * `games/bag.ts` out of the same 196-row flag bank L-Earn plays, which means
@@ -168,7 +171,10 @@ const EASY_FLAGS = [
  */
 const FIRST_TIER = 250;
 
-type Step = 'lang' | 'place' | 'game' | 'payoff';
+type Step = 'lang' | 'place' | 'handle' | 'game' | 'payoff';
+
+/** How many steps the counter names — language, place, username, flags, payoff. */
+const STEP_COUNT = 5;
 
 /* ────────────────────────────────────────────────────────────── the shell ── */
 
@@ -178,11 +184,11 @@ function Steps({ at }: { at: number }) {
   return (
     <div className="onb-head">
       <div className="onb-pips" aria-hidden>
-        {[0, 1, 2, 3].map((index) => (
+        {Array.from({ length: STEP_COUNT }, (_, index) => (
           <i key={index} data-on={index <= at ? 'true' : undefined} />
         ))}
       </div>
-      <span className="onb-count">{fill(copy.step, { n: String(at + 1), total: '4' })}</span>
+      <span className="onb-count">{fill(copy.step, { n: String(at + 1), total: String(STEP_COUNT) })}</span>
     </div>
   );
 }
@@ -382,6 +388,133 @@ function PlaceStep({ onNext, onBack }: { onNext: () => void; onBack: () => void 
   );
 }
 
+/* ─────────────────────────────────────────────────────── the username ── */
+
+/**
+ * "Create a username" — right after the city, and it cannot be skipped.
+ *
+ * The username is the name other players see: the board ranks people by it
+ * and an invite says who it is from by it (`publicName` on the server). A
+ * player with none was shown as "Marta K." — a fragment of a real name, on a
+ * public table — so the step is **required**, unlike the city before it: a
+ * missing city costs a nicer board, a missing handle costs somebody's name.
+ *
+ * Continue is live only on a verdict that the save could honour: free, already
+ * theirs, or *unchecked* — a check that could not reach the server is not a
+ * refusal, and the save that follows is the real judge. A refusal from the
+ * save (somebody took it in the meantime) is said under the field in the same
+ * words the live check uses.
+ *
+ * `returning` is the same step shown alone, to a player who finished the
+ * welcome flow before it asked for one (or on a client that did not). It has
+ * no step counter and no Back — there is nothing behind it — and its way out
+ * is to sign out, the same escape `ChooseType` offers for the same reason: a
+ * screen `resolveRoute` holds somebody at must have a door. Saving releases
+ * them on the next render, because the gate's question is answered.
+ */
+function HandleStep({
+  returning = false,
+  onNext,
+  onBack,
+}: {
+  returning?: boolean;
+  onNext?: () => void;
+  onBack?: () => void;
+}) {
+  const copy = useCopy();
+  const words = copy.onboarding;
+  const { account, saveProfile, signOut } = useAuth();
+  const labelId = useId();
+  const [value, setValue] = useState(() => account?.profile.username ?? '');
+  const [status, setStatus] = useState<HandleStatus>({ kind: 'idle' });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const ready = status.kind === 'free' || status.kind === 'mine' || status.kind === 'unchecked';
+
+  const save = async () => {
+    if (busy || !ready) return;
+    setBusy(true);
+    const result = await saveProfile({ username: value.trim() });
+    setBusy(false);
+    if (result.ok) {
+      onNext?.();
+      return;
+    }
+    setError(
+      result.field === 'username'
+        ? fill(copy.profile.usernameErrors[result.error], {
+            min: String(USERNAME_MIN),
+            max: String(USERNAME_MAX),
+          })
+        : copy.profile.saveFailed,
+    );
+  };
+
+  return (
+    <>
+      {!returning && <Steps at={2} />}
+      <h1 className="onb-title">{returning ? words.handleReturnTitle : words.handleTitle}</h1>
+      <p className="onb-lede">{returning ? words.handleReturnLede : words.handleLede}</p>
+
+      {/* A form so Enter submits; `display: contents` so the field and the
+          buttons sit in the shell's column exactly as the other steps' do. */}
+      <form
+        className="onb-handle"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <div className="onb-place">
+          <div className="field">
+            <span className="field-label" id={labelId}>
+              {copy.profile.username}
+            </span>
+            <UsernameField
+              value={value}
+              onChange={(next) => {
+                setValue(next);
+                setError(null);
+              }}
+              onStatus={setStatus}
+              labelledBy={labelId}
+              suggestFirst
+              autoFocus
+              invalid={error !== null}
+            />
+            {error ? (
+              <span className="field-error" role="alert">
+                {error}
+              </span>
+            ) : (
+              <span className="field-help">{words.handleNote}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="onb-actions">
+          <button type="submit" className="btn btn-solid btn-lg" disabled={busy || !ready}>
+            {busy ? words.handleSaving : words.langNext}
+          </button>
+          {returning ? (
+            /* Signs out and stops; `resolveRoute` answers `landing` for the
+               signed-out session, as it does for the welcome flow's own Back. */
+            <button type="button" className="link-btn" onClick={signOut}>
+              {copy.auth.signOut}
+            </button>
+          ) : (
+            <button type="button" className="link-btn" onClick={onBack}>
+              {words.back}
+            </button>
+          )}
+        </div>
+      </form>
+    </>
+  );
+}
+
 /* ─────────────────────────────────────────────────────────────── step two ── */
 
 function FlagStep({
@@ -496,7 +629,7 @@ function FlagStep({
   if (failed) {
     return (
       <>
-        <Steps at={2} />
+        <Steps at={3} />
         <h1 className="onb-title">{copy.gameFailed}</h1>
         <div className="onb-actions">
           <button
@@ -517,7 +650,7 @@ function FlagStep({
   if (!round) {
     return (
       <>
-        <Steps at={2} />
+        <Steps at={3} />
         <p className="onb-lede" role="status">
           {copy.gameLoading}
         </p>
@@ -541,7 +674,7 @@ function FlagStep({
   if (!started) {
     return (
       <>
-        <Steps at={2} />
+        <Steps at={3} />
         <span className="onb-prize-mark" aria-hidden>
           <Icon name="trophy" size={30} strokeWidth={2} />
         </span>
@@ -665,7 +798,7 @@ function FlagStep({
 
   return (
     <>
-      <Steps at={2} />
+      <Steps at={3} />
 
       <div className="onb-scoreline">
         <div className="onb-rounds" aria-hidden>
@@ -1002,7 +1135,7 @@ function PayoffStep({
 
   return (
     <>
-      <Steps at={3} />
+      <Steps at={4} />
 
       {/*
        * `display: contents`, so the cascade below can be written as
@@ -1159,6 +1292,9 @@ export function OnboardingPage() {
   );
 
   if (!account) return null;
+  /* Onboarded already, and here only because `resolveRoute` holds a player
+     without a username at this route. */
+  const returning = account.onboardedAt !== null && needsUsername(account);
 
   return (
     <main className="onb" id="welcome-top" ref={field}>
@@ -1178,19 +1314,27 @@ export function OnboardingPage() {
         {/* Lowercase, like every other surface: the word is the mark. */}
         <span className="brand">paylez</span>
 
-        {gate === 'checking' ? null : gate === 'code' ? (
+        {returning ? (
+          /* A player who finished the welcome flow before it asked for a
+             username: that one question, alone, and nothing else — see
+             `HandleStep`. The email code is not re-asked here; the panel on
+             Play and the wallet still offers it. */
+          <HandleStep returning />
+        ) : gate === 'checking' ? null : gate === 'code' ? (
           <EmailCodeStep onDone={openGate} />
         ) : step === 'lang' ? (
           <LanguageStep onNext={() => setStep('place')} />
         ) : step === 'place' ? (
-          <PlaceStep onNext={() => setStep('game')} onBack={() => setStep('lang')} />
+          <PlaceStep onNext={() => setStep('handle')} onBack={() => setStep('lang')} />
+        ) : step === 'handle' ? (
+          <HandleStep onNext={() => setStep('game')} onBack={() => setStep('place')} />
         ) : step === 'game' ? (
           <FlagStep
             /* Keyed on the language so changing it and coming back builds the
                round in the new one rather than re-rendering the old prompts. */
             key={language}
             language={language}
-            onBack={() => setStep('lang')}
+            onBack={() => setStep('handle')}
             onDone={(points) => {
               setEarned(points);
               setStep('payoff');

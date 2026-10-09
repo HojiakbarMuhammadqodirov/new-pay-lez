@@ -5,6 +5,7 @@ import { hasToken, ApiError } from './api/client';
 import { confirmCode, me, sendCode } from './api/consumer';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
+import { CODE_LENGTH, explainCodeError, useResendCooldown } from './emailCode';
 
 /**
  * Whether a new account should be asked for its email code before anything
@@ -58,17 +59,19 @@ export function EmailCodeStep({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ kind: 'error' | 'status'; text: string } | null>(null);
 
-  const explain = (cause: unknown): string => {
-    if (cause instanceof ApiError && cause.status === 0) return copy.offline;
-    const left = cause instanceof ApiError ? cause.detail.attemptsLeft : undefined;
-    if (typeof left === 'number') return fill(copy.wrongWithTries, { n: String(left) });
-    return cause instanceof ApiError ? cause.message : copy.failed;
-  };
+  /* The cooldown starts on the first answer that names one: sign-up's own
+     send is not visible from here, so the first press may come back
+     `sent: false` — which is the server saying when, not an error. */
+  const { left: cooling, hold } = useResendCooldown();
+
+  /* The same per-reason sentences as the panel on Play and the wallet
+     (`emailCode.ts`), never the server's English `message`. */
+  const explain = (cause: unknown): string => explainCodeError(cause, copy);
 
   const digits = code.replace(/\D/g, '');
 
   const submit = () => {
-    if (busy || digits.length !== 6) return;
+    if (busy || digits.length !== CODE_LENGTH) return;
     setBusy(true);
     setNote(null);
     confirmCode(digits)
@@ -83,12 +86,23 @@ export function EmailCodeStep({ onDone }: { onDone: () => void }) {
   };
 
   const resend = () => {
-    if (busy) return;
+    if (busy || cooling !== null) return;
     setBusy(true);
     setNote(null);
     sendCode()
-      .then((sent) => setNote({ kind: 'status', text: sent.sent ? copy.onItsWay : copy.tooSoon }))
-      .catch((cause: unknown) => setNote({ kind: 'error', text: explain(cause) }))
+      .then((sent) => {
+        hold(sent.nextSendAt);
+        setNote({ kind: 'status', text: sent.sent ? copy.onItsWay : copy.tooSoon });
+      })
+      .catch((cause: unknown) => {
+        /* "Already confirmed" — on the phone, or in another tab. Nothing is
+           left to ask here, so the step lets them through. */
+        if (cause instanceof ApiError && cause.code === 'conflict') {
+          void refreshAccount().then(onDone);
+          return;
+        }
+        setNote({ kind: 'error', text: explain(cause) });
+      })
       .finally(() => setBusy(false));
   };
 
@@ -115,12 +129,13 @@ export function EmailCodeStep({ onDone }: { onDone: () => void }) {
         <input
           inputMode="numeric"
           autoComplete="one-time-code"
-          maxLength={8}
           placeholder={copy.codePlaceholder}
           value={code}
           autoFocus
+          /* No `maxLength`: it truncates a paste *before* this runs, so a code
+             copied as "123 456" would lose its last digit. The slice is the cap. */
           onChange={(event) => {
-            setCode(event.target.value);
+            setCode(event.target.value.replace(/\D/g, '').slice(0, CODE_LENGTH));
             if (note?.kind === 'error') setNote(null);
           }}
           aria-invalid={note?.kind === 'error' ? true : undefined}
@@ -134,11 +149,13 @@ export function EmailCodeStep({ onDone }: { onDone: () => void }) {
       )}
 
       <div className="onb-actions">
-        <button type="submit" className="btn btn-solid btn-lg" disabled={busy || digits.length !== 6}>
+        <button type="submit" className="btn btn-solid btn-lg" disabled={busy || digits.length !== CODE_LENGTH}>
           {busy ? copy.working : copy.confirm}
         </button>
-        <button type="button" className="link-btn" onClick={resend} disabled={busy}>
-          {copy.resend}
+        {/* Disabled through the cooldown with the time left as its label, so
+            the press cannot be made only to be told "too soon" again. */}
+        <button type="button" className="link-btn" onClick={resend} disabled={busy || cooling !== null}>
+          {cooling !== null ? fill(copy.resendIn, { t: cooling }) : copy.resend}
         </button>
         <button type="button" className="link-btn" onClick={onDone} disabled={busy}>
           {copy.later}

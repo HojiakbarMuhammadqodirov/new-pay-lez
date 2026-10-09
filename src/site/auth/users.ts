@@ -304,14 +304,42 @@ export const BIRTH_DATE_WRITES = 2;
 export const MIN_AGE = 13;
 export const MAX_AGE = 120;
 
-/* Three to twenty, `a-z 0-9 _`, starting and ending on a letter or digit and
-   never two underscores together. The ceiling is a display constraint — a
+/* Three to twenty, `a-z 0-9 . _`, starting and ending on a letter or digit and
+   never two separators together. The ceiling is a display constraint — a
    handle has to fit beside an avatar on a leaderboard row — and the rest is
-   about telling two handles apart: `kasia_`, `_kasia` and `kasia__pl` are three
-   ways to look like somebody else. */
+   about telling two handles apart: `kasia_`, `.kasia` and `kasia__pl` are
+   three ways to look like somebody else. The dot is the server's since
+   2026-10-08 (`USERNAME_SHAPE` in `server/domain/accounts.ts`). */
 export const USERNAME_MIN = 3;
 export const USERNAME_MAX = 20;
-const USERNAME_SHAPE = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
+const USERNAME_SHAPE = /^[a-z0-9]+(?:[._][a-z0-9]+)*$/;
+
+/*
+ * The server's light word list, copied verbatim (`BLOCKED_ROOTS` /
+ * `BLOCKED_WORDS` in `server/domain/accounts.ts`, where the reasoning is). A
+ * root is refused anywhere in the handle, a word only as a whole part, and both
+ * are reported as `reserved` — the server's own reason for them, so the live
+ * check and the offline one say the same thing about the same name.
+ */
+const BLOCKED_ROOTS = [
+  'fuck', 'nigger', 'nigga', 'faggot', 'kurwa', 'jebac', 'jebany', 'pierdol',
+  'blyat', 'blyad', 'pizdec', 'pizda', 'yebat', 'pidor', 'pidar', 'huesos', 'zalupa',
+  'hitler', 'rapist',
+];
+const BLOCKED_WORDS = new Set([
+  'shit', 'cunt', 'bitch', 'whore', 'slut', 'dick', 'cock', 'pussy', 'asshole',
+  'bastard', 'porn', 'sex', 'nazi', 'chuj', 'huj', 'cipa', 'dupa', 'suka', 'khuy', 'hui',
+  'huy', 'mudak', 'gandon', 'shlyukha', 'jalap', 'qotoq', 'sik', 'kys',
+]);
+
+function isBlockedUsername(norm: string): boolean {
+  const squashed = norm.replace(/[^a-z]/g, '');
+  if (BLOCKED_ROOTS.some((root) => squashed.includes(root))) return true;
+  return norm
+    .split(/[._]/)
+    .map((part) => part.replace(/[0-9]/g, ''))
+    .some((part) => BLOCKED_WORDS.has(part));
+}
 
 /**
  * Handles the product keeps, copied from `RESERVED_USERNAMES` on the server.
@@ -363,7 +391,7 @@ export function checkUsername(
     return { ok: false, error: 'length' };
   }
   if (!USERNAME_SHAPE.test(norm)) return { ok: false, error: 'shape' };
-  if (RESERVED_USERNAMES.has(norm)) return { ok: false, error: 'reserved' };
+  if (RESERVED_USERNAMES.has(norm) || isBlockedUsername(norm)) return { ok: false, error: 'reserved' };
 
   const taken = users.some(
     (user) => user.id !== self && foldUsername(user.profile?.username ?? '') === norm,

@@ -30,6 +30,8 @@ import { RelocatePage } from './relocate';
 import { PATHS, navigate, resolveRoute, useRoute } from './router';
 import { SignInPage } from './signin';
 import { InvitePage } from './invite';
+import { TagPage } from './tag';
+import { DeleteAccountPage } from './deleteAccount';
 import { StreetMap } from './streets/StreetMap';
 import { StubDrift } from './stubs/StubDrift';
 import { VouchersPage } from './vouchers';
@@ -464,6 +466,10 @@ function SiteContent() {
         <SignInPage />
       ) : route === 'invite' ? (
         <InvitePage />
+      ) : route === 'tag' ? (
+        <TagPage />
+      ) : route === 'delete-account' ? (
+        <DeleteAccountPage />
       ) : route === 'business-setup' ? (
         <BusinessSetupPage />
       ) : route === 'analytics' ? (

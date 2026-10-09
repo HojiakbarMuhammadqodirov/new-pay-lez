@@ -605,14 +605,24 @@ export async function costPerNewCustomer(db: Db, venueId: string, window: Window
    * rate is missing it is left out and **named** in `excluded` rather than
    * added in the wrong unit.
    */
-  const plan = await db.get<{ price: number; currency: string }>(
-    `SELECT p.price_minor AS price, p.currency FROM subscriptions s JOIN plans p ON p.id = s.plan_id
+  const plan = await db.get<{ id: string; price: number; currency: string }>(
+    `SELECT p.id, p.price_minor AS price, p.currency FROM subscriptions s JOIN plans p ON p.id = s.plan_id
       WHERE s.venue_id = $v AND s.status IN ('active', 'trialing', 'grace')
       ORDER BY p.rank DESC LIMIT 1`,
     { v: venueId },
   );
   const venue = await getVenue(db, venueId);
-  const fee = plan ? await convertMinor(db, plan.price, plan.currency, venue.currency) : 0;
+  /* The market's own monthly price first (`plan_prices`): a Tashkent venue on
+     Growth pays 149 000 so'm, which is the price list's figure and not 149 zł
+     through the rate sheet. Converting is the fallback for a currency the
+     price list does not quote. */
+  const local = plan
+    ? await db.get<{ price: number }>(
+        `SELECT price_minor AS price FROM plan_prices WHERE plan_id = $p AND currency = $c AND months = 1`,
+        { p: plan.id, c: venue.currency },
+      )
+    : undefined;
+  const fee = !plan ? 0 : local ? local.price : await convertMinor(db, plan.price, plan.currency, venue.currency);
   const subscription = fee ?? 0;
 
   const loyalty =

@@ -430,7 +430,7 @@ export async function calendar(
  * failing, because "already done" is a success from the caller's side.
  *
  * `source_ref` is the bare `YYYY-MM-DD` with no prefix, unlike `payComeback`'s
- * `comeback:<window>`. The prefix there earns its place because a bare window
+ * `comeback:<day number>`. The prefix there earns its place because a bare day
  * index means nothing in a log line; a date does not need telling what it is,
  * and keeping it bare is what lets the streak read the column back as days
  * without parsing anything off the front.

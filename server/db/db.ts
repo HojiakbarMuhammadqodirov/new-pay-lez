@@ -806,6 +806,41 @@ async function assertGameTypes(db: Db): Promise<void> {
 }
 
 /**
+ * Sharing with the venues somebody visits is always on (2026-10-08).
+ *
+ * The profile's "share my profile with the venues I visit" switch is gone and
+ * `PATCH /v1/me` no longer writes `venue_sharing_default`, so nothing a client
+ * does can set it to 0 any more. This is the half that reaches the rows that
+ * already said no: without it, hiding the switch would have left exactly the
+ * people who opted out opted out for ever, with no control left to change it.
+ *
+ * **A rewrite and not a read-side override, deliberately.** Ignoring the column
+ * inside `grantSharingByDefault` would have done the same for real accounts, and
+ * it would also have removed the one lever `verify.ts` uses to test the consent
+ * gate on an account with *no* grant — the gate is the rule B9a calls "a hard
+ * query-layer rule", and it must keep being checked on its own. So the column
+ * keeps its meaning, and the boot holds every live account at 1.
+ *
+ * **Not version-guarded, unlike `optInToTheBoard` below, and that is safe here
+ * for the reason it was not safe there:** the board's switch still exists, so
+ * re-running that migration would re-opt-in somebody who opted out since; this
+ * switch does not exist, so no 0 written after the first run can be a decision.
+ * The two writers left are an erasure (which sets 0 on a row it also marks
+ * `erased`, excluded here, and whose venue grants it revokes outright) and the
+ * test suite, which writes after the boot. Per-venue withdrawals —
+ * `DELETE /v1/me/sharing/:venueId`, a revoked `data_sharing_consents` row — are
+ * a different record and are **not** touched: that is a "no" about one venue,
+ * stated against that venue, and this function only removes the account-wide
+ * default nobody can see any more. Same statement in `pg.ts`.
+ */
+async function sharingAlwaysOn(db: Db): Promise<void> {
+  await db.run(
+    `UPDATE users SET venue_sharing_default = 1
+      WHERE venue_sharing_default <> 1 AND status <> 'erased' AND deleted_at IS NULL`,
+  );
+}
+
+/**
  * 5 → 6: everybody is on the board unless they said otherwise.
  *
  * `leaderboard_opt_in` defaulted to 0, so the board listed only the handful of
@@ -930,6 +965,7 @@ export async function migrate(db: Db): Promise<void> {
      account visits a venue and `gate.confirm` writes the grant — and a venue
      it has never visited learns nothing either way. */
   await addColumn(db, 'users', 'venue_sharing_default', 'INTEGER NOT NULL DEFAULT 1');
+  await sharingAlwaysOn(db);
   await addColumn(db, 'users', 'username_norm', 'TEXT');
   /* FIFO's tiebreak — see the column's note in `schema.sql`. `DEFAULT 0` is the
      backfill: every existing lot is older than anything written from here on,
@@ -957,6 +993,22 @@ export async function migrate(db: Db): Promise<void> {
   await addColumn(db, 'word_bank', 'tiles', 'TEXT');
   await addColumn(db, 'word_bank', 'accept', 'TEXT');
   await addColumn(db, 'word_bank', 'decoys', 'INTEGER NOT NULL DEFAULT 0');
+  /* A venue's taxonomy keys (`domain/categories.ts`). NULL on every existing
+     row is right: `categories.tagsOf` derives a list from the legacy
+     category words until the venue saves its own. Same line in `pg.ts`. */
+  await addColumn(db, 'venues', 'tags', 'TEXT');
+  /* The owner's average transaction, their automatic switch, and "most off one
+     voucher" (the Vouchers screen). NULL / 0 on every existing venue is the
+     rule it had before — `venues.averageCheck` and each rung's own cap — so
+     nothing needs a backfill. Same lines in `pg.ts`. */
+  await addColumn(db, 'venues', 'avg_check_owner_minor', 'INTEGER');
+  await addColumn(db, 'venues', 'avg_check_auto', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumn(db, 'venues', 'voucher_cap_minor', 'INTEGER');
+  /* NFC tags (`NFC.md`): where the tag is stuck, and its last accepted tap —
+     NULL on every existing row is right, it reads "never tapped", which is
+     what lets a tag's first tap present counter 0. Same lines in `pg.ts`. */
+  await addColumn(db, 'tag_registry', 'label', 'TEXT');
+  await addColumn(db, 'tag_registry', 'last_tap_at', 'TEXT');
 
   /* The handle's uniqueness, and it lives here rather than as a `UNIQUE` in
      `schema.sql` because `ALTER TABLE … ADD COLUMN` cannot carry one — so an

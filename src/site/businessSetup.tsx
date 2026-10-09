@@ -39,6 +39,7 @@ import {
 } from './api/listing';
 import { DEMO_ACCOUNT } from './demoMode';
 import { useListingEditor, without, type ListingFlash } from './listingEditor';
+import { AppCategoryPicker } from './AppCategories';
 
 /**
  * The business listing — the form an owner fills in once, and the record they
@@ -726,6 +727,16 @@ function ListingEditor({
               </select>
             </Field>
           </div>
+
+          {/* The app's Deals filter (`GET /v1/categories`). A group of chips,
+              not one control, so the row is a `div`. */}
+          <Field label={fields.appCategories} help={fields.appCategoriesHelp} wraps={false}>
+            <AppCategoryPicker
+              value={draft.tags ?? []}
+              wholeLabel={fields.appCategoriesWhole}
+              onChange={(tags) => change((current) => ({ ...current, tags }))}
+            />
+          </Field>
 
           <Field label={fields.description} required help={fields.descriptionHelp}>
             <textarea

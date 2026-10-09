@@ -78,10 +78,13 @@
  * (`sniff`). SVG still never passes — it has no magic number here to match.
  */
 import { createHash } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
 import { readdir, readFile } from 'node:fs/promises';
+import { BlockList, isIP } from 'node:net';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { CONFIG } from '../config.ts';
 import type { Db } from '../db/db.ts';
+import * as accounts from './accounts.ts';
 import { DomainError } from './errors.ts';
 import { now, type Iso } from './time.ts';
 
@@ -99,12 +102,126 @@ export const ALLOWED = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as
 const SOURCES: Record<string, { table: string; column: string }> = {
   /* The guidance directory — the "service logos" of the report. */
   service: { table: 'guidance_services', column: 'image_url' },
-  /* A venue's own logo, which the owner's form writes as a `data:` URL and the
-     import brought over as an address. */
-  venue: { table: 'venues', column: 'logo' },
+  /* A venue's own picture, which the owner's form writes as a `data:` URL and
+     the import brought over as an address.
+
+     **`image_url`, not `logo`.** This said `logo`, a column `venues` has never
+     had (the only `logo` in the schema is `gift_card_stock`'s), so every
+     `GET /v1/media/venue/:id` threw "no such column" inside `storedOf` and
+     answered 500 — the production 500 reported on 2026-09-22, for every id
+     tried, existing or not. `verify.ts` only ever exercised `service`. */
+  venue: { table: 'venues', column: 'image_url' },
 };
 
-export const isEntity = (value: string): boolean => value in SOURCES;
+/* ═══════════════════════════════════════════════════════ profile photos ══ */
+
+/**
+ * What a profile photo may be: the three formats a phone camera roll or a
+ * client-side re-encode produces. GIF is a logo format, not a face, and an
+ * animated one on a leaderboard row is a different product decision.
+ */
+export const AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+
+/**
+ * The path a stored photo is served at. `?v=` is a hash of the bytes, so a
+ * replaced photo is a new URL and the week of `immutable` cache never serves
+ * the old face.
+ */
+export const avatarPath = (userId: string, body: Buffer): string =>
+  `/v1/media/user/${encodeURIComponent(userId)}?v=${createHash('sha1').update(body).digest('hex').slice(0, 10)}`;
+
+/** Whether `display_avatar` holds a photo this server stores for that account. */
+export const isStoredAvatar = (userId: string, stored: string | null | undefined): boolean =>
+  (stored ?? '').startsWith(`/v1/media/user/${encodeURIComponent(userId)}?v=`);
+
+/**
+ * Validate an uploaded photo's bytes, or refuse naming the field.
+ *
+ * **The bytes decide the type** (`sniff`), never a header or a file name: a
+ * file that says `image/jpeg` and is an SVG or an HTML page is refused, which is
+ * what makes serving it back from our own origin safe. Size is checked on the
+ * decoded bytes against `CONFIG.media.avatarMaxBytes`. Nothing is re-encoded —
+ * there is no image library here — so the client is expected to send a small
+ * square (the app sends 512 px JPEG); the server only refuses what it must.
+ */
+export function checkAvatar(body: Buffer): (typeof AVATAR_TYPES)[number] {
+  const refuse = (message: string): never => {
+    throw new DomainError('validation_failed', message, { field: 'avatar' });
+  };
+  if (body.byteLength === 0) refuse('that photo is empty');
+  if (body.byteLength > CONFIG.media.avatarMaxBytes) {
+    refuse(`a photo is at most ${Math.floor(CONFIG.media.avatarMaxBytes / (1024 * 1024))} MB`);
+  }
+  const mime = sniff(body);
+  if (!mime || !(AVATAR_TYPES as readonly string[]).includes(mime)) {
+    refuse('a photo is a JPEG, PNG or WebP picture');
+  }
+  return mime as (typeof AVATAR_TYPES)[number];
+}
+
+/**
+ * Keep an uploaded photo and point the account at it.
+ *
+ * Stored in `media_assets` — base64 in one column, the type in the next, the
+ * same row shape every fetched logo already has — under `entity = 'user'`. In
+ * the database rather than on disk because a profile photo is account data: it
+ * is backed up with the account, erased with it, and it works identically on
+ * SQLite and Postgres with no directory to provision on the VPS.
+ *
+ * `display_avatar` gets the **path** (`avatarPath`), not the bytes, so every
+ * query that already selects that column — the leaderboard, a venue's customer
+ * list, a pass scan — hands a client a short first-party URL rather than a
+ * megabyte of base64. The write goes through `accounts.updateProfile`, so a
+ * photo that completes the seven answers pays the profile bonus exactly as a
+ * typed one would.
+ */
+export async function storeAvatar(db: Db, userId: string, body: Buffer, at: Iso = now()) {
+  const mime = checkAvatar(body);
+  const path = avatarPath(userId, body);
+  await db.run(
+    `INSERT INTO media_assets (id, entity, entity_id, source_url, mime, bytes, size_bytes, status, detail, fetched_at)
+     VALUES ($i, 'user', $x, 'upload', $m, $b, $s, 'ok', NULL, $t)
+       ON CONFLICT (entity, entity_id) DO UPDATE SET
+         source_url = excluded.source_url,
+         mime = excluded.mime,
+         bytes = excluded.bytes,
+         size_bytes = excluded.size_bytes,
+         status = excluded.status,
+         detail = excluded.detail,
+         fetched_at = excluded.fetched_at`,
+    { i: `med_user_${userId}`, x: userId, m: mime, b: body.toString('base64'), s: body.byteLength, t: at },
+  );
+  return await accounts.updateProfile(db, userId, { avatar: path }, at);
+}
+
+/** Take the photo back: the row goes and the account's answer is cleared. */
+export async function removeAvatar(db: Db, userId: string, at: Iso = now()) {
+  await forget(db, 'user', userId);
+  return await accounts.updateProfile(db, userId, { clear: ['avatar'] }, at);
+}
+
+/**
+ * The stored photo for an account, or `not_found`.
+ *
+ * Served only while the account still points at it: a photo cleared through
+ * `PATCH /v1/me`, replaced by a typed address, or erased with the account is a
+ * 404 at once, whatever row may linger — the account's own column is the
+ * consent, not the existence of the bytes.
+ */
+async function avatarFor(db: Db, userId: string): Promise<Asset> {
+  const row = await db.get<{ avatar: string | null; status: string; mime: string | null; bytes: string | null }>(
+    `SELECT u.display_avatar AS avatar, m.status, m.mime, m.bytes
+       FROM media_assets m JOIN users u ON u.id = m.entity_id
+      WHERE m.entity = 'user' AND m.entity_id = $x AND u.deleted_at IS NULL`,
+    { x: userId },
+  );
+  if (!row || row.status !== 'ok' || !row.mime || !row.bytes || !isStoredAvatar(userId, row.avatar)) {
+    throw new DomainError('not_found', 'nothing to serve');
+  }
+  return { mime: row.mime, body: Buffer.from(row.bytes, 'base64') };
+}
+
+export const isEntity = (value: string): boolean => Object.hasOwn(SOURCES, value);
 
 /**
  * The image type a file's first bytes say it is, or null.
@@ -176,7 +293,7 @@ interface Row {
  */
 /** What the row's image column holds, trimmed, or '' for nothing. */
 async function storedOf(db: Db, entity: string, id: string): Promise<string> {
-  const source = SOURCES[entity];
+  const source = Object.hasOwn(SOURCES, entity) ? SOURCES[entity] : undefined;
   if (!source) return '';
   const row = await db.get<{ value: string | null }>(
     `SELECT ${source.column} AS value FROM ${source.table} WHERE id = $i`,
@@ -186,7 +303,7 @@ async function storedOf(db: Db, entity: string, id: string): Promise<string> {
 }
 
 async function sourceOf(db: Db, entity: string, id: string): Promise<string | null> {
-  const source = SOURCES[entity];
+  const source = Object.hasOwn(SOURCES, entity) ? SOURCES[entity] : undefined;
   if (!source) return null;
   const row = await db.get<{ value: string | null }>(
     `SELECT ${source.column} AS value FROM ${source.table} WHERE id = $i`,
@@ -199,6 +316,58 @@ async function sourceOf(db: Db, entity: string, id: string): Promise<string | nu
      image proxy becomes a serious hole rather than a broken picture. */
   if (!/^https?:\/\//i.test(value)) return null;
   return value;
+}
+
+/*
+ * Addresses this server must never fetch on somebody else's say-so: loopback,
+ * private networks, link-local (169.254.169.254 is every cloud's metadata
+ * service), carrier-grade NAT, benchmarking, multicast and reserved space.
+ */
+const PRIVATE = (() => {
+  const list = new BlockList();
+  for (const [net, bits] of [
+    ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],
+    ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3],
+  ] as const) list.addSubnet(net, bits, 'ipv4');
+  for (const [net, bits] of [['::', 127], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]] as const) {
+    list.addSubnet(net, bits, 'ipv6');
+  }
+  return list;
+})();
+
+/** True for an address on the public internet. Exported for `verify.ts`. */
+export function isPublicAddress(address: string): boolean {
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+  const ip = mapped ? mapped[1] : address;
+  const family = isIP(ip);
+  if (family === 0) return false;
+  return !PRIVATE.check(ip, family === 4 ? 'ipv4' : 'ipv6');
+}
+
+/**
+ * Whether `url` is http(s) and **every** address its host resolves to is
+ * public. A name that resolves to nothing, or to any private address, is
+ * refused. (The fetch resolves the name again, so a host that answers
+ * differently the second time — DNS rebinding — is not stopped by this alone;
+ * the egress firewall in SECURITY.md is the backstop for that.)
+ */
+export async function isPublicUrl(url: string): Promise<boolean> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  const host = parsed.hostname.replace(/^\[|\]$/g, '');
+  if (!host || /^localhost$/i.test(host) || /\.localhost$/i.test(host)) return false;
+  if (isIP(host)) return isPublicAddress(host);
+  try {
+    const found = await lookup(host, { all: true, verbatim: true });
+    return found.length > 0 && found.every((entry) => isPublicAddress(entry.address));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -242,25 +411,33 @@ async function ingest(db: Db, entity: string, id: string, url: string, at: Iso):
     return { source_url: url, mime, bytes, status, detail };
   };
 
-  let response: Response;
+  let response: Response | undefined;
   try {
     /* A timeout, because a hung fetch holds a request on this server and the
-       thing at the other end is somebody else's host. `redirect: 'follow'` is
-       the default and is wanted — a CDN URL is usually one hop from the real
-       object — and the scheme check in `sourceOf` is re-applied to whatever we
-       ended up at, because a redirect to `file:` is the same hole. */
-    response = await fetch(url, {
-      redirect: 'follow',
-      signal: AbortSignal.timeout(CONFIG.media.timeoutMs),
-    });
+       thing at the other end is somebody else's host. Redirects are followed
+       **by hand**, a few hops at most — a CDN URL is usually one hop from the
+       real object — so that every hop is checked by `isPublicUrl` before it is
+       requested. A venue owner writes `image_url`, so with automatic
+       following this was a request from inside our network to any address a
+       partner chose (cloud metadata, the database pooler, localhost:8787). */
+    let target = url;
+    for (let hop = 0; ; hop++) {
+      if (!(await isPublicUrl(target))) return await write('refused', 'not a public http(s) host', null, null);
+      response = await fetch(target, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(CONFIG.media.timeoutMs),
+      });
+      const location = response.headers.get('location');
+      if (response.status < 300 || response.status >= 400 || !location) break;
+      if (hop >= 4) return await write('failed', 'too many redirects', null, null);
+      target = new URL(location, target).toString();
+    }
   } catch (error) {
     return await write('failed', (error as Error).message.slice(0, 200), null, null);
   }
 
+  if (!response) return await write('failed', 'no response', null, null);
   if (!response.ok) return await write('failed', `http ${response.status}`, null, null);
-  if (!/^https?:$/i.test(new URL(response.url).protocol)) {
-    return await write('refused', 'redirected off http', null, null);
-  }
 
   const declaredType = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
 
@@ -302,7 +479,9 @@ async function ingest(db: Db, entity: string, id: string, url: string, at: Iso):
  * do.
  */
 export async function assetFor(db: Db, entity: string, id: string, at: Iso = now()): Promise<Asset> {
-  if (!SOURCES[entity]) throw new DomainError('not_found', 'no such media kind');
+  /* Profile photos are uploads, never fetched: no source column, no proxy. */
+  if (entity === 'user') return await avatarFor(db, id);
+  if (!Object.hasOwn(SOURCES, entity)) throw new DomainError('not_found', 'no such media kind');
 
   /* A file on our own disk, or a picture inline in the column: no fetch and no
      cache row — the bytes are already here. */

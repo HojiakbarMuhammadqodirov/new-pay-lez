@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
-import { FOOD_MOVES, foodMilestones, foodPoints } from '../auth/player';
+import { FOOD_MOVES, FOOD_TARGET, foodMilestones, foodPoints } from '../auth/player';
+import { PerfectBar } from './hud';
 import { sendMove } from '../api/consumer';
 import { FOODS, FOOD_BOMB } from '../content';
 import {
@@ -211,9 +212,12 @@ export function FoodCross({
   return (
     <div className="round fc-round">
       <div className="round-top">
-        <span className="round-count">{fill(copy.food.score, { n: String(score) })}</span>
-        <span className="round-count">{fill(copy.food.movesLeft, { n: String(Math.max(0, limit - moves)) })}</span>
+        <span className="round-count">{fill(copy.food.score, { n: `${score} / ${FOOD_TARGET}` })}</span>
+        {/* The moves left take the clock slot: they are this round's
+            countdown, the way the seconds are a quiz's. */}
+        <span className="round-clock">{fill(copy.food.movesLeft, { n: String(Math.max(0, limit - moves)) })}</span>
       </div>
+      <PerfectBar performance={(score / FOOD_TARGET) * 100} label={copy.perfectProgress} />
 
       <div
         className="fc-board"

@@ -10,11 +10,13 @@ import {
   BUSINESS_ROLLOUT_ICONS,
   BUSINESS_SITES,
   BUSINESS_STATS,
-  BUSINESS_TIERS,
   BUSINESS_WHY_ICONS,
+  PLAN_UNLIMITED,
+  SALES_EMAIL,
 } from './content';
 import { Icon } from './icons';
-import { fill, group } from './i18n/currency';
+import { CURRENCIES, fill, group } from './i18n/currency';
+import { rawOf, useMarketLine, usePartnerPlans, usePlanFeatures, usePlanPrice } from './partnerPlans';
 import {
   useCopy,
   useCurrency,
@@ -847,72 +849,113 @@ function BusinessOperators() {
 
 /* ──────────────────────────────────────────────────────────── pricing ── */
 
+/**
+ * The partner tiers, from the server's price list.
+ *
+ * This table used to be its own copy — three dictionary cards and a euro
+ * figure in `content.ts` that converted 149 € into whatever the reader was
+ * reading, so a Polish visitor saw roughly 640 zł for a plan the strategy
+ * prices at 149. It now reads `GET /v1/plans?audience=partner` through
+ * `partnerPlans.ts`, the same module the dashboard's plan sheet uses: the
+ * names, the prices in the reader's market, the annual figure and every
+ * feature line are the server's, and only the sentence under each name is
+ * written here (`copy.business.pricing.blurbs`, keyed by the plan's code).
+ *
+ * No demo ladder behind it: a marketing page that cannot reach the price list
+ * says so and gives the sales address, rather than quoting a copy.
+ */
 function BusinessPricing() {
   const copy = useCopy();
-  const money = useMoney();
+  const pricing = copy.business.pricing;
+  const shared = copy.partnerPlans;
+  const { plans, failed } = usePartnerPlans();
+  const price = usePlanPrice();
+  const features = usePlanFeatures();
+  const marketLine = useMarketLine();
+  const separator = useGroupSeparator();
+  const middle = plans ? Math.floor((plans.length - 1) / 2) : -1;
+  const converted = plans?.some((plan) => price(plan, 1)?.converted) ?? false;
+
+  /* Who a tier is for, from its own `venues` entitlement. */
+  const venuesNote = (raw: string | undefined) => {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    if (n >= PLAN_UNLIMITED) return pricing.venues.unlimited;
+    if (n === 1) return pricing.venues.one;
+    return fill(pricing.venues.upTo, { n: group(n, CURRENCIES.PLN, 0, separator) });
+  };
 
   return (
     <section className="section" id="business-pricing">
       <div className="wrap">
         <div className="section-head" data-reveal>
-          <span className="eyebrow">{copy.business.pricing.eyebrow}</span>
-          <h2>{copy.business.pricing.title}</h2>
-          <p>{copy.business.pricing.lede}</p>
+          <span className="eyebrow">{pricing.eyebrow}</span>
+          <h2>{pricing.title}</h2>
+          <p>{pricing.lede}</p>
         </div>
 
-        <div className="tiers">
-          {copy.business.pricing.tiers.map((tier, i) => {
-            const { price, featured, partner } = BUSINESS_TIERS[i];
-            const buttonClass = `btn btn-lg ${featured ? 'btn-solid' : 'btn-ghost'}`;
+        {failed ? (
+          <p className="business-note" data-reveal>
+            {pricing.unavailable}{' '}
+            <a href={`mailto:${SALES_EMAIL}`}>{SALES_EMAIL}</a>
+          </p>
+        ) : (
+          <div className="tiers" aria-busy={plans === null}>
+            {(plans ?? []).map((plan, i) => {
+              const featured = i === middle;
+              const monthly = price(plan, 1);
+              const annual = price(plan, 12);
+              const list = features(plans!, i);
+              const note = venuesNote(rawOf(plan, 'venues'));
+              const blurb = (pricing.blurbs as Record<string, string | undefined>)[plan.code];
+              const buttonClass = `btn btn-lg ${featured ? 'btn-solid' : 'btn-ghost'}`;
 
-            return (
-            <article
-              className="tier"
-              key={tier.name}
-              data-featured={featured ? 'true' : undefined}
-              data-reveal
-            >
-              {featured && <span className="tier-flag">{copy.business.pricing.featured}</span>}
+              return (
+                <article
+                  className="tier"
+                  key={plan.id}
+                  data-featured={featured ? 'true' : undefined}
+                  data-reveal
+                >
+                  {featured && <span className="tier-flag">{pricing.featured}</span>}
 
-              <h3>{tier.name}</h3>
-              <span className="tier-note">{tier.note}</span>
+                  <h3>{plan.name}</h3>
+                  {note && <span className="tier-note">{note}</span>}
 
-              <p className="tier-price">
-                {price === null ? (
-                  <b>{copy.business.pricing.quoted}</b>
-                ) : (
-                  <>
-                    <b>{money(price)}</b>
-                    <span>{copy.business.pricing.perMonth}</span>
-                  </>
-                )}
-              </p>
+                  <p className="tier-price">
+                    <b>{monthly ? monthly.amount : copy.dashboard.planPanel.freePrice}</b>
+                    {monthly && <span>{shared.perMonth}</span>}
+                  </p>
+                  {marketLine(monthly) && <span className="tier-note">{marketLine(monthly)}</span>}
+                  {annual && <span className="tier-note">{fill(pricing.annualNote, { amount: annual.amount })}</span>}
 
-              <p className="tier-body">{tier.body}</p>
+                  {blurb && <p className="tier-body">{blurb}</p>}
 
-              <ul className="tier-list">
-                {tier.features.map((feature) => (
-                  <li key={feature}>
-                    <Icon name="check" size={14} strokeWidth={3} />
-                    {feature}
-                  </li>
-                ))}
-              </ul>
+                  <ul className="tier-list">
+                    {[...(list.heading ? [list.heading] : []), ...list.lines].map((feature) => (
+                      <li key={feature}>
+                        <Icon name="check" size={14} strokeWidth={3} />
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
 
-              {partner ? (
-                <PartnerSignUp className={buttonClass}>{tier.action}</PartnerSignUp>
-              ) : (
-                <a href="#business-cta" className={buttonClass}>
-                  {tier.action}
-                </a>
-              )}
-            </article>
-            );
-          })}
-        </div>
+                  {i > 0 ? (
+                    <PartnerSignUp className={buttonClass}>{pricing.becomePartner}</PartnerSignUp>
+                  ) : (
+                    <a href="#business-cta" className={buttonClass}>
+                      {pricing.startFree}
+                    </a>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
 
         <p className="business-note" data-reveal>
-          {copy.business.pricing.footnote}
+          {pricing.footnote} {shared.noCommission} {shared.vat}
+          {converted && <> {shared.converted}</>}
         </p>
       </div>
     </section>

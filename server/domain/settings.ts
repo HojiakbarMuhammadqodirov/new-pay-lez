@@ -135,6 +135,12 @@ interface PlanSeed {
    * contract length is a conversation, not a button.
    */
   terms?: boolean;
+  /**
+   * The price list per market (`plan_prices`): per-month price on each
+   * commitment a market quotes, in that currency's minor units. Absent on a
+   * free plan and on a plan sold only at `priceMinor` in złoty.
+   */
+  prices?: ReadonlyArray<{ currency: string; months: number; priceMinor: number }>;
   entitlements: Record<string, string | number | boolean>;
 }
 
@@ -325,6 +331,41 @@ const PLANS: PlanSeed[] = [
       assistant: true,
     },
   },
+  /*
+   * ── The partner ladder: Starter / Growth / Scale ─────────────────────────
+   *
+   * **Every figure below is the pricing strategy's**, §5 and the price card in
+   * §12 (`landing/uploads/paylez-pricing-strategy.md`), and this block is the
+   * one place they are written: `GET /v1/plans?audience=partner` serves them,
+   * and the dashboard's plan sheet and `#/business` both render that response
+   * rather than a copy of it. The strategy's own instruction was to *settle the
+   * price list* — the older Growth 299 zł / Chain 799 zł is retired below
+   * (`SUCCESSORS`), so two price lists cannot meet in a sales conversation.
+   *
+   * The keys are listed in the strategy's own row order, so the table and this
+   * block can be read side by side. Three kinds of value:
+   *
+   * - **Counts**, where `UNLIMITED` is the sentinel the client writes as a word.
+   * - **Flags**, `true` / `false`.
+   * - **Levels**, a word the client looks up (`basic`, `full`, `standard`,
+   *   `advanced`, `email`, `chat`, `manager`) — the strategy grades these rows
+   *   rather than counting them, and a number invented to stand in for "Advanced"
+   *   would be a figure nobody chose. Empty is "not included".
+   *
+   * And one **money** value, `loyalty_budget`: a JSON map of currency to minor
+   * units, because the strategy sets it per market (3 900 zł against 2 000 000
+   * so'm) for the same reason it sets the prices per market.
+   *
+   * What is enforced, and where — so a reader can tell a gate from a promise:
+   * `live_deals`, `active_campaigns`, `venues` (`requireCapacity`), `push_quota`
+   * (`deals.pushQuota`), `passes`, `pass_limit`, `pass_subscribers`
+   * (`domain/passes.ts`), `deep_analytics`, `benchmarks`, `identified_profiles`,
+   * `export_csv`, `assistant` (`routes/partner.ts`). The rest describe what the
+   * tier is sold with and are delivered by people or by features still to be
+   * built (API access, the account manager, multi-venue passes, member-only
+   * deals, tiered vouchers, the assistant's two grades, the loyalty budget's
+   * ceiling) — the plan sheet prints them because the price list does.
+   */
   {
     audience: 'partner',
     code: 'starter',
@@ -335,67 +376,145 @@ const PLANS: PlanSeed[] = [
     entitlements: {
       /* B7: "the free tier must let a partner run the core loop — at least basic
          deals, loyalty, and vouchers — so a venue can join and see value before
-         paying." */
-      live_deals: 1,
-      active_campaigns: 1,
-      push_quota: 2,
-      venues: 1,
-      team_seats: 1,
-      vouchers: true,
+         paying." The strategy goes further on deals: unlimited on every tier. */
+      live_deals: UNLIMITED,
+      /* "Basic" deal analytics is the base the overview already serves; "Full"
+         is `deep_analytics`, which `routes/partner.ts` gates the rest behind. */
       deep_analytics: false,
-      benchmarks: false,
-      assistant: false,
+      /* "1 (fixed)": one loyalty campaign running, and no budget of its own. */
+      active_campaigns: 1,
+      voucher_tiers: false,
+      push_quota: 2,
       identified_profiles: false,
+      /* Rides with the customer list: an export of a list you cannot see would
+         be the list by another door. */
       export_csv: false,
-      /* Subscription passes a venue sells (`domain/passes.ts`): "Included in Growth". */
+      benchmarks: false,
+      venues: 1,
+      team_management: false,
+      assistant: false,
+      assistant_level: '',
+      api_access: false,
+      support: 'email',
+      /* "Preview only": a Starter venue can build a pass and see it, and cannot
+         publish one — `passes` is what `assertPublishable` asks. */
       passes: false,
+      pass_limit: 0,
+      pass_subscribers: 0,
+      pass_analytics: '',
+      multi_venue_passes: false,
+      member_deals: false,
+      vouchers: true,
     },
   },
   {
     audience: 'partner',
     code: 'growth',
     name: 'Growth',
-    priceMinor: 29900,
+    priceMinor: 14900,
     trialDays: 0,
     rank: 1,
+    /* 149 zł a month, or 119 a month on the annual — §5. Tashkent's figures are
+       the same digits in so'm, which is the strategy's point: about 29% of the
+       Polish price in real terms, a POS add-on rather than a software platform. */
+    prices: [
+      { currency: 'PLN', months: 1, priceMinor: 14900 },
+      { currency: 'PLN', months: 12, priceMinor: 11900 },
+      { currency: 'UZS', months: 1, priceMinor: 149000 },
+      { currency: 'UZS', months: 12, priceMinor: 119000 },
+    ],
     entitlements: {
-      live_deals: 5,
-      active_campaigns: 3,
-      push_quota: 4,
-      venues: 3,
-      team_seats: 5,
-      vouchers: true,
+      live_deals: UNLIMITED,
       deep_analytics: true,
-      /* B9: benchmarks are explicitly a Growth-tier entitlement. */
-      benchmarks: true,
-      assistant: true,
+      /* "Full": no ceiling on how many run at once — the budget is the bound. */
+      active_campaigns: UNLIMITED,
+      loyalty_budget: JSON.stringify({ PLN: 390000, UZS: 2000000 }),
+      voucher_tiers: true,
+      push_quota: 4,
       identified_profiles: true,
       export_csv: true,
+      /* B9: benchmarks are explicitly a Growth-tier entitlement. */
+      benchmarks: true,
+      venues: 3,
+      team_management: false,
+      assistant: true,
+      assistant_level: 'standard',
+      api_access: false,
+      support: 'chat',
       passes: true,
+      /* "2 passes · 200 subscribers": live or paused passes at once, and people
+         holding any of the venue's passes at once. */
+      pass_limit: 2,
+      pass_subscribers: 200,
+      pass_analytics: 'basic',
+      multi_venue_passes: false,
+      member_deals: true,
+      vouchers: true,
     },
   },
   {
     audience: 'partner',
-    code: 'chain',
-    name: 'Chain',
-    priceMinor: 79900,
+    code: 'scale',
+    name: 'Scale',
+    priceMinor: 34900,
     trialDays: 0,
     rank: 2,
+    prices: [
+      { currency: 'PLN', months: 1, priceMinor: 34900 },
+      { currency: 'PLN', months: 12, priceMinor: 27900 },
+      { currency: 'UZS', months: 1, priceMinor: 349000 },
+      { currency: 'UZS', months: 12, priceMinor: 279000 },
+    ],
     entitlements: {
-      live_deals: 20,
-      active_campaigns: 10,
-      push_quota: 8,
-      venues: 25,
-      team_seats: 25,
-      vouchers: true,
+      live_deals: UNLIMITED,
       deep_analytics: true,
-      benchmarks: true,
-      assistant: true,
+      active_campaigns: UNLIMITED,
+      loyalty_budget: JSON.stringify({ PLN: 1200000, UZS: 6000000 }),
+      voucher_tiers: true,
+      push_quota: 10,
       identified_profiles: true,
       export_csv: true,
+      benchmarks: true,
+      venues: UNLIMITED,
+      team_management: true,
+      assistant: true,
+      assistant_level: 'advanced',
+      api_access: true,
+      support: 'manager',
       passes: true,
+      pass_limit: UNLIMITED,
+      pass_subscribers: UNLIMITED,
+      pass_analytics: 'full',
+      multi_venue_passes: true,
+      member_deals: true,
+      vouchers: true,
     },
   },
+];
+
+/**
+ * A plan replaced by another, and where its subscribers go.
+ *
+ * Chain (799 zł) became Scale (349 zł) when the strategy settled the price list.
+ * **Moved rather than grandfathered**, which is the opposite of what `RETIRED`
+ * does for Plus, and the difference is the direction: every Scale figure is at
+ * least Chain's (unlimited deals, venues, campaigns and passes against Chain's
+ * 20 / 25 / 10 / any) at under half the list price, so leaving a venue on the
+ * withdrawn row would keep it on the *worse* plan for paying more — and keep it
+ * off the ladder the plan sheet draws, with no card marked as its own. The
+ * strategy's "existing subscribers keep their price" (§11) protects a customer
+ * from a rise; this is a cut, and it is applied.
+ *
+ * Only the `plan_id` changes. Status, source, dates and the processor's
+ * reference stay as they were, so nobody's renewal moves and nothing is billed:
+ * partner tiers are granted from the console (`manual`), and no partner price
+ * has ever been mapped in Stripe (`stripe:setup` maps the consumer audience
+ * unless told `--partner`). Run on every boot, it is a no-op once the old row
+ * is empty — which also catches a subscription a console wrote against the old
+ * id between two boots.
+ */
+const SUCCESSORS: ReadonlyArray<{ audience: 'consumer' | 'partner'; from: string; to: string }> = [
+  { audience: 'partner', from: 'chain', to: 'scale' },
 ];
 
 /**
@@ -418,6 +537,9 @@ const PLANS: PlanSeed[] = [
 const RETIRED: ReadonlyArray<{ audience: 'consumer' | 'partner'; code: string }> = [
   /* Free / Plus / Premium became Free / Pro / Premium. */
   { audience: 'consumer', code: 'plus' },
+  /* Starter / Growth / Chain became Starter / Growth / Scale; its subscribers
+     are moved first (`SUCCESSORS`), so this withdraws an empty row. */
+  { audience: 'partner', code: 'chain' },
 ];
 
 /**
@@ -450,6 +572,10 @@ const RETIRED_ENTITLEMENTS: readonly string[] = [
      which never asks for it, and exactly the kind of ghost that gets a curve
      re-implemented around it because the table still says a plan buys one. */
   'round_decay',
+  /* A seat count nothing enforced, replaced by the strategy's yes/no row
+     "Team management & roles" (`team_management`, Scale only). A count left
+     behind would be printed by a client as a promise nobody keeps. */
+  'team_seats',
 ];
 
 async function seedPlans(db: Db, at: Iso): Promise<void> {
@@ -479,6 +605,18 @@ async function seedPlans(db: Db, at: Iso): Promise<void> {
       );
     }
     await seedTerms(db, id, plan.priceMinor, plan.terms === true);
+    await seedPrices(db, id, plan.prices ?? []);
+  }
+
+  /* Before `RETIRED`, so the row being withdrawn is already empty; after the
+     upsert loop, so the successor exists to be pointed at. */
+  for (const move of SUCCESSORS) {
+    await db.run(
+      `UPDATE subscriptions SET plan_id = (SELECT id FROM plans WHERE audience = $a AND code = $to), updated_at = $t
+        WHERE plan_id IN (SELECT id FROM plans WHERE audience = $a AND code = $from)
+          AND EXISTS (SELECT 1 FROM plans WHERE audience = $a AND code = $to)`,
+      { a: move.audience, from: move.from, to: move.to, t: at },
+    );
   }
 
   /* After the upsert loop, never before it: a key deleted first would be put
@@ -495,6 +633,11 @@ async function seedPlans(db: Db, at: Iso): Promise<void> {
     });
     await db.run(
       `DELETE FROM plan_terms WHERE plan_id IN
+         (SELECT id FROM plans WHERE audience = $a AND code = $c)`,
+      { a: plan.audience, c: plan.code },
+    );
+    await db.run(
+      `DELETE FROM plan_prices WHERE plan_id IN
          (SELECT id FROM plans WHERE audience = $a AND code = $c)`,
       { a: plan.audience, c: plan.code },
     );
@@ -567,29 +710,54 @@ async function seedTerms(db: Db, planId: string, monthlyMinor: number, sold: boo
 }
 
 /**
+ * A plan's per-market price list, rebuilt from the seed — the same "rebuilt
+ * rather than reconciled" reasoning as `seedTerms`: nothing has a foreign key
+ * into `plan_prices`, so a price taken off the list has to leave no row behind.
+ * The total is derived from the monthly figure, never typed, so the per-month
+ * price on a card and the amount one invoice charges cannot disagree.
+ */
+async function seedPrices(
+  db: Db,
+  planId: string,
+  prices: ReadonlyArray<{ currency: string; months: number; priceMinor: number }>,
+): Promise<void> {
+  await db.run(`DELETE FROM plan_prices WHERE plan_id = $p`, { p: planId });
+  for (const price of prices) {
+    await db.run(
+      `INSERT INTO plan_prices (plan_id, currency, months, price_minor, total_minor)
+       VALUES ($p, $c, $m, $pm, $tm)`,
+      {
+        p: planId,
+        c: price.currency,
+        m: price.months,
+        pm: price.priceMinor,
+        tm: price.priceMinor * price.months,
+      },
+    );
+  }
+}
+
+/**
  * §4.5's fallback: what a check is worth in a category before a venue has thirty
  * confirmed transactions of its own. Kraków figures, in grosze.
+ *
+ * One row per category of the venue taxonomy (`domain/categories.ts`) and no
+ * other: `venues.category` holds those keys, so a row under any other word is
+ * one nothing can look up. Each figure is the closest one the older,
+ * wider list carried — coffee is the old café, leisure the old fitness, Halal
+ * the old restaurant (it is mostly restaurants and kebab houses), the rest
+ * their own old namesakes. A venue with no row falls back to the 60 zł in
+ * `venues.averageCheck`.
  */
 const CATEGORY_DEFAULTS: Array<[string, number]> = [
-  ['cafe', 3200],
-  ['places', 6000],
+  ['coffee', 3200],
   ['restaurant', 8500],
-  ['bakery', 1800],
-  ['barbershop', 6500],
-  ['beauty', 12000],
-  ['dental', 25000],
-  ['fitness', 14000],
-  ['language', 20000],
-  ['healthcare', 18000],
-  ['education', 15000],
-  ['housing', 30000],
-  ['legal', 25000],
-  ['banking', 0],
-  ['transportation', 4000],
-  ['employment', 0],
   ['shopping', 9000],
-  ['hotels', 32000],
-  ['other', 6000],
+  ['leisure', 14000],
+  ['beauty', 12000],
+  ['housing', 30000],
+  ['bakery', 1800],
+  ['halal', 8500],
 ];
 
 async function seedCategoryDefaults(db: Db): Promise<void> {
@@ -600,6 +768,14 @@ async function seedCategoryDefaults(db: Db): Promise<void> {
       { c: category, m: minor },
     );
   }
+  /* The rows the older list wrote (`cafe`, `dental`, `places`, …) are
+     product configuration for categories that no longer exist, so they go:
+     the console lists this table, and a row nothing can look up is noise. */
+  const keep = CATEGORY_DEFAULTS.map((_, i) => `$k${i}`).join(', ');
+  await db.run(
+    `DELETE FROM category_defaults WHERE category NOT IN (${keep})`,
+    Object.fromEntries(CATEGORY_DEFAULTS.map(([category], i) => [`k${i}`, category])),
+  );
 }
 
 /*

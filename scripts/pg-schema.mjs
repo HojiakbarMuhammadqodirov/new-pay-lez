@@ -265,8 +265,9 @@ const keyed = tables.filter((t) => keys[t]);
    (`mission_claims`, `mission_events`, `mission_campaigns`, `learning_progress`)
    + `team_members` (server/TEAM.md) + `redemption_passes` (FLUTTER-BRIEF §3b)
    + `notification_kind_prefs` (browser push) + `gift_card_codes` (the gift-card engine)
-   + the four subscription-pass tables (`domain/passes.ts`). */
-if (tables.length !== 99) throw new Error(`expected 99 tables, parsed ${tables.length}`);
+   + the four subscription-pass tables (`domain/passes.ts`)
+   + `plan_prices` (the per-market price list, pricing strategy §5). */
+if (tables.length !== 100) throw new Error(`expected 100 tables, parsed ${tables.length}`);
 
 /* Every table an `INSERT OR REPLACE|IGNORE` actually targets must have a key,
    or the translation in `pg.ts` throws at runtime — which is correct behaviour

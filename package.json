@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "server": "node server/main.ts",
     "server:import": "node server/main.ts --reimport --import-only",
+    "catalogue:purge": "node server/main.ts --purge-catalogue",
     "verify:api": "node server/verify.ts",
     "openapi": "node server/openapi.ts",
     "push:keys": "node scripts/push-keys.mjs",

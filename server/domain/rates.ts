@@ -104,6 +104,54 @@ export const QUOTED: Record<string, number> = {
   TJS: 2,
 };
 
+/**
+ * When the sync runs, and what it refuses to believe.
+ *
+ * ## The schedule is a wall clock, not an interval
+ *
+ * It was `setInterval(…, 12h)`, which has two faults in production: the phase
+ * is wherever the process happened to boot, and **every restart resets it** —
+ * so a server deployed or restarted more often than every twelve hours never
+ * synced at all, and nothing ran at boot to make up for it. Now the scheduler
+ * asks [syncIfDue] every few minutes, and a sync is due when the last attempt
+ * is older than the most recent slot in [SCHEDULE.slotsUtc]. The answer comes
+ * from the database, so it survives a restart, cannot drift, and a boot after a
+ * missed slot catches up at once. A failed attempt is retried after
+ * [SCHEDULE.retryMinutes] rather than waiting for the next slot.
+ *
+ * ## The guard
+ *
+ * The sheet is a live `GOOGLEFINANCE` formula, and a formula can return
+ * `#N/A`, a zero, or a number for the wrong pair when somebody edits a cell.
+ * Zero and negative were already refused by `numberOf`. Added: a rate outside
+ * [GUARD.min, GUARD.max] is refused, and a rate that moved more than
+ * [GUARD.maxJump] against the stored one is **held** — the old rate stays —
+ * for up to [GUARD.holdHours] after the stored rate was written. Held, not
+ * refused for ever: a real devaluation of that size does happen (the hryvnia
+ * in 2014–15), and a guard that can never let it through would freeze the
+ * currency at a price that is no longer true. Past the hold the sheet wins.
+ * If more than half of the sheet is held or refused, the whole sync is a
+ * failure: that is a broken sheet, not a volatile week.
+ */
+export const SCHEDULE = {
+  /** UTC hours a sync is due at. 06:00 and 18:00 — mornings in Warsaw and Tashkent both. */
+  slotsUtc: [6, 18] as readonly number[],
+  /** How often the scheduler asks. Asking costs one indexed read. */
+  checkEveryMinutes: 10,
+  /** How soon a failed attempt is tried again. */
+  retryMinutes: 30,
+};
+
+export const GUARD = {
+  /** Units per euro. The soum is ~13 000; nothing quoted is near either end. */
+  min: 1e-4,
+  max: 1e7,
+  /** A 30% move between two syncs, either way. */
+  maxJump: 0.3,
+  /** How long a jump is held before the sheet is believed anyway. */
+  holdHours: 72,
+};
+
 export interface SyncResult {
   /** `ok` when rates were written; `failed` when the previous ones were kept. */
   status: 'ok' | 'failed';
@@ -113,6 +161,8 @@ export interface SyncResult {
   ignored: string[];
   /** Codes this product quotes and the sheet did not carry. */
   missing: string[];
+  /** Codes whose sheet value was refused or held by [GUARD]; the stored rate stays. */
+  rejected: Array<{ code: string; offered: number; kept: number | null; reason: 'range' | 'jump' }>;
   detail: string | null;
   at: Iso;
 }
@@ -138,7 +188,10 @@ const numberOf = (value: string): number | null => {
  * dependency at one boundary is the budget, and `pg` has spent it.
  */
 export async function sync(db: Db, at: Iso = now()): Promise<SyncResult> {
-  const fail = async (detail: string): Promise<SyncResult> => {
+  const fail = async (
+    detail: string,
+    rejected: SyncResult['rejected'] = [],
+  ): Promise<SyncResult> => {
     /*
      * **Nothing is written on a failure.** Not a zero, not a null, not an
      * `updated_at` bump — the rates that are there stay there and go on being
@@ -152,9 +205,9 @@ export async function sync(db: Db, at: Iso = now()): Promise<SyncResult> {
     await db.run(
       `INSERT INTO platform_config (key, value, updated_at) VALUES ('rates_last_attempt', $v, $t)
          ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      { v: JSON.stringify({ status: 'failed', detail, at }), t: at },
+      { v: JSON.stringify({ status: 'failed', detail, rejected, at }), t: at },
     );
-    return { status: 'failed', written: 0, ignored: [], missing: [], detail, at };
+    return { status: 'failed', written: 0, ignored: [], missing: [], rejected, detail, at };
   };
 
   let csv: string;
@@ -207,9 +260,49 @@ export async function sync(db: Db, at: Iso = now()): Promise<SyncResult> {
    */
   if (found.size === 0) return await fail('no EUR rates in the sheet');
 
+  /* The guard (see [GUARD]): out-of-range values are refused, and a jump of
+     more than `maxJump` against the stored rate is held while that stored rate
+     is younger than `holdHours`. A held currency keeps its stored rate *and*
+     its stored stamp, so it ages towards the end of its hold. */
+  const stored = new Map(
+    (
+      await db.all<{ code: string; rate: number; updated_at: string }>(
+        `SELECT code, rate, updated_at FROM exchange_rates`,
+      )
+    ).map((row) => [row.code, row]),
+  );
+  const rejected: SyncResult['rejected'] = [];
+  for (const [code, rate] of [...found]) {
+    const before = stored.get(code);
+    const kept = before && Number(before.rate) > 0 ? Number(before.rate) : null;
+    if (rate < GUARD.min || rate > GUARD.max) {
+      rejected.push({ code, offered: rate, kept, reason: 'range' });
+      found.delete(code);
+      continue;
+    }
+    if (kept === null) continue;
+    const move = Math.abs(rate / kept - 1);
+    const age = Date.parse(at) - Date.parse(before!.updated_at);
+    if (move > GUARD.maxJump && age < GUARD.holdHours * 3_600_000) {
+      rejected.push({ code, offered: rate, kept, reason: 'jump' });
+      found.delete(code);
+    }
+  }
+  if (found.size === 0 || rejected.length * 2 > found.size + rejected.length) {
+    return await fail(`the sheet failed the guard for ${rejected.length} currencies`, rejected);
+  }
+
   /* The anchor itself is never in the sheet — `EUREUR` is not a pair — and it
      has to be in the table, because `to / from` divides by it. */
   found.set('EUR', 1);
+
+  /* A currency the product quotes that the sheet did not carry keeps whatever
+     it had. Reported rather than corrected: a rate that has silently stopped
+     being updated is the failure this whole file is about. A held or refused
+     currency is reported under `rejected`, not here. */
+  const missing = Object.keys(QUOTED).filter(
+    (code) => !found.has(code) && !rejected.some((r) => r.code === code),
+  );
 
   await db.tx(async () => {
     for (const [code, rate] of found) {
@@ -225,23 +318,71 @@ export async function sync(db: Db, at: Iso = now()): Promise<SyncResult> {
     await db.run(
       `INSERT INTO platform_config (key, value, updated_at) VALUES ('rates_last_attempt', $v, $t)
          ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      { v: JSON.stringify({ status: 'ok', written: found.size, at }), t: at },
+      { v: JSON.stringify({ status: 'ok', written: found.size, missing, rejected, at }), t: at },
     );
   });
-
-  /* A currency the product quotes that the sheet did not carry keeps whatever
-     it had. Reported rather than corrected: a rate that has silently stopped
-     being updated is the failure this whole file is about. */
-  const missing = Object.keys(QUOTED).filter((code) => !found.has(code));
 
   return {
     status: 'ok',
     written: found.size,
     ignored: [...new Set(ignored)].sort(),
     missing,
+    rejected,
     detail: null,
     at,
   };
+}
+
+/** The most recent [SCHEDULE.slotsUtc] boundary at or before [at]. */
+export function lastSlot(at: Iso): number {
+  const t = Date.parse(at);
+  const day = new Date(t);
+  day.setUTCHours(0, 0, 0, 0);
+  let best = -Infinity;
+  for (const back of [0, 1]) {
+    for (const hour of SCHEDULE.slotsUtc) {
+      const slot = day.getTime() - back * 86_400_000 + hour * 3_600_000;
+      if (slot <= t && slot > best) best = slot;
+    }
+  }
+  return best;
+}
+
+/**
+ * Whether a sync is due at [at], from what the database remembers — so the
+ * answer is the same after a restart, and a boot after a missed slot is due.
+ *
+ * Due when nothing was ever attempted; when the last attempt failed more than
+ * [SCHEDULE.retryMinutes] ago; or when it succeeded before the latest slot.
+ */
+export async function isDue(db: Db, at: Iso = now()): Promise<boolean> {
+  const last = await lastSync(db);
+  if (last.attemptedAt === null) return true;
+  const attempted = Date.parse(last.attemptedAt);
+  if (last.attemptStatus === 'failed') {
+    return Date.parse(at) - attempted >= SCHEDULE.retryMinutes * 60_000;
+  }
+  return attempted < lastSlot(at);
+}
+
+/** [sync], only when [isDue]. `null` when it was not. */
+export async function syncIfDue(db: Db, at: Iso = now()): Promise<SyncResult | null> {
+  if (!(await isDue(db, at))) return null;
+  return await sync(db, at);
+}
+
+/**
+ * Whether a screen should say the rates are old.
+ *
+ * Judged on when rates were last **written**, not on when a sync was last
+ * *attempted*. It used to be the attempt, which meant a sheet that failed on
+ * every attempt for a week read as fresh — each failure bumped the attempt
+ * stamp. A successful sync rewrites every stamp, so `ratesUpdatedAt` is the
+ * last success.
+ */
+export function isStale(ratesUpdatedAt: Iso | null, at: Iso, staleHours: number): boolean {
+  if (ratesUpdatedAt === null) return true;
+  return Date.parse(at) - Date.parse(ratesUpdatedAt) > staleHours * 3_600_000;
 }
 
 /**

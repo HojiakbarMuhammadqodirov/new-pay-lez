@@ -24,14 +24,21 @@ import * as ledger from './ledger.ts';
 import { convertMinor } from './analytics.ts';
 import { decimalsFor, discountCost } from './money.ts';
 import { now, plusDays, type Iso } from './time.ts';
-import { averageCheck, getVenue, type Venue } from './venues.ts';
+import { averageCheck, getVenue, voucherCapOf, type Venue } from './venues.ts';
 
 export interface Tier {
   id: string;
   venue_id: string;
   discount_pct: number;
   points_cost: number;
+  /**
+   * The cap this rung applies — the owner's "most off one voucher" when set
+   * (`venues.voucherCapOf`), else the rung's own column. Every reader of a
+   * `Tier` from `tiersFor` / `withCap` gets the applied figure.
+   */
   max_discount_minor: number;
+  /** The rung's own stored cap, before the venue's "most off one voucher". */
+  rung_max_discount_minor?: number;
   /** How many of this rung may ever be issued. `null` is no cap. */
   redeem_limit: number | null;
   /** How many one account may ever take off this rung. `null` is no cap. */
@@ -61,10 +68,32 @@ export interface IssuedVoucher {
 }
 
 export const tiersFor = async (db: Db, venueId: string): Promise<Tier[]> =>
-  await db.all<Tier>(
-    `SELECT * FROM voucher_tiers WHERE venue_id = $v AND active = 1 ORDER BY discount_pct`,
+  await withCap(
+    db,
+    venueId,
+    await db.all<Tier>(`SELECT * FROM voucher_tiers WHERE venue_id = $v AND active = 1 ORDER BY discount_pct`, {
+      v: venueId,
+    }),
+  );
+
+/**
+ * Rungs with the venue's "most off one voucher" applied. Every path that reads
+ * a rung's cap to reserve, issue or estimate goes through here, so the figure
+ * the owner typed is the one the money moves by — and the rung's own value is
+ * kept beside it, because that is what a later save of the rung must send back.
+ */
+async function withCap(db: Db, venueId: string, tiers: Tier[]): Promise<Tier[]> {
+  if (tiers.length === 0) return tiers;
+  const venue = await db.get<{ voucher_cap_minor: number | null }>(
+    `SELECT voucher_cap_minor FROM venues WHERE id = $v`,
     { v: venueId },
   );
+  return tiers.map((tier) => ({
+    ...tier,
+    rung_max_discount_minor: tier.max_discount_minor,
+    max_discount_minor: voucherCapOf({ voucher_cap_minor: venue?.voucher_cap_minor ?? null }, tier.max_discount_minor),
+  }));
+}
 
 /**
  * §4.3. What a voucher is expected to cost when it is issued.
@@ -211,6 +240,10 @@ export async function partnerLadder(db: Db, venueId: string, at: Iso = now()) {
     redeemLimit: tier.redeem_limit,
     perUserLimit: tier.per_user_limit,
     issuedTotal: tier.issued_count,
+    /* The rung's own cap, which is what a save of the rung sends back: the
+       `maxDiscountMinor` beside it is the applied one, and sending that would
+       write the owner's "most off one voucher" into every rung for good. */
+    tierMaxDiscountMinor: tier.rung_max_discount_minor ?? tier.max_discount_minor,
   });
   const byId = new Map((await tiersFor(db, venueId)).map((tier) => [tier.id, tier]));
 
@@ -221,9 +254,12 @@ export async function partnerLadder(db: Db, venueId: string, at: Iso = now()) {
     active: true,
   }));
 
-  const retired = await db.all<Tier>(
-    `SELECT * FROM voucher_tiers WHERE venue_id = $v AND active = 0 ORDER BY discount_pct`,
-    { v: venueId },
+  const retired = await withCap(
+    db,
+    venueId,
+    await db.all<Tier>(`SELECT * FROM voucher_tiers WHERE venue_id = $v AND active = 0 ORDER BY discount_pct`, {
+      v: venueId,
+    }),
   );
   if (retired.length > 0) {
     const check = await averageCheck(db, venue, at);
@@ -344,10 +380,13 @@ export async function issue(
       throw new DomainError('invalid_state', 'venue does not accept vouchers');
     }
 
-    const tier = await db.get<Tier>(`SELECT * FROM voucher_tiers WHERE id = $t AND venue_id = $v`, {
+    const found = await db.get<Tier>(`SELECT * FROM voucher_tiers WHERE id = $t AND venue_id = $v`, {
       t: input.tierId,
       v: input.venueId,
     });
+    /* The applied cap, so the reserve and the cap stamped on the voucher are
+       the owner's "most off one voucher" when they have set one. */
+    const tier = found ? (await withCap(db, input.venueId, [found]))[0] : undefined;
     if (!tier || !tier.active) throw new DomainError('not_found', 'tier not found');
 
     /* The count caps, first — see `claimSlot` for why the order of the three

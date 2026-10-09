@@ -460,6 +460,7 @@ function SignUp({
     'empty',
   );
   const referralCode = normalizeReferral(referral);
+  const [inviteeReward, setInviteeReward] = useState<number | null>(null);
   useEffect(() => {
     if (!referralCode) {
       setReferralState('empty');
@@ -469,7 +470,13 @@ function SignUp({
     let live = true;
     const timer = window.setTimeout(() => {
       checkReferralCode(referralCode)
-        .then(() => live && setReferralState('valid'))
+        .then((found) => {
+          if (!live) return;
+          /* The figure the friend is promised is the server's `inviteeReward`
+             (rulebook §7.3), not a constant of this file's. */
+          setInviteeReward(typeof found.inviteeReward === 'number' ? found.inviteeReward : null);
+          setReferralState('valid');
+        })
         .catch((cause: unknown) =>
           live && setReferralState(cause instanceof ApiError && cause.status === 404 ? 'invalid' : 'unknown'),
         );
@@ -587,7 +594,7 @@ function SignUp({
           aria-invalid={referralState === 'invalid' ? true : undefined}
         />
         {referralState === 'valid' && (
-          <span className="field-help">{fill(copy.auth.referral.valid, { n: String(INVITE_POINTS) })}</span>
+          <span className="field-help">{fill(copy.auth.referral.valid, { n: String(inviteeReward ?? INVITE_POINTS) })}</span>
         )}
         {referralState === 'invalid' && <span className="field-error">{copy.auth.referral.invalid}</span>}
       </label>

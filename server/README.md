@@ -35,6 +35,7 @@ score by identical rules and differ only in which questions they draw.
 ```bash
 npm run server         # migrate, import if empty, serve on :8787
 npm run server:import  # re-import the export and exit
+npm run catalogue:purge -- --yes  # delete every venue and gift card, retire the old catalogue
 npm run verify:api     # the test suite — 925 checks, no browser, no network
 npm run openapi        # regenerate openapi.json from the route table
 ```
@@ -321,9 +322,14 @@ which is not the same for all five:
   them on the round's own food list with the same step and counts what that
   game ate, stopping where the ticks would have taken longer than the round
   lasted (`snakeSlackMs`).
-- **Canon Numbers is held**, 2048's arrangement: the board is in the secret,
+- **Canon Numbers is held for the app and bounded for the website.** The app
+  plays the turn-based board, 2048's arrangement: the board is in the secret,
   each `fire` is applied here, the next row comes from the seed, and `from`
-  makes a retry harmless.
+  makes a retry harmless. The website plays a maths shooter (shoot the number
+  that answers the sum) and never fires; it reports `{hits, wrong}` at finish,
+  scored 4 a net hit (`cannonPerformancePerHit`) and capped by
+  `cannonHitsPerSecond` + `cannonHitAllowance`. `scoreCannon` tells the two
+  apart by whether the board was fired on (`turn > 0`).
 - **Bounce Ball, Doodle Jump and Zuma are bounded.** Continuous physics, so
   whether a ball touched a brick is the screen's fact. The level is the seed's,
   so a report can only name what exists, and `arcade.bounded` caps it by the
@@ -906,6 +912,69 @@ delete-and-recreating — which would cascade a budget's movements away — and 
 opening balances insert once and only once. `verify:api` runs a full double
 import and asserts nothing moved.
 
+One thing a re-run does *not* overwrite: a `player_states` row that existed
+before the import started. `userFor` merges a legacy address into the live
+account that holds it, and that table is `OR REPLACE` — so every re-import
+used to put a person's September streak back over what they had played since
+(three accounts in production). The live row is the newer truth and is kept.
+
+### Retiring the old catalogue
+
+"Is this a first boot" used to be `venues === 0`, which stopped meaning that
+the day the catalogue was emptied on purpose: the next restart would have
+promoted the eleven Base44 venues and their deals straight back out of
+`new-data/`. Two rows in `schema_meta` (`db/import.ts`) carry it now:
+
+- **`legacy_import`** — the export has been imported here once. The import
+  stamps it whenever it read any legacy rows, and `boot` stamps it
+  (`backfilled …`) on a database that already holds venues, directory listings
+  or legacy opening balances, so a box filled before the marker existed is
+  covered by its first start on this code. A checkout with no `new-data/` is
+  never stamped and imports on every boot, exactly as before.
+- **`catalogue_retired`** — the partner side was deleted to start again. While
+  it is set, *every* import — first boot, `--reimport`, and the re-runs the
+  question-bank, word-bank and hint gates trigger, which must keep working —
+  skips everything promoted with a venue: the venues, their links and
+  descriptions, the `partner_owner` grants, budgets and movements, voucher
+  tiers, campaigns, hot deals (all of them, the venue-less ones too) and their
+  funnel events, and the venue stamped on a directory listing or listing event.
+  The directory, guidance, people, ledger and game banks still import. Nothing
+  in the import writes gift cards.
+
+Both live in `schema_meta` rather than `platform_config` because they are the
+database's history, not a setting, and both survive `pg:backup` / `pg:migrate`,
+which copy every table.
+
+The command that sets the second one:
+
+```bash
+npm run catalogue:purge -- --yes      # = node server/main.ts --purge-catalogue --yes
+```
+
+It opens the database the way `boot` does (`PAYLEZ_PG_URL`, else `PAYLEZ_DB`)
+and runs none of `boot` — no import, no seeding — and refuses without `--yes`
+on either engine. In **one transaction** it deletes the venue copy and pictures
+no foreign key reaches (`translations`, `media_assets`, `moderation_queue`),
+the gift-card codes, cards and stock (`gift_cards.stock_id` is `RESTRICT`, so
+in that order), every issued voucher (`tier_id` is `RESTRICT`), every hot deal,
+every venue — whose `ON DELETE CASCADE` takes links, hours, budgets, tiers,
+campaigns, stamp cards, rewards, visits, customers, transactions, QR nonces,
+team members, passes, quotas, venue subscriptions and partner missions — and the
+cross-venue `benchmarks`. Then it checks that **every column named `venue_id` in
+the schema** is empty, and rolls the lot back if one is not; sets both markers;
+writes a `catalogue.purge` row to `audit_log`; and prints before/after counts.
+
+What it keeps, on purpose: users, roles (an owner left with no venue is a
+business account whose partner endpoints list nothing — the site's job to send
+to `#/business/setup`, which creates a fresh venue), the ledger
+and every balance (`points_ledger.venue_id` is `SET NULL`), game state,
+consents, the directory, listing events, fraud cases, tags, notifications and
+the audit trail, and the gift-card rules in `platform_config`. A voucher or gift
+card somebody was holding goes **without a refund**; the command counts them
+before deleting and prints the number, along with any Stripe subscription on a
+venue, which it deletes here but cannot cancel in Stripe. Stop the service and take a backup first.
+`catalogueRetirement` in `verify-catalogue.ts` is the check.
+
 ### When there is nothing to import
 
 `new-data/` is gitignored — it is the old app’s *live* data and must never
@@ -944,6 +1013,21 @@ What boot *does* still write is product configuration rather than anybody’s
 data: the plan ladder, the category check defaults, and the Word Builder bank.
 The same suite checks those are still there, so the cut cannot go further than
 it was meant to.
+
+**The venue taxonomy is one tree, and `venues.category` is keyed on it.**
+`domain/categories.ts` holds the eight categories (coffee, restaurant,
+shopping, leisure, beauty, housing, bakery, halal) and their subcategories,
+served at `GET /v1/categories`. A venue's `category` is one category key and
+its `subcategory` one key under it (`restaurant.turkish`) or NULL —
+`checkKind` / `checkKindPatch` are the write rule on the owner's and the
+console's routes, and an older app's word (`cafe`) is placed on the tree
+rather than refused. The category check defaults are one row per category
+and boot deletes any other. Boot also moves rows written before the tree onto
+its keys (`normaliseStoredKinds`, venues and the deals that copied their
+venue's word); a word nothing places (`dental`) is left as it is, because the
+column is NOT NULL and no key would be honest, and such a venue is in no
+category until its owner picks one. That tidy is a data write at boot, and it
+is allowed for the same reason the defaults are: it invents nothing.
 
 The remittance tables (`Wallet`, `Recipient`, `Transaction`, `PaymentMethod`) are
 imported into `legacy_*` and served read-only: both specs put real money movement

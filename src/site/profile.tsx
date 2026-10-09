@@ -14,12 +14,9 @@ import { Icon } from './icons';
 import {
   lookupCity,
   matchCities,
-  stopSharing,
   useCities,
-  useConsents,
   type City,
   type CityList,
-  type SharingGrant,
 } from './api/profile';
 import { hasToken } from './api/client';
 import { useAuth, useIsPlayer, type ProfileResult, type UserProfile } from './auth/context';
@@ -29,7 +26,8 @@ import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
 import { ENERGY_REGEN_MINUTES, MAX_ENERGY, energyOf, type PlayerState } from './auth/player';
 import { isPicture } from './auth/picture';
-import { setLeaderboardOptIn, setVenueSharingDefault } from './api/consumer';
+import { setLeaderboardOptIn } from './api/consumer';
+import { UsernameField, type HandleStatus } from './UsernameField';
 import {
   NOTIFICATION_KINDS,
   notificationPrefs,
@@ -531,9 +529,10 @@ export function ProfilePage() {
             inside the form — see `BoardVisibility` for why a visibility switch
             applies on the flip rather than on a Save.
           */}
-          <BoardVisibility />
-          <VenueSharing />
-          <Reminders />
+          <div className="prof-switches">
+            <BoardVisibility />
+            <Reminders />
+          </div>
 
           {/*
             The moment it lands, over the page rather than in a rail: on a phone
@@ -636,70 +635,14 @@ function BoardVisibility() {
   );
 }
 
-/**
- * "Share my profile with the venues I visit" — §1.4's standing answer.
- *
- * ## What it does and, more importantly, what it is not
- *
- * §1.4's consent is **per venue**: one row per (person, venue), and every
- * identified-customer query on the server joins against it in SQL. That gate is
- * unchanged, and this switch does not bypass it.
- *
- * What it decides is *when a grant is written*. It used to require the player
- * to find a switch on a venue's own sheet and press it, so a venue's customer
- * list was empty of everybody who had never gone looking — the dashboard read
- * "nobody comes here twice" when it meant "nobody pressed a button". On, a
- * grant is written when a visit is **confirmed at the till**; off, none is.
- *
- * ## Switching it off does not withdraw anything
- *
- * And the help line says so, because it is the one thing about this control
- * that is not obvious and the one thing somebody could get wrong in the
- * direction that matters. The grants that stand are about venues somebody has
- * actually been to; declining future ones is a different decision from
- * withdrawing the ones they made. Each of those comes off on that venue's own
- * sheet, where it is next to the thing it is about.
+/*
+ * "Share my profile with the venues I visit" used to be a switch here, and the
+ * venues sharing with you a panel under the record. Both are gone (2026-10-08):
+ * sharing with the venues somebody visits is always on and cannot be switched
+ * off, so a control for it would be a control that does nothing. The server
+ * ignores the old key and holds every account at on — see `sharingAlwaysOn` in
+ * `server/db/db.ts`. A venue's own sheet still carries its per-venue switch.
  */
-function VenueSharing() {
-  const copy = useCopy().profile.sharing;
-  const { venueSharingDefault, refreshAccount } = useAuth();
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  const known = venueSharingDefault !== null;
-
-  return (
-    <div className="prof-switch-row" data-reveal>
-      <div>
-        <b>{copy.title}</b>
-        <span className="field-help">{copy.help}</span>
-        {failed && (
-          <span className="field-error" role="alert">
-            {copy.failed}
-          </span>
-        )}
-      </div>
-      <label className="prof-switch">
-        <input
-          type="checkbox"
-          checked={venueSharingDefault === true}
-          disabled={busy || !known}
-          onChange={(event) => {
-            const next = event.target.checked;
-            setBusy(true);
-            setFailed(false);
-            setVenueSharingDefault(next)
-              .then(() => refreshAccount())
-              .catch(() => setFailed(true))
-              .finally(() => setBusy(false));
-          }}
-        />
-        <i aria-hidden />
-        <span className="visually-hidden">{copy.title}</span>
-      </label>
-    </div>
-  );
-}
 
 /**
  * The four browser pushes — the daily game reminder, "your streak is about to
@@ -967,10 +910,6 @@ function ProfileView({
         </aside>
       </div>
 
-      {/* Only where there is a server to ask. An account this browser opened
-          offline has no consents anywhere, and a panel whose every request
-          fails would be a panel with nothing honest behind it. */}
-      {hasToken() && <SharingPanel />}
     </div>
   );
 }
@@ -1017,164 +956,6 @@ function PlayerStrip({ player }: { player: PlayerState }) {
         </div>
       ))}
     </dl>
-  );
-}
-
-/**
- * Which venues can see who this person is, and a way to stop each one.
- *
- * `data_sharing_consents` is the switch every identified-customer figure on a
- * partner's dashboard passes through — the name and the photo in a venue's
- * customer list and till log exist only while a row here does. It is the one
- * part of the player↔venue relationship a player controls, so it lives on the
- * page about them, and stopping one takes effect on the server at once.
- *
- * Stopping asks once, in words naming the venue, because it is not undone from
- * this screen: sharing is granted at the venue, not here.
- */
-function SharingPanel() {
-  const copy = useCopy().profile;
-  const [language] = useLanguage();
-  const consents = useConsents();
-  const titleId = useId();
-  const [asking, setAsking] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  /* Hidden locally rather than re-fetched: a reload flips the whole list back
-     to "checking…" for a row the server has already confirmed gone. */
-  const [removed, setRemoved] = useState<ReadonlySet<string>>(() => new Set());
-  const [notice, setNotice] = useState<{ tone: 'done' | 'failed'; text: string } | null>(null);
-  const noticeRef = useRef<HTMLParagraphElement>(null);
-  const restoreTo = useRef<string | null>(null);
-
-  /* A removed row takes its buttons with it, so focus goes to the sentence
-     that says what happened rather than to `<body>`. */
-  useEffect(() => {
-    if (notice) noticeRef.current?.focus();
-  }, [notice]);
-
-  /* "Keep sharing" unmounts itself, so focus goes back to the row's own
-     "Stop sharing", which is where the reader was. */
-  useEffect(() => {
-    const id = restoreTo.current;
-    if (asking !== null || id === null) return;
-    restoreTo.current = null;
-    document.querySelector<HTMLButtonElement>(`[data-stop="${CSS.escape(id)}"]`)?.focus();
-  }, [asking]);
-
-  const stop = async (grant: SharingGrant) => {
-    setBusy(grant.venue_id);
-    try {
-      await stopSharing(grant.venue_id);
-      setRemoved((was) => new Set(was).add(grant.venue_id));
-      setNotice({ tone: 'done', text: fill(copy.sharingStopped, { venue: grant.name }) });
-    } catch {
-      setNotice({ tone: 'failed', text: copy.sharingFailed });
-    } finally {
-      setBusy(null);
-      setAsking(null);
-    }
-  };
-
-  const state = consents.state;
-  const grants =
-    state.status === 'ready'
-      ? state.data.dataSharing.filter((grant) => !removed.has(grant.venue_id))
-      : [];
-
-  return (
-    <section className="console prof-share" aria-labelledby={titleId}>
-      <h2 className="prof-panel-title" id={titleId}>
-        {copy.sharingTitle}
-      </h2>
-      <p className="prof-share-lede">{copy.sharingLede}</p>
-
-      <p
-        className="prof-share-notice"
-        data-tone={notice?.tone}
-        role="status"
-        tabIndex={-1}
-        ref={noticeRef}
-      >
-        {notice?.text}
-      </p>
-
-      {/* Three states and a fourth, and a failed request is not the empty
-          list: "we could not ask" and "you share with nobody" are different
-          answers to a privacy question. */}
-      {state.status === 'loading' ? (
-        <p className="prof-share-empty">{copy.sharingLoading}</p>
-      ) : state.status === 'error' ? (
-        <p className="prof-note">
-          <Icon name="warn" size={15} />
-          <span>
-            {copy.sharingOffline}{' '}
-            <button type="button" className="link-btn" onClick={consents.reload}>
-              {copy.sharingRetry}
-            </button>
-          </span>
-        </p>
-      ) : grants.length === 0 ? (
-        <p className="prof-share-empty">{copy.sharingNone}</p>
-      ) : (
-        <ul className="prof-share-list">
-          {grants.map((grant) => (
-            <li className="prof-share-row" key={grant.venue_id}>
-              <div className="prof-share-who">
-                <b>{grant.name}</b>
-                <span>
-                  {fill(copy.sharingSince, {
-                    date: formatDay(language, grant.granted_at.slice(0, 10)),
-                  })}
-                </span>
-              </div>
-              {asking === grant.venue_id ? (
-                <div
-                  className="prof-share-ask"
-                  role="group"
-                  aria-label={fill(copy.sharingAsk, { venue: grant.name })}
-                >
-                  <span>{fill(copy.sharingAsk, { venue: grant.name })}</span>
-                  <div className="prof-share-acts">
-                    <button
-                      type="button"
-                      className="btn btn-solid"
-                      autoFocus
-                      disabled={busy === grant.venue_id}
-                      onClick={() => void stop(grant)}
-                    >
-                      {copy.sharingYes}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      disabled={busy === grant.venue_id}
-                      onClick={() => {
-                        restoreTo.current = grant.venue_id;
-                        setAsking(null);
-                      }}
-                    >
-                      {copy.sharingKeep}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  data-stop={grant.venue_id}
-                  onClick={() => {
-                    setNotice(null);
-                    setAsking(grant.venue_id);
-                  }}
-                >
-                  {copy.sharingStop}
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }
 
@@ -1240,6 +1021,10 @@ function ProfileEditor({
   const [error, setError] = useState<{ field: string; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const usernameRef = useRef<HTMLInputElement>(null);
+  const usernameLabelId = useId();
+  /* The live check's last verdict, so Save can refuse a handle it already
+     knows is taken or misshapen without a round trip. */
+  const [handle, setHandle] = useState<HandleStatus>({ kind: 'idle' });
 
   /* The picker's `<input type="file">` is uncontrolled, so choosing the same
      file twice fires no second `change`; cleared after every read. */
@@ -1334,6 +1119,16 @@ function ProfileEditor({
       const field = draft.otherPlace ? 'country' : 'city';
       setError({ field, message: draft.otherPlace ? copy.countryNeeded : copy.cityNeeded });
       goToField(field);
+      return;
+    }
+
+    /* A handle the live check has already refused. Said in its words, under
+       the field — and a blank one is refused too: a username can be changed
+       but not removed, on the server and so here. */
+    if (handle.kind === 'bad' || (profile.username && !draft.username.trim())) {
+      const reason = handle.kind === 'bad' ? handle.reason : 'length';
+      setError({ field: 'username', message: fill(copy.usernameErrors[reason], { min: MIN, max: MAX }) });
+      goToField('username');
       return;
     }
 
@@ -1453,26 +1248,28 @@ function ProfileEditor({
               </div>
             </Field>
 
+            {/* `wraps={false}`: the field carries suggestion buttons, and a
+                button inside a `<label>` is a press the label also claims.
+                The live check is the same one the welcome step uses, so a
+                change here is told "taken" before Save rather than after. */}
             <Field
               label={copy.username}
+              labelId={usernameLabelId}
               field="username"
+              wraps={false}
               help={fill(copy.usernameHelp, { min: MIN, max: MAX })}
               error={error?.field === 'username' ? error.message : undefined}
             >
-              <input
-                ref={usernameRef}
-                type="text"
-                autoComplete="username"
-                inputMode="text"
-                spellCheck={false}
-                maxLength={USERNAME_MAX}
-                placeholder={copy.usernamePlaceholder}
+              <UsernameField
+                inputRef={usernameRef}
+                labelledBy={usernameLabelId}
                 value={draft.username}
-                onChange={(event) => {
-                  setDraft((current) => ({ ...current, username: event.target.value }));
+                onChange={(next) => {
+                  setDraft((current) => ({ ...current, username: next }));
                   clear();
                 }}
-                aria-invalid={error?.field === 'username' ? true : undefined}
+                onStatus={setHandle}
+                invalid={error?.field === 'username'}
               />
             </Field>
           </div>

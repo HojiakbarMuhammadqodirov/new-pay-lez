@@ -185,6 +185,10 @@ export interface AdminVenueRow {
   name: string;
   city: string | null;
   category: string;
+  /** The venue's own app taxonomy keys; empty until picked. Newer servers only. */
+  tags?: string[];
+  /** What the app files it under — `tags`, or derived from `category`. */
+  categories?: string[];
   status: string;
   verified_at: string | null;
   created_at: string;
@@ -216,16 +220,16 @@ const humanise = (id: string): string => {
  * The word for a category, in the reader's language where there is one.
  *
  * **Two taxonomies reach this function**, which is the thing to know before
- * changing it. A deal's `category` is usually the venue's — `cafe`,
- * `restaurant`, `hotels` — because `createDeal` defaults it to the venue's own.
+ * changing it. A deal's `category` is usually the venue's — `coffee`,
+ * `restaurant`, `housing` — because `createDeal` defaults it to the venue's own.
  * But the dashboard's drawer files a deal by *offer kind* instead
  * (`percentage`, `free_item`, `money_off`, `extra_stamp`), so both vocabularies
  * live in that one column and both arrive here. Looking up only the first
  * printed the second raw.
  *
- * The server's taxonomy is also wider than the listing form's — it has `hotels`
- * and `bakery`, which `BUSINESS_CATEGORIES` does not — so an id in neither list
- * is humanised rather than shown as-is.
+ * `BUSINESS_CATEGORIES` is the server's taxonomy, but a venue the server could
+ * not place on it keeps its old word (`dental`), so an id in neither list is
+ * humanised rather than shown as-is.
  *
  * `names` is `copy.listing.categories` and `kinds` is
  * `copy.dashboard.drawer.deal.kinds`, both passed in rather than imported,

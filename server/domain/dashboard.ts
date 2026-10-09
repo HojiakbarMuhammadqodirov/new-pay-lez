@@ -53,6 +53,7 @@ import {
 } from './time.ts';
 import { partnerTierBand, tiersFor } from './vouchers.ts';
 import { getVenue, type Venue } from './venues.ts';
+import { parseStored, tagsOf } from './categories.ts';
 
 /* ═══════════════════════════════════════════════════════════════ the window ══ */
 
@@ -1092,6 +1093,10 @@ export interface ListingResponse {
   name: string;
   category: string;
   subcategory: string | null;
+  /** The taxonomy keys the venue picked itself; empty until it has. */
+  tags: string[];
+  /** What the app files it under: `tags`, or the legacy derivation (`categories.tagsOf`). */
+  categories: string[];
   city: string | null;
   countryCode: string;
   address: string | null;
@@ -1167,6 +1172,8 @@ export async function listing(db: Db, venueId: string): Promise<ListingResponse>
     name: venue.name,
     category: venue.category,
     subcategory: venue.subcategory,
+    tags: parseStored(venue.tags),
+    categories: tagsOf(venue),
     city: venue.city,
     countryCode: venue.country_code,
     address: venue.address,

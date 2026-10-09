@@ -91,6 +91,22 @@ through `games/bag.ts` out of the real 196-row flag bank, so they are translated
 and they are five the player will not be asked again; the welcome gift is paid
 for **finishing it**, not for opening an account.
 
+**A player has a username before anything else, and it is asked once.** The
+welcome flow's third step (`HandleStep` in `onboarding.tsx`) comes right after
+the city and cannot be skipped — the username is what other players see on the
+board and in an invite (`publicName` on the server), and a player without one
+used to appear as "Marta K.". `needsUsername` in `router.ts` holds an
+*onboarded* individual without one at `#/welcome` from every route, where the
+page renders that step alone (no counter, no Back, Sign out as the door) and
+releases them on the save. `awaitsServer` treats a missing handle as a missing
+fact, so a name picked on the phone does not flash the step on a stale mirror.
+Owners and operators are never asked. The live check is `UsernameField.tsx`,
+shared with the profile editor: the rules locally first (`checkUsername`, the
+server's restated, dots and the word list included), then
+`GET /v1/usernames/:name` debounced, with `GET /v1/usernames` for the opening
+suggestions. **Venue sharing has no control on the profile any more** — it is
+always on (`sharingAlwaysOn` in `server/db/db.ts`).
+
 **The first hundred points are two halves and the screen says so.** The gift is
 `CONFIG.points.onboarding` (50) for turning up, and the round is
 `welcomeRoundPerCorrect` (10) × five — so five right is 100, none right is 50,

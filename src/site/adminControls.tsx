@@ -48,6 +48,7 @@ import { useCopy } from './i18n/context';
 import { MIN_PASSWORD } from './auth/users';
 import { fill } from './i18n/currency';
 import { PasswordInput } from './PasswordInput';
+import { AppCategoryPicker } from './AppCategories';
 
 /**
  * What the last write did, or why it did not.
@@ -466,7 +467,8 @@ export interface EditField {
   key: string;
   label: string;
   value: string;
-  type?: 'text' | 'date' | 'textarea';
+  /** `tags`: the app taxonomy picker; `value` is the key list as JSON. */
+  type?: 'text' | 'date' | 'textarea' | 'tags';
   options?: Array<{ value: string; label: string }>;
 }
 
@@ -499,6 +501,7 @@ export function EditForm({
   onClose: () => void;
 }) {
   const copy = useCopy().admin.manage;
+  const wholeLabel = useCopy().listing.fields.appCategoriesWhole;
   const [draft, setDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(fields.map((field) => [field.key, field.value])),
   );
@@ -515,7 +518,19 @@ export function EditForm({
       }}
     >
       <div className="adm-edit-grid">
-        {fields.map((field) => (
+        {fields.map((field) =>
+          field.type === 'tags' ? (
+            /* A group of buttons, so a `div`: a `label` around them would
+               forward a click on its text to the first chip. */
+            <div className="field" key={field.key} data-wide="true">
+              <span className="field-label">{field.label}</span>
+              <AppCategoryPicker
+                value={JSON.parse(draft[field.key] || '[]') as string[]}
+                wholeLabel={wholeLabel}
+                onChange={(tags) => setDraft({ ...draft, [field.key]: JSON.stringify(tags) })}
+              />
+            </div>
+          ) : (
           <label
             className="field"
             key={field.key}
@@ -548,7 +563,8 @@ export function EditForm({
               />
             )}
           </label>
-        ))}
+          ),
+        )}
       </div>
       <div className="adm-edit-acts">
         <button type="button" className="link-btn" onClick={onClose}>

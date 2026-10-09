@@ -24,8 +24,9 @@ import * as partners from '../../domain/partners.ts';
 import * as profiles from '../../domain/profiles.ts';
 import * as team from '../../domain/team.ts';
 import * as vouchers from '../../domain/vouchers.ts';
-import { averageCheck, getVenue, venuesOf } from '../../domain/venues.ts';
+import { averageCheck, getVenue, setVoucherEconomics, venuesOf } from '../../domain/venues.ts';
 import { DomainError } from '../../domain/errors.ts';
+import { checkKind, checkKindPatch, checkTags } from '../../domain/categories.ts';
 import { actor, bool, int, list, oneOf, optInt, optStr, qChoice, qInt, qRange, qStr, str } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
 
@@ -57,6 +58,12 @@ function capOf(raw: unknown, field: string): number | null {
 }
 
 /** The venue in the path, with the caller's access to it already checked. */
+/** A new venue's kind, checked, in the draft's shape. */
+function kindDraft(category: string, subcategory: string | undefined): { category: string; subcategory?: string } {
+  const kind = checkKind(category, subcategory ?? null);
+  return { category: kind.category, subcategory: kind.subcategory ?? undefined };
+}
+
 async function mine(ctx: Ctx, param = 'id') {
   const venueId = ctx.params[param];
   await gate.requireStaff(ctx.db, venueId, actor(ctx).user.id);
@@ -144,6 +151,9 @@ async function budgetBody(db: Ctx['db'], venue: Awaited<ReturnType<typeof getVen
        anybody who opens a venue, and a venue's issuance is its own trading. */
     tiers: await vouchers.partnerLadder(db, venue.id, at),
     averageCheck: await averageCheck(db, venue, at),
+    /* The owner's "most off one voucher", or null where each rung keeps its
+       own cap. The rungs' `maxDiscountMinor` above is already the applied one. */
+    maxVoucherMinor: venue.voucher_cap_minor ?? null,
     /* Minor units of the budget's currency, released into this month's
        voucher pool by expiries — see `vouchers.returnedToBudget`. */
     returnedMinor: await vouchers.returnedToBudget(db, view.id),
@@ -197,8 +207,11 @@ export const partnerRoutes: Route[] = [
         ownerId: actor(ctx).user.id,
         draft: {
           name: str(ctx.body, 'name', { max: 120 }),
-          category: str(ctx.body, 'category'),
-          subcategory: optStr(ctx.body, 'subcategory'),
+          /* One category key and a subcategory key under it (`GET
+             /v1/categories`); an older app's word is placed by `checkKind`. */
+          ...kindDraft(str(ctx.body, 'category'), optStr(ctx.body, 'subcategory')),
+          /* The customer-facing taxonomy keys (`GET /v1/categories`). */
+          tags: ctx.body.tags == null ? undefined : checkTags(ctx.body.tags),
           city: str(ctx.body, 'city'),
           countryCode: optStr(ctx.body, 'countryCode'),
           address: optStr(ctx.body, 'address'),
@@ -230,17 +243,30 @@ export const partnerRoutes: Route[] = [
           throw new DomainError('validation_failed', `${field} can be changed but not removed`, { field });
         }
       }
-      const clear = (['subcategory', 'address', 'priceRange', 'phone', 'email', 'imageUrl'] as const).filter(
+      /* The kind is checked against the venue as it stands: a subcategory
+         sent alone has to be under the stored category, and a new category
+         clears a subcategory that belonged to the old one. */
+      const kind = checkKindPatch(
+        {
+          category: optStr(ctx.body, 'category'),
+          subcategory: optStr(ctx.body, 'subcategory'),
+          clearSubcategory: ctx.body.subcategory === null,
+        },
+        venue.category,
+      );
+      const clear = (['address', 'priceRange', 'phone', 'email', 'imageUrl'] as const).filter(
         (field) => ctx.body[field] === null,
       );
       return await partners.updateVenue(ctx.db, {
-        clear,
+        clear: kind.clearSubcategory ? [...clear, 'subcategory'] : clear,
         venueId: venue.id,
         actorId: actor(ctx).user.id,
         patch: {
           name: optStr(ctx.body, 'name'),
-          category: optStr(ctx.body, 'category'),
-          subcategory: optStr(ctx.body, 'subcategory'),
+          category: kind.category,
+          subcategory: kind.subcategory,
+          /* Absent leaves the list; `null` or `[]` goes back to the derived one. */
+          tags: ctx.body.tags === undefined ? undefined : ctx.body.tags === null ? [] : checkTags(ctx.body.tags),
           city: optStr(ctx.body, 'city'),
           address: optStr(ctx.body, 'address'),
           priceRange: optStr(ctx.body, 'priceRange'),
@@ -338,10 +364,58 @@ export const partnerRoutes: Route[] = [
       return await partners.setBudget(ctx.db, {
         venueId: venue.id,
         actorId: actor(ctx).user.id,
-        totalMinor: int(ctx.body, 'totalMinor', { min: 0 }),
+        /* One of the two: a total to cut both pools from, or the loyalty pool's
+           base with the voucher pool left alone (`partners.setBudget`). */
+        totalMinor:
+          ctx.body.loyaltyMinor !== undefined && ctx.body.totalMinor === undefined
+            ? undefined
+            : int(ctx.body, 'totalMinor', { min: 0 }),
         loyaltyBp: optInt(ctx.body, 'loyaltyBp', { min: 0, max: 10_000 }),
+        loyaltyMinor: optInt(ctx.body, 'loyaltyMinor', { min: 0 }),
         at: ctx.at,
       });
+    },
+  },
+  {
+    /*
+     * The owner's voucher economics — the average transaction they type, the
+     * switch to their own sales, and the most one voucher takes off. Answers
+     * with the budget body, because every figure on the screen that sent it is
+     * a function of these and a re-read would be a second request.
+     *
+     * `null` clears a figure and an absent key leaves it, so the two fields
+     * have to be read off the raw body: `optInt` folds null into absent.
+     */
+    method: 'PATCH',
+    pattern: '/v1/partner/venues/:id/voucher-economics',
+    auth: 'partner',
+    handler: async (ctx) => {
+      const venue = await mine(ctx);
+      const money = (field: string): number | null | undefined => {
+        const raw = ctx.body[field];
+        if (raw === undefined) return undefined;
+        if (raw === null) return null;
+        const value = Number(raw);
+        if (!Number.isInteger(value) || value < 1) {
+          throw new DomainError('validation_failed', `${field} is a whole number of minor units of at least 1, or null`, {
+            field,
+          });
+        }
+        return value;
+      };
+      const auto = ctx.body.averageCheckAuto;
+      if (auto !== undefined && typeof auto !== 'boolean') {
+        throw new DomainError('validation_failed', 'averageCheckAuto is true or false', { field: 'averageCheckAuto' });
+      }
+      const updated = await setVoucherEconomics(ctx.db, {
+        venueId: venue.id,
+        actorId: actor(ctx).user.id,
+        averageCheckMinor: money('averageCheckMinor'),
+        averageCheckAuto: auto,
+        maxVoucherMinor: money('maxVoucherMinor'),
+        at: ctx.at,
+      });
+      return await budgetBody(ctx.db, updated, ctx.at);
     },
   },
   {
@@ -1013,8 +1087,13 @@ export const partnerRoutes: Route[] = [
     handler: async (ctx) => {
       const venue = await mine(ctx);
       entitlements.requireEntitlement(await entOf(ctx, venue.id), 'assistant');
+      /* A named conversation must be this caller's, on this venue — without
+         the check any partner could write into anybody's transcript by id. */
+      const named = optStr(ctx.body, 'sessionId');
       return await assistant.askPartner(ctx.db, {
-        sessionId: optStr(ctx.body, 'sessionId'),
+        sessionId: named
+          ? await assistant.partnerConversation(ctx.db, { sessionId: named, userId: actor(ctx).user.id, venueId: venue.id })
+          : undefined,
         venueId: venue.id,
         userId: actor(ctx).user.id,
         text: str(ctx.body, 'text', { max: 500 }),
@@ -1036,7 +1115,10 @@ export const partnerRoutes: Route[] = [
         at: ctx.at,
       });
       const sessionId = optStr(ctx.body, 'sessionId');
-      if (sessionId) await assistant.saveDraft(ctx.db, sessionId, draft, ctx.at);
+      if (sessionId) {
+        await assistant.partnerConversation(ctx.db, { sessionId, userId: actor(ctx).user.id, venueId: venue.id });
+        await assistant.saveDraft(ctx.db, sessionId, draft, ctx.at);
+      }
       /* The assistant proposes; the partner approves. There is no publish here
          and there must not be one — the draft goes back to the client, which
          posts it to the ordinary authoring endpoint if the partner agrees. */

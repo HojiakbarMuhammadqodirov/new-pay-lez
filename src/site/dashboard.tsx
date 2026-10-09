@@ -5,6 +5,7 @@ import { PD_RANGES, RANGE_DAYS, dealFromApi } from './partnerMetrics';
 import type { RangeDays } from './partnerMetrics';
 import {
   SelectedVenueContext,
+  budgetChanged,
   exportCsv,
   isNoSession,
   markInboxRead,
@@ -14,17 +15,22 @@ import {
   usePartnerBudget,
   usePartnerCampaigns,
   usePartnerDeals,
+  usePartnerSubscription,
+  type VenuePlan,
 } from './api/partner';
+import type { ApiState } from './api/useApi';
 import { ApiError, call } from './api/client';
+import { subcategoryLabel } from './api/listing';
+import { categoryLabel } from './adminMetrics';
 import { useCopy, useCurrencyCode, useLanguage, useMoney, LANGUAGE_ORDER, LANGUAGES } from './i18n/context';
 import { CURRENCY_ORDER, fill, type CurrencyCode } from './i18n/currency';
 import { useAuth } from './auth/context';
 import { Face } from './auth/Avatar';
 import { DEMO_MODE } from './demoMode';
-import { DEMO_BUDGET, DEMO_INBOX } from './dashboardDemo';
+import { DEMO_BUDGET, DEMO_INBOX, DEMO_VENUE_PLAN } from './dashboardDemo';
 import { DashboardScreen } from './dashboardRegistry';
 import { DashboardDrawer } from './dashboardDrawer';
-import { Button, DxIcon, Drawer, PageHead, Progress, Toast } from './dashboardKit';
+import { Button, DxIcon, Drawer, EmptyState, PageHead, Progress, Toast } from './dashboardKit';
 import { useDismiss } from './dashboardKitHooks';
 import { DashboardContext, useDashboard } from './dashboardShell';
 import type { DashboardShell, DrawerKind, DrawerPrefill, DrawerTarget } from './dashboardShell';
@@ -74,15 +80,25 @@ function Rail({
   collapsed,
   onToggle,
   onOpenPlan,
+  venuePlan,
 }: {
   collapsed: boolean;
   onToggle: () => void;
   onOpenPlan: () => void;
+  /** The venue's partner plan, read once by the frame and shared with the sheet. */
+  venuePlan: ApiState<VenuePlan>;
 }) {
   const copy = useCopy();
   const money = useMoney();
-  const { plan } = useAuth();
   const { screen, goTo, venueId } = useDashboard();
+  /*
+   * The **venue's** tier — Starter, Growth, Scale — off `GET …/subscription`.
+   * It read `useAuth().plan`, which is the signed-in person's *consumer* plan,
+   * and so called every venue "Free". `null` while unknown (asking, a
+   * manager's 403, a failed read), and the card then says "Your plan" rather
+   * than guessing at a tier.
+   */
+  const plan = readyOr(venuePlan, DEMO_MODE ? DEMO_VENUE_PLAN : null)?.plan ?? null;
 
   /*
    * The plan card reads the same pool the Campaigns and Vouchers screens do —
@@ -158,13 +174,13 @@ function Rail({
       </nav>
 
       <div className="dx-rail-foot">
-        {/* A button that names the plan the venue is actually on — off the
-            session, `null` while unknown, in which case the dictionary's own
-            word for that rather than a guess at the free tier. */}
-        <button type="button" className="dx-plan" onClick={onOpenPlan}>
+        {/* A button that names the plan the venue is actually on, and opens the
+            sheet with that tier ringed — `null` while unknown, in which case the
+            dictionary's own word for that rather than a guess at a tier. */}
+        <button type="button" className="dx-plan" onClick={onOpenPlan} title={copy.dashboard.plan.open}>
           <span className="dx-plan-head">
             <span>{plan?.name ?? copy.dashboard.plan.unknown}</span>
-            <span className="dx-plan-state">{copy.dashboard.plan.state}</span>
+            {plan && <span className="dx-plan-state">{copy.dashboard.plan.state}</span>}
           </span>
           <p className="dx-plan-cap">{copy.dashboard.plan.caption}</p>
           {spent !== null && held !== null && total !== null && total > 0 && (
@@ -495,14 +511,23 @@ function UserMenu() {
   );
 }
 
-function TopBar() {
+/**
+ * The bar. `setup` is the frame with no venue behind it: the crumb names the
+ * account and the one job left, and only the controls that are about the reader
+ * rather than a venue stay — no switcher, no range, no bell.
+ */
+function TopBar({ setup = false }: { setup?: boolean }) {
   const copy = useCopy();
   const { account } = useAuth();
   const { screen, venues, venueId } = useDashboard();
   const crumb = copy.dashboard.screens[screen];
   /* The venue's own name when there is one — the switcher's choice — and the
-     account's name only when this device knows no venue (the demo). */
-  const business = venues.find((venue) => venue.id === venueId)?.name ?? account?.business?.name ?? account?.name;
+     account's name only when this device knows no venue (the demo). With no
+     venue at all the account's name, never a cached listing's: that listing is
+     exactly what the server no longer holds. */
+  const business = setup
+    ? account?.name
+    : (venues.find((venue) => venue.id === venueId)?.name ?? account?.business?.name ?? account?.name);
 
   return (
     <header className="dx-bar">
@@ -512,19 +537,51 @@ function TopBar() {
           /
         </span>
         {/* v3 crumbs the page title, not the rail word ("Partner analytics"). */}
-        <b>{'title' in crumb ? crumb.title : crumb.name}</b>
+        <b>{setup ? copy.dashboard.setup.title : 'title' in crumb ? crumb.title : crumb.name}</b>
       </div>
       <div className="dx-bar-spacer" />
       <div className="dx-bar-acts">
-        <VenueSelect />
-        <RangeSelect />
+        {!setup && <VenueSelect />}
+        {!setup && <RangeSelect />}
         <LanguageSelect />
         <CurrencySelect />
         <ThemeButton />
-        <NotificationsMenu />
+        {!setup && <NotificationsMenu />}
         <UserMenu />
       </div>
     </header>
+  );
+}
+
+/**
+ * Signed in, and no venue to show — the state every owner is in before setup,
+ * and after a venue is removed on the server.
+ *
+ * It used to be eleven screens each saying "this device is not signed in",
+ * which was false and pointed at the wrong fix. The router already sends an
+ * owner with no listing to setup; this is for the browsers it cannot catch —
+ * one still holding a cached listing the server has since dropped, or a listing
+ * saved only on this device — and it says the one true thing with the one
+ * press that fixes it.
+ */
+function NoVenue() {
+  const copy = useCopy().dashboard;
+  return (
+    <div className="dx-page">
+      <div className="dx-screen">
+        <EmptyState
+          icon="house"
+          title={copy.setup.title}
+          body={copy.setup.body}
+          action={{
+            label: copy.setup.action,
+            onClick: () => {
+              window.location.hash = PATHS['business-setup'];
+            },
+          }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -549,6 +606,8 @@ interface PublicListing {
  */
 function ListingPreview({ venueId, onClose }: { venueId: string; onClose: () => void }) {
   const copy = useCopy().dashboard;
+  /* The keys the server holds, in the reader's words — the phone does the same. */
+  const listingCopy = useCopy().listing;
   const [listing, setListing] = useState<PublicListing | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -573,7 +632,14 @@ function ListingPreview({ venueId, onClose }: { venueId: string; onClose: () => 
           <div className="dx-phone-screen">
             <div className="dx-phone-cover" aria-hidden />
             <div className="dx-phone-body">
-              <em>{[listing.venue.category, listing.venue.subcategory].filter(Boolean).join(' · ')}</em>
+              <em>
+                {[
+                  listing.venue.category ? categoryLabel(listing.venue.category, listingCopy.categories) : '',
+                  subcategoryLabel(listing.venue.category, listing.venue.subcategory, listingCopy.subcategories),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </em>
               <b>{listing.venue.name}</b>
               <p>{[listing.venue.address, listing.venue.city].filter(Boolean).join(', ')}</p>
               {listing.venue.priceRange && <p>{listing.venue.priceRange}</p>}
@@ -741,7 +807,12 @@ export function DashboardPage() {
         setDrawer({ kind, dealId, prefill, campaignId, seq: drawerSeq.current });
       },
       closeDrawer: () => setDrawer(null),
-      refresh: () => setRevision((n) => n + 1),
+      /* The rail's budget card is outside the re-mounted page, so a write that
+         moved the pool (a campaign reserving its rewards, say) tells it too. */
+      refresh: () => {
+        setRevision((n) => n + 1);
+        budgetChanged();
+      },
       toast: (message: string) => setToastState((now) => ({ text: message, seq: (now?.seq ?? 0) + 1 })),
       range,
       setRange,
@@ -750,8 +821,30 @@ export function DashboardPage() {
     [screen, venueId, directory.row, directory.venues, directory.chosen, directory.choose, overlayRoot, range],
   );
 
+  /* One read of the venue's plan for the rail's card and the sheet it opens. */
+  const venuePlan = usePartnerSubscription(venueId).state;
+
   const head = DASH_SCREENS.find((entry) => entry.id === screen)?.head ?? 'frame';
   const dismiss = useCallback(() => setToastState(null), []);
+
+  /*
+   * The server answered and this account has no venue, owned or managed. Not
+   * under `?demo=1`, whose whole point is drawing the dashboard for a browser
+   * with none.
+   */
+  if (directory.list.status === 'ready' && directory.venues.length === 0 && !DEMO_MODE) {
+    return (
+      <DashboardContext.Provider value={shell}>
+        <main className="pd-app dx-app">
+          <div className="dx-main">
+            <TopBar setup />
+            <NoVenue />
+          </div>
+          <div ref={setOverlayRoot} />
+        </main>
+      </DashboardContext.Provider>
+    );
+  }
 
   return (
     /*
@@ -767,6 +860,7 @@ export function DashboardPage() {
             collapsed={collapsed}
             onToggle={() => setCollapsed((on) => !on)}
             onOpenPlan={() => setPlanOpen(true)}
+            venuePlan={venuePlan}
           />
 
           <div className="dx-main">
@@ -790,7 +884,7 @@ export function DashboardPage() {
             />
           )}
           {preview && <ListingPreview venueId={preview} onClose={() => setPreview(null)} />}
-          {planOpen && <PlanSheet venueId={venueId} onClose={() => setPlanOpen(false)} />}
+          {planOpen && <PlanSheet venueId={venueId} plan={venuePlan} onClose={() => setPlanOpen(false)} />}
           {toastState && <Toast key={toastState.seq} message={toastState.text} onDone={dismiss} />}
 
           {/* Every kit overlay portals here — see `overlayRoot` on the shell. */}

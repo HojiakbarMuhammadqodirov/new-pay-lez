@@ -32,6 +32,8 @@ export interface VenueDraft {
   name: string;
   category: string;
   subcategory?: string;
+  /** Taxonomy keys (`domain/categories.ts`), already through `checkTags`. */
+  tags?: string[];
   city: string;
   countryCode?: string;
   address?: string;
@@ -255,10 +257,10 @@ export async function createVenue(
     const id = newId('ven');
     await db.run(
       `INSERT INTO venues
-         (id, owner_user_id, name, category, subcategory, city, country_code, address, lat, lng,
+         (id, owner_user_id, name, category, subcategory, tags, city, country_code, address, lat, lng,
           timezone, currency, price_range, image_url, phone, email, status, amount_entry,
           min_spend_minor, max_amount_minor, created_at, updated_at)
-       VALUES ($i, $o, $n, $ca, $sc, $ci, $cc, $ad, $la, $ln, $tz, $cu, $pr, $im, $ph, $em,
+       VALUES ($i, $o, $n, $ca, $sc, $tg, $ci, $cc, $ad, $la, $ln, $tz, $cu, $pr, $im, $ph, $em,
                'draft', 'cashier', $ms, $mx, $t, $t)`,
       {
         i: id,
@@ -266,6 +268,7 @@ export async function createVenue(
         n: input.draft.name.trim(),
         ca: input.draft.category,
         sc: input.draft.subcategory ?? null,
+        tg: input.draft.tags && input.draft.tags.length > 0 ? JSON.stringify(input.draft.tags) : null,
         ci: input.draft.city,
         cc: place.countryCode,
         ad: input.draft.address ?? null,
@@ -375,6 +378,7 @@ export async function updateVenue(
       `UPDATE venues SET
           name = COALESCE($n, name), category = COALESCE($ca, category),
           subcategory = CASE WHEN $xsc = 1 THEN NULL ELSE COALESCE($sc, subcategory) END,
+          tags = CASE WHEN $xtg = 1 THEN NULL ELSE COALESCE($tg, tags) END,
           city = COALESCE($ci, city),
           address = CASE WHEN $xad = 1 THEN NULL ELSE COALESCE($ad, address) END,
           lat = COALESCE($la, lat), lng = COALESCE($ln, lng),
@@ -394,6 +398,10 @@ export async function updateVenue(
         n: name ?? null,
         ca: p.category ?? null,
         sc: p.subcategory ?? null,
+        /* An empty list is "file me by my old category words again", which is
+           the NULL the column starts at — not a venue under no filter at all. */
+        tg: p.tags && p.tags.length > 0 ? JSON.stringify(p.tags) : null,
+        xtg: p.tags !== undefined && p.tags.length === 0 ? 1 : 0,
         ci: p.city ?? null,
         ad: p.address ?? null,
         la: p.lat ?? null,
@@ -767,15 +775,42 @@ export async function setVoucherTiers(
  */
 export async function setBudget(
   db: Db,
-  input: { venueId: string; actorId: string; totalMinor: number; loyaltyBp?: number; at?: Iso },
+  input: {
+    venueId: string;
+    actorId: string;
+    /** The total both pools are cut from. Required unless `loyaltyMinor` is sent. */
+    totalMinor?: number;
+    loyaltyBp?: number;
+    /**
+     * What the **loyalty** pool's base should be, with the voucher pool left
+     * exactly where it is — the Loyalty screen's one money field.
+     *
+     * It used to send the current total and a new split, and that cannot set
+     * up a budget: on a venue whose total is still 0 every split of nothing is
+     * nothing, so an owner typing 500 was told "saved" and still had 0. Moving
+     * the split also took the loyalty money out of the voucher pool, which is a
+     * different screen's figure. So the server works out the total and the
+     * split that give the loyalty pool this base — top-ups and rebalances
+     * already moved into it count towards it — and the voucher share stays.
+     */
+    loyaltyMinor?: number;
+    at?: Iso;
+  },
 ): Promise<budget.BudgetView> {
   const at = input.at ?? now();
   const venue = await getVenue(db, input.venueId);
   const period = localMonth(at, venue.timezone);
 
-  if (input.totalMinor < 0) throw new DomainError('validation_failed', 'a budget cannot be negative');
+  if (input.totalMinor !== undefined && input.totalMinor < 0) {
+    throw new DomainError('validation_failed', 'a budget cannot be negative');
+  }
   if (input.loyaltyBp !== undefined && (input.loyaltyBp < 0 || input.loyaltyBp > 10_000)) {
     throw new DomainError('validation_failed', 'the split is basis points, 0–10000');
+  }
+  if (input.loyaltyMinor !== undefined && (!Number.isInteger(input.loyaltyMinor) || input.loyaltyMinor < 0)) {
+    throw new DomainError('validation_failed', 'loyaltyMinor is a whole number of minor units, 0 or more', {
+      field: 'loyaltyMinor',
+    });
   }
 
   const view = await budget.budgetFor(db, input.venueId, at);
@@ -783,6 +818,21 @@ export async function setBudget(
     `SELECT total_minor, loyalty_bp FROM budgets WHERE id = $b`,
     { b: view.id },
   ))!;
+
+  let totalMinor = input.totalMinor;
+  let loyaltyBp = input.loyaltyBp;
+  if (input.loyaltyMinor !== undefined) {
+    const share = Math.floor((row.total_minor * row.loyalty_bp) / 10_000);
+    /* Top-ups and rebalances already in the pool are part of its base and do
+       not move with the split, so they are taken off what the share must be. */
+    const moved = view.loyalty.base - share;
+    const loyaltyShare = Math.max(0, input.loyaltyMinor - moved);
+    totalMinor = row.total_minor - share + loyaltyShare;
+    loyaltyBp = totalMinor > 0 ? Math.round((loyaltyShare * 10_000) / totalMinor) : row.loyalty_bp;
+  }
+  if (totalMinor === undefined) {
+    throw new DomainError('validation_failed', 'totalMinor or loyaltyMinor is required', { field: 'totalMinor' });
+  }
   const committed = view.loyalty.spent + view.loyalty.reserved + view.voucher.spent + view.voucher.reserved;
 
   /*
@@ -804,7 +854,7 @@ export async function setBudget(
     return { loyalty, voucher: total - loyalty };
   };
   const was = shareOf(row.total_minor, row.loyalty_bp);
-  const next = shareOf(input.totalMinor, input.loyaltyBp ?? row.loyalty_bp);
+  const next = shareOf(totalMinor, loyaltyBp ?? row.loyalty_bp);
   for (const pool of [view.loyalty, view.voucher]) {
     const base = next[pool.allocation] + (pool.base - was[pool.allocation]);
     if (base < pool.spent + pool.reserved) {
@@ -820,7 +870,7 @@ export async function setBudget(
     await db.run(
       `UPDATE budgets SET total_minor = $t, loyalty_bp = COALESCE($l, loyalty_bp), updated_at = $at
         WHERE venue_id = $v AND period = $p`,
-      { t: input.totalMinor, l: input.loyaltyBp ?? null, at, v: input.venueId, p: period },
+      { t: totalMinor, l: loyaltyBp ?? null, at, v: input.venueId, p: period },
     );
     await audit.record(db, {
       actorId: input.actorId,
@@ -829,7 +879,7 @@ export async function setBudget(
       entityId: view.id,
       venueId: input.venueId,
       before: { total: view.total, loyaltyBp: row.loyalty_bp },
-      after: { total: input.totalMinor, loyaltyBp: input.loyaltyBp },
+      after: { total: totalMinor, loyaltyBp },
       at,
     });
   });

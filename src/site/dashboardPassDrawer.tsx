@@ -60,6 +60,7 @@ import {
   usePassWrite,
 } from './dashboardPassRules';
 import { useDashboard } from './dashboardShell';
+import { rescaledText, useRescaleOnCurrency } from './dashboardFormat';
 import { useCopy, useCurrency, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 
@@ -201,6 +202,16 @@ export function PassDrawer({
     return withTemplate(blank, target.mode === 'create' ? target.template : 'custom');
   });
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }));
+  /* The three money fields are the reader's currency: switching it with the
+     drawer open keeps them the same money, not the same digits. */
+  useRescaleOnCurrency((ratio) =>
+    setForm((f) => ({
+      ...f,
+      price: rescaledText(f.price, ratio),
+      maxValue: rescaledText(f.maxValue, ratio),
+      costPerUse: rescaledText(f.costPerUse, ratio),
+    })),
+  );
 
   /* The request body. Everything is sent — `null` removes a nullable field —
      except the hours, which this drawer does not draw (see the header). */

@@ -548,6 +548,10 @@ export async function eraseUser(db: Db, userId: string, at: Iso = now()): Promis
       u: userId,
     });
     await db.run(`DELETE FROM community_profiles WHERE user_id = $u`, { u: userId });
+    /* An uploaded profile photo (`media.storeAvatar`) is the person's face, not
+       a venue's history. `display_avatar` is cleared above; the bytes go here,
+       because `media_assets` has no foreign key for a cascade to follow. */
+    await db.run(`DELETE FROM media_assets WHERE entity = 'user' AND entity_id = $u`, { u: userId });
     await db.run(`DELETE FROM notifications WHERE user_id = $u`, { u: userId });
     /* A review's *words* are the person; its rating and date are a venue's
        history, which the paragraph above keeps for the same reason it keeps

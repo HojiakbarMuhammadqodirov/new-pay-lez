@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
 import { usePalette } from '../theme/context';
-import { ninjaMilestones, ninjaPoints, NINJA_PERFECT } from '../auth/player';
+import { ninjaMilestones, ninjaPoints, NINJA_PERFECT, NINJA_PER_FOOD } from '../auth/player';
+import { PerfectBar } from './hud';
 import { sendMove } from '../api/consumer';
 import { FOODS } from '../content';
 import { DURATION_MS, MAX_PER_SWIPE, RADIUS, localRng, positionAt, schedule, type Flyer } from './ninjaField';
@@ -306,11 +307,12 @@ export function FoodNinja({
   return (
     <div className="round nj-round">
       <div className="round-top">
-        <span className="round-count">{fill(copy.ninja.sliced, { n: String(count) })}</span>
+        <span className="round-count">{fill(copy.ninja.sliced, { n: `${count} / ${NINJA_PERFECT}` })}</span>
         <span className="round-clock" role="timer">
           {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}
         </span>
       </div>
+      <PerfectBar performance={count * NINJA_PER_FOOD} label={copy.perfectProgress} />
 
       <div className="nj-field">
         <canvas

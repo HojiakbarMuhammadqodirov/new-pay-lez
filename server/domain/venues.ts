@@ -10,6 +10,7 @@ import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
+import * as audit from './audit.ts';
 import { median } from './money.ts';
 import { local, now, plusDays, type Iso } from './time.ts';
 
@@ -19,6 +20,8 @@ export interface Venue {
   name: string;
   category: string;
   subcategory: string | null;
+  /** JSON array of taxonomy keys, or NULL — read it through `categories.tagsOf`. */
+  tags: string | null;
   city: string;
   country_code: string;
   address: string | null;
@@ -39,6 +42,12 @@ export interface Venue {
   max_amount_minor: number;
   avg_check_minor: number | null;
   avg_check_source: 'category' | 'computed';
+  /** The average transaction the owner typed, or NULL — see `averageCheck`. */
+  avg_check_owner_minor: number | null;
+  /** 1 once the owner has switched the average to their own sales. */
+  avg_check_auto: number;
+  /** "Most off one voucher": every rung's cap when set — see `voucherCapOf`. */
+  voucher_cap_minor: number | null;
   accepts_vouchers: number;
   points_per_scan: number;
   scan_cooldown_hours: number;
@@ -81,13 +90,53 @@ export const venueLocal = (venue: Venue, at: Iso = now()) => local(at, venue.tim
  * notification (§4.5) because the estimate the dashboard shows will visibly
  * move on the day it happens — an unexplained jump reads as a bug.
  */
+/**
+ * The average transaction every voucher figure is multiplied by — and the
+ * owner's say over it.
+ *
+ * The owner can type one (`avg_check_owner_minor`) and can switch to
+ * **automatic** (`avg_check_auto`), which is the median of their own confirmed
+ * sales over the window. Automatic is a switch the *owner* flips once they
+ * judge there is enough of their own trading to stand on, so it uses whatever
+ * sales there are and does not wait for `avgCheckMinSamples`; with none at all
+ * it falls back to their typed figure, then the rule below. A venue that has
+ * touched neither gets exactly the rule it always had (`measuredCheck`).
+ *
+ * Every voucher reserve and every dashboard estimate reads this, so the figure
+ * an owner types is the figure the money is set aside by — not a label over
+ * a number computed somewhere else.
+ */
 export async function averageCheck(
   db: Db,
   venue: Venue,
   at: Iso = now(),
-): Promise<{ minor: number; source: 'category' | 'computed'; samples: number }> {
+): Promise<{
+  minor: number;
+  source: 'category' | 'computed' | 'owner';
+  samples: number;
+  /** Which of the owner's two settings is in force. */
+  mode: 'manual' | 'automatic';
+  /** What the owner typed, or null. */
+  ownerMinor: number | null;
+  /** The median of the window's confirmed sales, or null with none — what automatic would use. */
+  salesMinor: number | null;
+}> {
+  const sales = await salesOf(db, venue, at);
+  const mode = venue.avg_check_auto ? 'automatic' : 'manual';
+  const ownerMinor = venue.avg_check_owner_minor ?? null;
+  const salesMinor = sales.length > 0 ? (median(sales) ?? null) : null;
+  const decorate = { samples: sales.length, mode, ownerMinor, salesMinor } as const;
+
+  if (mode === 'automatic' && salesMinor !== null) return { minor: salesMinor, source: 'computed', ...decorate };
+  if (ownerMinor !== null) return { minor: ownerMinor, source: 'owner', ...decorate };
+  const measured = await measuredFrom(db, venue, sales);
+  return { minor: measured.minor, source: measured.source, ...decorate };
+}
+
+/** The window's confirmed amounts, in minor units of the venue's currency. */
+async function salesOf(db: Db, venue: Venue, at: Iso): Promise<number[]> {
   const since = plusDays(at, -CONFIG.vouchers.avgCheckWindowDays);
-  const amounts = (await db
+  return (await db
     .all<{ amount_minor: number }>(
       `SELECT amount_minor FROM transactions
         WHERE venue_id = $v AND status = 'committed' AND confirmed_at >= $s
@@ -95,10 +144,30 @@ export async function averageCheck(
       { v: venue.id, s: since },
     ))
     .map((row) => row.amount_minor);
+}
 
+/**
+ * The rule with no owner in it: the median once there are enough sales, the
+ * stored figure or the category's before that. What `refreshAverageCheck`
+ * stores, because `avg_check_source` can only say `category` or `computed`.
+ */
+export async function measuredCheck(
+  db: Db,
+  venue: Venue,
+  at: Iso = now(),
+): Promise<{ minor: number; source: 'category' | 'computed'; samples: number }> {
+  const sales = await salesOf(db, venue, at);
+  return { ...(await measuredFrom(db, venue, sales)), samples: sales.length };
+}
+
+async function measuredFrom(
+  db: Db,
+  venue: Venue,
+  amounts: number[],
+): Promise<{ minor: number; source: 'category' | 'computed' }> {
   if (amounts.length >= CONFIG.vouchers.avgCheckMinSamples) {
     const value = median(amounts) ?? 0;
-    return { minor: value, source: 'computed', samples: amounts.length };
+    return { minor: value, source: 'computed' };
   }
 
   /* The venue's own stored figure first, then the category default.
@@ -114,7 +183,79 @@ export async function averageCheck(
     ))?.avg_check_minor ??
     6000;
 
-  return { minor: fallback, source: 'category', samples: amounts.length };
+  return { minor: fallback, source: 'category' };
+}
+
+/**
+ * The cap a rung actually applies: the owner's "most off one voucher" when they
+ * have set one, the rung's own `max_discount_minor` when they have not.
+ *
+ * One number over every rung rather than a ceiling on top of three, because
+ * the owner typed it as *the* most a voucher takes off — a ceiling that only
+ * lowered caps would make a figure above the rungs' own a field that does
+ * nothing. The rung's own value is kept, not overwritten, so clearing the
+ * field puts each rung back where it was.
+ */
+export const voucherCapOf = (venue: Pick<Venue, 'voucher_cap_minor'>, rungCapMinor: number): number =>
+  venue.voucher_cap_minor ?? rungCapMinor;
+
+/**
+ * The owner's voucher economics, from the Vouchers screen: the average
+ * transaction they type, the switch to their own sales, and the most one
+ * voucher takes off. Each key is optional and `null` clears the figure — absent
+ * leaves it as it is, the same rule as every patch on this surface.
+ */
+export async function setVoucherEconomics(
+  db: Db,
+  input: {
+    venueId: string;
+    actorId: string;
+    averageCheckMinor?: number | null;
+    averageCheckAuto?: boolean;
+    maxVoucherMinor?: number | null;
+    at?: Iso;
+  },
+): Promise<Venue> {
+  const at = input.at ?? now();
+  const venue = await getVenue(db, input.venueId);
+  const positive = (value: number | null | undefined, field: string) => {
+    if (value === undefined || value === null) return;
+    if (!Number.isInteger(value) || value < 1) {
+      throw new DomainError('validation_failed', `${field} is a whole number of minor units of at least 1, or null`, {
+        field,
+      });
+    }
+  };
+  positive(input.averageCheckMinor, 'averageCheckMinor');
+  positive(input.maxVoucherMinor, 'maxVoucherMinor');
+
+  const next = {
+    owner: input.averageCheckMinor === undefined ? venue.avg_check_owner_minor : input.averageCheckMinor,
+    auto: input.averageCheckAuto === undefined ? venue.avg_check_auto : input.averageCheckAuto ? 1 : 0,
+    cap: input.maxVoucherMinor === undefined ? venue.voucher_cap_minor : input.maxVoucherMinor,
+  };
+  await db.tx(async () => {
+    await db.run(
+      `UPDATE venues SET avg_check_owner_minor = $o, avg_check_auto = $a, voucher_cap_minor = $c, updated_at = $t
+        WHERE id = $v`,
+      { o: next.owner, a: next.auto, c: next.cap, t: at, v: venue.id },
+    );
+    await audit.record(db, {
+      actorId: input.actorId,
+      action: 'venue.voucher_economics',
+      entity: 'venue',
+      entityId: venue.id,
+      venueId: venue.id,
+      before: {
+        averageCheckMinor: venue.avg_check_owner_minor,
+        averageCheckAuto: Boolean(venue.avg_check_auto),
+        maxVoucherMinor: venue.voucher_cap_minor,
+      },
+      after: { averageCheckMinor: next.owner, averageCheckAuto: Boolean(next.auto), maxVoucherMinor: next.cap },
+      at,
+    });
+  });
+  return await getVenue(db, venue.id);
 }
 
 /**
@@ -125,7 +266,9 @@ export async function averageCheck(
  * caller turns into a notification.
  */
 export async function refreshAverageCheck(db: Db, venue: Venue, at: Iso = now()): Promise<{ flipped: boolean; minor: number }> {
-  const next = await averageCheck(db, venue, at);
+  /* The owner-free rule: this column is the fallback `measuredFrom` reads and
+     its source can only be `category` or `computed`. */
+  const next = await measuredCheck(db, venue, at);
   const flipped = next.source !== venue.avg_check_source;
   await db.run(
     `UPDATE venues SET avg_check_minor = $a, avg_check_source = $s, updated_at = $t WHERE id = $v`,

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
-import { mergeMilestones, mergePoints } from '../auth/player';
+import { MERGE_BANDS, mergeMilestones, mergePoints } from '../auth/player';
+import { PerfectBar } from './hud';
 import { sendMove } from '../api/consumer';
 import {
   SIZE,
@@ -201,8 +202,15 @@ export function Merge2048({
           <span aria-hidden> · </span>
           {fill(copy.merge.best, { tile: String(best) })}
         </span>
-        <span className="round-count mg-moves">{fill(copy.merge.moves, { n: String(moves) })}</span>
+        <span className="round-clock mg-moves">{fill(copy.merge.moves, { n: String(moves) })}</span>
       </div>
+      {/* 2048 is priced on its largest tile through the rulebook's bands, so
+          the bar steps band to band rather than creeping — the honest picture
+          of a game where a merge either reaches the next tile or does not. */}
+      <PerfectBar
+        performance={MERGE_BANDS.find((band) => best >= band.tile)?.performance ?? 0}
+        label={copy.perfectProgress}
+      />
 
       <div
         className="mg-board"

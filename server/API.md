@@ -108,9 +108,12 @@ was dropped, not emptied — and `occupation` took its place in both the request
 
 Four of them have rules to draw the form around:
 
-- **`username`** is unique platform-wide — 3 to 20 characters of `a-z 0-9 _`, no
-  leading, trailing or doubled underscores, some names reserved. A clash is a
-  `409` naming the field, not a 500.
+- **`username`** is unique platform-wide — 3 to 20 characters of `a-z 0-9 . _`,
+  no leading, trailing or doubled separators, some names reserved (and a short
+  list of words nobody needs to be called, reported as `reserved`). A clash is a
+  `409` naming the field, not a 500. `GET /v1/usernames/{name}` is the
+  as-you-type check, `GET /v1/usernames` three free suggestions, and
+  `PUT /v1/me/username` the same write on its own rate-limited route.
 - **`birthDate`** is accepted twice: the answer, and one correction. A third
   *different* day is a `409` naming support. Resending the day already stored
   costs nothing, so a client may safely PATCH its whole profile on every save.
@@ -659,9 +662,17 @@ exist. The server deletes retired keys from `plan_entitlements` on every boot, s
 a client still reading one gets a missing key rather than a stale number left
 behind by the build before the rename.
 
-Partner entitlements are `live_deals`, `active_campaigns`, `push_quota`, `venues`,
-`team_seats`, `vouchers`, `deep_analytics`, `benchmarks`, `assistant`,
-`identified_profiles` and `export_csv`. Paid-tier analytics are **absent** from
+Partner plans are Starter / Growth / Scale, priced and entitled as the pricing
+strategy's §5 states (`landing/uploads/paylez-pricing-strategy.md`); Chain is
+retired and its subscribers were moved to Scale. Partner entitlements are
+`live_deals`, `deep_analytics`, `active_campaigns`, `loyalty_budget` (a JSON map
+of currency to minor units), `voucher_tiers`, `push_quota`,
+`identified_profiles`, `export_csv`, `benchmarks`, `venues`, `team_management`,
+`assistant`, `assistant_level`, `api_access`, `support`, `passes`, `pass_limit`,
+`pass_subscribers`, `pass_analytics`, `multi_venue_passes`, `member_deals` and
+`vouchers`; 9999 means unlimited. `team_seats` is gone. `GET /v1/plans` carries
+each plan's per-market `prices` (`{currency, months, priceMinor, totalMinor}`):
+show the reader's market's own row when there is one. Paid-tier analytics are **absent** from
 partner responses rather than nulled, so render what is present instead of
 branching on a locked flag.
 

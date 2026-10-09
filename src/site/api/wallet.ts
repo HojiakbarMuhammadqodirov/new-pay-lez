@@ -270,8 +270,8 @@ export interface BrowsedDeal {
  * Public, like the shelf: the deals are the product's shop window and a visitor
  * deciding whether to sign up should be able to look in it.
  *
- * The **category is the server's** taxonomy (`venues.category` — `cafe`,
- * `bakery`, `hotels`…), not the five-chip customer strip the site used to keep
+ * The **category is the server's** taxonomy key (`venues.category` — `coffee`,
+ * `bakery`, `housing`…), not the five-chip customer strip the site used to keep
  * in `content.ts`. Filtering is therefore done over whatever the rows actually
  * carry rather than over a list written in advance; see `wallet.tsx`.
  */

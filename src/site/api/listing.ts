@@ -22,9 +22,10 @@
  *   `ListingSource` leaves those three *undefined* rather than empty, and the
  *   reader keeps what the browser already has for them — "we were not told" must
  *   not overwrite a description with nothing.
- * - **Words the form has no list for are carried, not replaced.** Imported venues
- *   are `places / halal_food` and `housing / hotels`; the form offers seven
- *   categories and none of those. Mapping them onto "Café" would put a wrong
+ * - **Words the form has no list for are carried, not replaced.** The server
+ *   moves every word it can onto the taxonomy at boot, but one it cannot place
+ *   (`dental`, `language`) stays; the form offers eight categories and
+ *   none of those. Mapping them onto "Coffee" would put a wrong
  *   label on the view and, on the next save, *write* it over the real one. So
  *   the server's words ride along on `unmapped`, the view prints them, and a
  *   save sends the field only once the owner has picked from the list.
@@ -60,6 +61,10 @@ export interface ListingResponse {
   name: string;
   category: string;
   subcategory: string | null;
+  /** The app taxonomy keys the venue picked; empty until it has. Newer servers only. */
+  tags?: string[];
+  /** What the app files it under: `tags`, or a list derived from `category`. */
+  categories?: string[];
   city: string | null;
   countryCode: string;
   address: string | null;
@@ -134,6 +139,9 @@ export interface ListingSource {
      draws hours only when there are some — the setup form's three fixed lines
      are a picture of a week, not this venue's. */
   hours?: ListingResponse['hours'];
+  /* The app taxonomy, as the listing endpoint reports it. */
+  tags?: string[];
+  categories?: string[];
 }
 
 /*
@@ -166,6 +174,8 @@ export const sourceFromListing = (listing: ListingResponse): ListingSource => ({
   links: Array.isArray(listing.links) ? listing.links : undefined,
   languages: Array.isArray(listing.languages) ? listing.languages : undefined,
   hours: Array.isArray(listing.hours) ? listing.hours : undefined,
+  tags: Array.isArray(listing.tags) ? listing.tags : undefined,
+  categories: Array.isArray(listing.categories) ? listing.categories : undefined,
 });
 
 export const sourceFromRow = (row: VenueRow): ListingSource => ({
@@ -219,7 +229,7 @@ const fold = (value: string): string =>
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]/gu, '');
 
-/** One of the form's seven categories, or `null` for a word it has no row for. */
+/** One of the form's eight categories, or `null` for a word it has no row for. */
 export function categoryOf(value: string | null | undefined): BusinessCategory | null {
   const key = fold(value ?? '');
   return BUSINESS_CATEGORIES.find((entry) => entry.id === key)?.id ?? null;
@@ -229,9 +239,10 @@ export function categoryOf(value: string | null | undefined): BusinessCategory |
  * The index of a server subcategory in the category's own list, or `null`.
  *
  * The site stores a subcategory as an *index* into a translated list, and the
- * server stores free text, so the two meet at the label. Every language's label
- * is tried, not only English: a row written by an earlier client in Polish is
- * still a row this form can read back.
+ * server stores the taxonomy key (`restaurant.turkish`), so the key is looked
+ * up first. A label in any language is tried after it, so a row an earlier
+ * client wrote as words (`Pizza`, `Sushi`) still reads back where the word
+ * is one of the category's.
  */
 export function subcategoryIndex(
   category: BusinessCategory,
@@ -240,6 +251,9 @@ export function subcategoryIndex(
   const key = fold(value ?? '');
   const at = BUSINESS_CATEGORIES.findIndex((entry) => entry.id === category);
   if (!key || at < 0) return null;
+  const raw = (value ?? '').trim().toLowerCase();
+  const byKey = BUSINESS_CATEGORIES[at].subs.indexOf(raw.includes('.') ? raw : `${category}.${raw}`);
+  if (byKey >= 0) return byKey;
   for (const code of LANGUAGE_ORDER) {
     const index = (LANGUAGES[code].listing.subcategories[at] ?? []).findIndex(
       (label) => fold(label) === key,
@@ -250,16 +264,32 @@ export function subcategoryIndex(
 }
 
 /**
- * What a subcategory is called on the wire: its **English label**.
+ * What a subcategory is called on the wire: its **taxonomy key**
+ * (`restaurant.turkish`), which the server checks is under the category.
  *
- * A label rather than a slug because the column is read raw — the dashboard's
- * listing preview prints `category · subcategory` as the server holds them, and
- * so does the phone — and "Specialty coffee" is a thing a person can read where
- * `specialty_coffee` is not. `subcategoryIndex` folds it back in any language.
+ * It was the English label once, so the raw column read as words; it is a key
+ * now because the server validates it, and every reader that prints one goes
+ * through `subcategoryLabel` rather than printing the column.
  */
 export function subcategoryWord(category: BusinessCategory, index: number): string | undefined {
-  const at = BUSINESS_CATEGORIES.findIndex((entry) => entry.id === category);
-  return LANGUAGES.en.listing.subcategories[at]?.[index];
+  return BUSINESS_CATEGORIES.find((entry) => entry.id === category)?.subs[index];
+}
+
+/**
+ * A server subcategory in the reader's words: its label when it is one of
+ * the category's keys, the stored word otherwise, and `''` for none.
+ * `subcategories` is `copy.listing.subcategories`.
+ */
+export function subcategoryLabel(
+  category: string | null | undefined,
+  subcategory: string | null | undefined,
+  subcategories: readonly (readonly string[])[],
+): string {
+  if (!subcategory) return '';
+  const id = categoryOf(category);
+  const at = BUSINESS_CATEGORIES.findIndex((entry) => entry.id === id);
+  const index = id ? subcategoryIndex(id, subcategory) : null;
+  return (index !== null ? subcategories[at]?.[index] : undefined) ?? subcategory;
 }
 
 /** One of the six countries the form offers, or `null`. */
@@ -383,6 +413,14 @@ export function businessFromSource(
     googlePlay: link('googlePlay'),
     spoken: source.languages === undefined ? base.spoken : source.languages.filter(isSpoken),
     unmapped: Object.keys(unmapped).length > 0 ? unmapped : undefined,
+    /* The venue's own pick, or — until it has made one — the list the server
+       derived from its old category, offered as the starting point. */
+    tags:
+      source.tags === undefined
+        ? base.tags
+        : source.tags.length > 0
+          ? source.tags
+          : (source.categories ?? []),
   };
 }
 
@@ -404,6 +442,8 @@ export interface ListingWrite {
   description?: Record<string, string>;
   links?: ListingLink[];
   languages?: string[];
+  /** App taxonomy keys; `[]` goes back to the server's derived list. */
+  tags?: string[];
 }
 
 /**
@@ -446,6 +486,8 @@ export function listingWrite(
   /* Only a picture this site made. A kept external address is already on the
      server, and sending it back would be the one write here with no reason. */
   if (isPicture(draft.logo)) body.imageUrl = draft.logo;
+  /* Sent only once read from the server: a list nobody has seen is not replaced. */
+  if (draft.tags !== undefined) body.tags = draft.tags;
 
   const key = draft.descriptionLanguage ?? language;
   const text = draft.description.trim();

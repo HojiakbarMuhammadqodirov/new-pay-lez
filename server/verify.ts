@@ -23,8 +23,10 @@ import { fileURLToPath } from 'node:url';
 import { migrate, openDb } from './db/db.ts';
 import { importLegacy, readWordBank, WORD_BANK_CSV } from './db/import.ts';
 import { boot } from './main.ts';
+import { catalogueRetirement } from './verify-catalogue.ts';
+import { nfcTaps } from './verify-nfc.ts';
 import { csvParts, parseCsv } from './db/csv.ts';
-import { CONFIG } from './config.ts';
+import { ARCADE_ECONOMY, CONFIG, MIN_PERFECT_SECONDS } from './config.ts';
 import { allRoutes } from './http/routes/index.ts';
 import { createApi } from './http/server.ts';
 import { Router } from './http/router.ts';
@@ -48,6 +50,7 @@ import * as missions from './domain/missions.ts';
 import * as occasions from './domain/occasions.ts';
 import * as rates from './domain/rates.ts';
 import * as partners from './domain/partners.ts';
+import * as categories from './domain/categories.ts';
 import * as profiles from './domain/profiles.ts';
 import * as social from './domain/social.ts';
 import * as tasks from './domain/tasks.ts';
@@ -74,7 +77,7 @@ import * as giftPolicy from './domain/giftPolicy.ts';
 import * as arcade from './domain/arcade.ts';
 import * as notifications from './domain/notifications.ts';
 import { createDecipheriv, createECDH, createHmac, createPublicKey, generateKeyPairSync, randomBytes, verify as verifySignature } from 'node:crypto';
-import { trackListing } from './domain/venues.ts';
+import { averageCheck, getVenue, setVoucherEconomics, trackListing } from './domain/venues.ts';
 import { seedPlatform } from './domain/settings.ts';
 import { DomainError } from './domain/errors.ts';
 import { cmac, truncate } from './crypto/cmac.ts';
@@ -120,6 +123,11 @@ function check(what: string, condition: boolean, detail?: unknown): void {
   failures.push(`${group} › ${what}${detail === undefined ? '' : ` — ${JSON.stringify(detail)}`}`);
   console.log(`   ✗ ${what}`, detail ?? '');
 }
+
+/** The perfect-round bonus on a given decay rung (2026-10-08: it decays with
+ *  the round), rounded half-up to a whole point. */
+const perfectBonusAt = (decay: number): number =>
+  Math.floor((CONFIG.games.perfectRoundBonus * Math.round(decay * 100) + 50) / 100);
 
 const eq = (what: string, actual: unknown, expected: unknown) =>
   check(what, Object.is(actual, expected) || JSON.stringify(actual) === JSON.stringify(expected), {
@@ -623,6 +631,72 @@ async function gateRules(): Promise<void> {
 
   await w.db.close();
   await w2.db.close();
+}
+
+/**
+ * The owner's voucher economics: the average transaction they type, the switch
+ * to their own sales, and "most off one voucher" — and that every reserve and
+ * estimate is built from what they set, not from a figure beside it.
+ */
+async function voucherEconomicsRules(): Promise<void> {
+  describe('§4.5 the owner’s average transaction and "most off one voucher"');
+  const w = await world();
+  const at = now();
+  const set = async (patch: { averageCheckMinor?: number | null; averageCheckAuto?: boolean; maxVoucherMinor?: number | null }) =>
+    await setVoucherEconomics(w.db, { venueId: w.venueId, actorId: w.ownerId, at, ...patch });
+  const check10 = async () => (await vouchers.ladder(w.db, w.venueId, at)).find((rung) => rung.discountPct === 10)!;
+
+  const untouched = await averageCheck(w.db, await getVenue(w.db, w.venueId), at);
+  eq('a venue nobody has set keeps the rule it had', [untouched.minor, untouched.source, untouched.mode], [4000, 'category', 'manual']);
+
+  await set({ averageCheckMinor: 5000 });
+  const typed = await averageCheck(w.db, await getVenue(w.db, w.venueId), at);
+  eq('the owner’s figure is the average', [typed.minor, typed.source, typed.ownerMinor], [5000, 'owner', 5000]);
+  eq('…and the estimate is built from it: min(5000 × 10%, 2500)', (await check10()).estimateMinor, 500);
+
+  await set({ averageCheckAuto: true });
+  eq('automatic with no sales yet falls back to the owner’s figure',
+    (await averageCheck(w.db, await getVenue(w.db, w.venueId), at)).minor, 5000);
+  for (const amount of [2000, 3000, 7000]) await scan(w, amount, at);
+  const auto = await averageCheck(w.db, await getVenue(w.db, w.venueId), at);
+  eq('automatic is the median of the venue’s own sales, however few — the owner judged it enough',
+    [auto.minor, auto.source, auto.samples, auto.mode], [3000, 'computed', 3, 'automatic']);
+  eq('…and it is what the estimate is built from', (await check10()).estimateMinor, 300);
+  eq('the median is reported in manual mode too, for the switch to show', auto.salesMinor, 3000);
+
+  await set({ averageCheckAuto: false });
+  eq('switching back is the typed figure again', (await averageCheck(w.db, await getVenue(w.db, w.venueId), at)).minor, 5000);
+  await set({ averageCheckMinor: null });
+  eq('clearing it is the rule again', (await averageCheck(w.db, await getVenue(w.db, w.venueId), at)).source, 'category');
+
+  /* "Most off one voucher". */
+  await set({ averageCheckMinor: 5000, maxVoucherMinor: 300 });
+  const capped = await vouchers.ladder(w.db, w.venueId, at);
+  eq('"most off one voucher" is every rung’s cap', capped.map((rung) => rung.maxDiscountMinor), [300, 300, 300]);
+  eq('…and every estimate is bounded by it', capped.map((rung) => rung.estimateMinor), [250, 300, 300]);
+  eq('the rungs keep their own caps underneath, for a save to send back',
+    (await vouchers.partnerLadder(w.db, w.venueId, at)).map((rung) => rung.tierMaxDiscountMinor), [1000, 2500, 4000]);
+
+  await ledger.earn(w.db, { userId: w.customerId, points: 1000, reason: 'adjustment', at });
+  const issued = await vouchers.issue(w.db, { userId: w.customerId, venueId: w.venueId, tierId: (await check10()).id, at });
+  eq('an issued voucher carries the owner’s cap and reserves by it', [issued.max_discount_minor, issued.reserved_minor], [300, 300]);
+
+  await set({ maxVoucherMinor: null });
+  eq('clearing it puts each rung back', (await vouchers.ladder(w.db, w.venueId, at)).map((rung) => rung.maxDiscountMinor), [1000, 2500, 4000]);
+
+  await throws('a zero average is refused', 'validation_failed', async () => await set({ averageCheckMinor: 0 }));
+  await throws('…and a fractional cap', 'validation_failed', async () => await set({ maxVoucherMinor: 12.5 }));
+
+  /* The Loyalty screen's one money field: the loyalty pool's base, the voucher
+     pool left alone. World's budget is 1000 zł at 60% loyalty. */
+  const moved = await partners.setBudget(w.db, { venueId: w.venueId, actorId: w.ownerId, loyaltyMinor: 80_000, at });
+  /* To within one basis point of the total, which is the resolution the split
+     is stored at (`budgets.loyalty_bp`): 800 zł of 1 200 zł is 66.67%. */
+  check('setting the loyalty figure leaves the voucher share, to a basis point of the total',
+    Math.abs(moved.loyalty.base - 80_000) <= 12 && moved.loyalty.base + moved.voucher.base === 120_000,
+    [moved.loyalty.base, moved.voucher.base]);
+
+  await w.db.close();
 }
 
 async function voucherRules(): Promise<void> {
@@ -1189,7 +1263,8 @@ async function rulebookEconomy(): Promise<void> {
   eq('§7.3 referral 100 each, friend milestone 500 at 5', [CONFIG.earn.referrerFirstVisit, CONFIG.earn.inviteeJoin, CONFIG.earn.friendMilestone, CONFIG.earn.friendMilestoneAt], [100, 100, 500, 5]);
   eq('§7.3 deal shared 25, three a day', [CONFIG.earn.dealShared, CONFIG.earn.dealSharedPerDay], [25, 3]);
   eq('§7.3 review 25, one per venue per 30 days', [CONFIG.earn.reviewAfterVisit, CONFIG.earn.reviewEveryDays], [25, 30]);
-  eq('§7.3 comeback 100 per fixed 30-day window', [CONFIG.earn.comeback, CONFIG.earn.comebackEveryDays], [100, 30]);
+  eq('§7.3 comeback 100, once per rolling 30 days, after a 7-day absence',
+    [CONFIG.earn.comeback, CONFIG.earn.comebackEveryDays, CONFIG.earn.comebackMinAbsenceDays], [100, 30, 7]);
   eq('§7.3 onboarding 50, profile 50, interests 25, first scan 100', [CONFIG.earn.onboarding, CONFIG.earn.profileComplete, CONFIG.earn.categoriesPicked, CONFIG.earn.firstScanEver], [50, 50, 25, 100]);
   eq('§7.3 birthday and anniversary 200 each', [CONFIG.earn.birthday, CONFIG.earn.anniversary], [200, 200]);
   eq('§7.3 stipend Pro 300, Premium 1 000', [CONFIG.earn.proStipend, CONFIG.earn.premiumStipend], [300, 1000]);
@@ -2107,6 +2182,43 @@ async function gameRules(): Promise<void> {
     (await ledger.balance(w.db, w.customerId)) > 0,
   );
 
+  /* ── the comeback bonus, 2026-10-08 ── */
+  const comebacks = async () =>
+    (await w.db.all<{ created_at: string }>(
+      `SELECT created_at FROM points_ledger WHERE user_id = $u AND source_kind = 'comeback' ORDER BY created_at`,
+      { u: w.customerId },
+    )).map((row) => row.created_at.slice(0, 10));
+  /* Day 6 → day 10 was three missed days with a freeze absorbing one: no
+     absence worth a welcome back. Day 10 → day 20 was nine missed days. */
+  eq('comeback: a short lapse a freeze absorbed pays nothing, a nine-day absence pays once',
+    await comebacks(), [plusDays(at, 20).slice(0, 10)]);
+  eq('comeback: the minimum absence is a tunable of 7 days', CONFIG.earn.comebackMinAbsenceDays, 7);
+  const setFreezes = async (n: number) =>
+    await w.db.run(`UPDATE player_states SET freezes = $n WHERE user_id = $u`, { n, u: w.customerId });
+  await play(22);
+  eq('comeback: a one-day gap is not an absence', (await comebacks()).length, 1);
+  /* Eight missed days (23–30), but only eleven days since the last payment. */
+  await setFreezes(0);
+  await play(31);
+  eq('comeback: a real absence inside the rolling 30 days pays nothing', (await comebacks()).length, 1);
+  /* 31 → 55: 23 missed, one frozen; day 20's payment is 35 days back. Under the
+     old fixed grid this could have been the second payment of a "month" days
+     after the first; now the window is measured from the last payment. */
+  await setFreezes(1);
+  await play(55);
+  eq('comeback: past the rolling window, a real absence pays again', (await comebacks()).length, 2);
+  /* The freeze boundary: a clear window, exactly seven missed days, one of
+     them covered by a freeze — six real ones, no payment. */
+  for (let day = 56; day <= 90; day += 1) await play(day);
+  await setFreezes(1);
+  await play(98);
+  eq('comeback: seven missed days with one frozen is six real ones — no payment', (await comebacks()).length, 2);
+  /* …while seven unfrozen missed days, window clear, is exactly the minimum. */
+  await play(99);
+  await setFreezes(0);
+  await play(107);
+  eq('comeback: seven unfrozen missed days is a payment', (await comebacks()).length, 3);
+
   await w.db.close();
   await energyRules();
 }
@@ -2627,6 +2739,20 @@ function formulaTable(): void {
       games.roundPoints({ performance: 100, roundToday: 5, featured: false, multiplier: 1 }).score,
     CONFIG.games.newGameBonus,
   );
+  /* …but the perfect bonus does decay (2026-10-08). It is the one bonus a
+     strong player collects on every round, so leaving it flat left the decay
+     curve bounding everything except the part that repeats. */
+  eq(
+    'the perfect bonus decays with the round: 10 · 7 · 5 · 3 · 2 · 1',
+    [1, 2, 3, 4, 5, 6].map((roundToday) =>
+      games.roundPoints({ performance: 100, roundToday, featured: false, multiplier: 1, perfect: true }).bonusPerfect),
+    [10, 7, 5, 3, 2, 1],
+  );
+  eq(
+    '…and the score holds exactly the decayed bonus: a perfect sixth round is 2 + 1',
+    games.roundPoints({ performance: 100, roundToday: 6, featured: false, multiplier: 1, perfect: true }).score,
+    3,
+  );
   /* And the perfect bonus is gated on performance rather than on `won`: exactly
      100, not "nearly". */
   eq(
@@ -2889,7 +3015,7 @@ async function scoringRules(): Promise<void> {
   eq('…which is the 60 for finishing plus the top efficiency band',
     cleared.performance, CONFIG.games.memoryBasePerformance + 40);
   eq('…and it takes the perfect-round bonus with it',
-    cleared.bonusPerfect, CONFIG.games.perfectRoundBonus);
+    cleared.bonusPerfect, perfectBonusAt(cleared.decay));
   eq('a cleared board is a win', cleared.won, true);
 
   eq('exactly ten moves is still the top band', (await board({ misses: 4 })).performance, 100);
@@ -3261,7 +3387,7 @@ async function scoringRules(): Promise<void> {
   eq('a round is three words now, not five', sweep.words.length, CONFIG.games.wordsPerRound);
   eq('…and three solved is 100, not 99', sweep.result.performance, 100);
   eq('…so a clean sweep is a perfect round and takes the bonus',
-    sweep.result.bonusPerfect, CONFIG.games.perfectRoundBonus);
+    sweep.result.bonusPerfect, perfectBonusAt(sweep.result.decay));
   eq('every word solved is a win', sweep.result.won, true);
 
   const slowSweep = await wordRound({ slow: true });
@@ -3407,8 +3533,10 @@ async function scoringRules(): Promise<void> {
   eq('five gaps banks the round', banked.won, true);
   eq('…at performance 20', banked.performance, 5 * per4);
   eq('twenty-five obstacles is a perfect round', (await flight(25)).performance, 100);
-  eq('…and takes the perfect-round bonus with it',
-    (await flight(25)).bonusPerfect, CONFIG.games.perfectRoundBonus);
+  {
+    const top = await flight(25);
+    eq('…and takes the perfect-round bonus with it, on its decay rung', top.bonusPerfect, perfectBonusAt(top.decay));
+  }
   eq('a thousand reach the same 100 and no more', (await flight(1000)).performance, 100);
 
   /*
@@ -3547,7 +3675,8 @@ async function formulaInPlay(): Promise<void> {
     eq('four rounds in a day are numbered 1 to 4', rounds.map((r) => r.roundToday), [1, 2, 3, 4]);
     eq('…and carry the decay rung each one landed on', rounds.map((r) => r.decay), [1, 0.65, 0.45, 0.3]);
     eq('every one of the four was a perfect round', rounds.map((r) => r.performance), [100, 100, 100, 100]);
-    eq('…so every one takes the perfect bonus', rounds.map((r) => r.bonusPerfect), [10, 10, 10, 10]);
+    /* 2026-10-08: the +10 rides the decay curve like the round it is part of. */
+    eq('…so every one takes the perfect bonus, decayed with its round', rounds.map((r) => r.bonusPerfect), [10, 7, 5, 3]);
     /* Four different games, all played for the first time, so all four take the
        discovery bonus — which is what makes a free player's first day large and
        every day after it ordinary. */
@@ -4069,12 +4198,14 @@ async function seededGames(): Promise<void> {
   eq('Food Cross replays to the vector’s score', crossed.replay,
     { moves: perfect.moves.length, score: perfect.score, highestTile: null });
   eq('…2,000 or more is performance 100 and a win', [crossed.performance, crossed.won], [100, true]);
-  eq('…which takes the perfect-round bonus', crossed.bonusPerfect, CONFIG.games.perfectRoundBonus);
+  eq('…which takes the perfect-round bonus, on its decay rung', crossed.bonusPerfect, perfectBonusAt(crossed.decay));
 
   /* ── 3a. §9.1 the weekly game cap ── */
   const capWorld = await world();
   const capAt = now();
   const cap = CONFIG.games.weeklyGameCap.free;
+  eq('the weekly game cap is the 2026-10-08 rebalance: 200 / 280 / 450',
+    [CONFIG.games.weeklyGameCap.free, CONFIG.games.weeklyGameCap.pro, CONFIG.games.weeklyGameCap.premium], [200, 280, 450]);
   /* Nine short of the cap, already banked from games this week. */
   await ledger.earn(capWorld.db, {
     userId: capWorld.customerId,
@@ -4513,6 +4644,21 @@ async function sharingDefaultRules(): Promise<void> {
   eq('…and turning it off again leaves that grant standing',
     (await profiles.customerTable(w2.db, w2.venueId, { at: plusMinutes(at, 1500) })).rows.length, 1);
 
+  /* ── and the boot takes every stored "off" back (2026-10-08) ──
+     The switch is gone from every client and the API no longer writes it, so
+     an account left at 0 would be opted out with no way back. The boot holds
+     live accounts at 1; an erased one keeps the 0 erasure gave it. */
+  const gone = await accounts.signUp(w2.db, { email: 'gone@verify.test', password: 'hunter22', name: 'Gone Person', at, acceptTerms: true });
+  await w2.db.run(
+    `UPDATE users SET status = 'erased', deleted_at = $t, venue_sharing_default = 0 WHERE id = $u`,
+    { t: at, u: gone.id },
+  );
+  await migrate(w2.db);
+  eq('a stored opt-out is back on after a boot',
+    (await accounts.getUser(w2.db, w2.customerId)).venue_sharing_default, 1);
+  eq('…an erased account is left as erasure wrote it',
+    (await w2.db.get<{ v: number }>(`SELECT venue_sharing_default AS v FROM users WHERE id = $u`, { u: gone.id }))?.v, 0);
+
   await w.db.close();
   await w2.db.close();
 }
@@ -4611,6 +4757,161 @@ async function analyticsRules(): Promise<void> {
 
   await w.db.close();
   await many.db.close();
+}
+
+/**
+ * The partner price card — `landing/uploads/paylez-pricing-strategy.md` §5 and
+ * §12, which the seed in `domain/settings.ts` transcribes and every client
+ * renders from `GET /v1/plans?audience=partner`.
+ *
+ * These are the file's figures typed a second time **on purpose**: the seed is
+ * the one place the product writes them, and this is the one place that checks
+ * the seed against the document rather than against itself. A price edited in
+ * the seed without the strategy changing fails here, which is the conversation
+ * the strategy asked for ("settle the price list").
+ */
+async function partnerPriceCard(): Promise<void> {
+  describe('pricing strategy §5 / §12 — the partner price card');
+  const w = await world();
+  const at = now();
+
+  const ladder = await entitlements.plansFor(w.db, 'partner');
+  eq('the partner ladder is Starter, Growth, Scale', ladder.map((plan) => [plan.code, plan.name]), [
+    ['starter', 'Starter'],
+    ['growth', 'Growth'],
+    ['scale', 'Scale'],
+  ]);
+  eq('Starter is free and has no price list', [ladder[0].price_minor, ladder[0].prices], [0, []]);
+  eq('the home-market list price is the złoty monthly figure', ladder.map((plan) => [plan.price_minor, plan.currency]), [
+    [0, 'PLN'],
+    [14900, 'PLN'],
+    [34900, 'PLN'],
+  ]);
+  const card = (code: string) =>
+    ladder.find((plan) => plan.code === code)!.prices.map((p) => [p.currency, p.months, p.priceMinor, p.totalMinor]);
+  eq('Growth: 149 zł / 119 zł a month annual, 149 000 / 119 000 so’m', card('growth'), [
+    ['PLN', 1, 14900, 14900],
+    ['PLN', 12, 11900, 142800],
+    ['UZS', 1, 149000, 149000],
+    ['UZS', 12, 119000, 1428000],
+  ]);
+  eq('Scale: 349 zł / 279 zł a month annual, 349 000 / 279 000 so’m', card('scale'), [
+    ['PLN', 1, 34900, 34900],
+    ['PLN', 12, 27900, 334800],
+    ['UZS', 1, 349000, 349000],
+    ['UZS', 12, 279000, 3348000],
+  ]);
+  check('no partner plan is sold on the consumer commitment ladder', ladder.every((plan) => plan.terms.length === 0));
+
+  /* The §5 table, row by row, in its own order. */
+  const U = '9999';
+  const table: Array<[string, [string, string, string]]> = [
+    ['live_deals', [U, U, U]],
+    ['deep_analytics', ['false', 'true', 'true']],
+    ['active_campaigns', ['1', U, U]],
+    ['voucher_tiers', ['false', 'true', 'true']],
+    ['push_quota', ['2', '4', '10']],
+    ['identified_profiles', ['false', 'true', 'true']],
+    ['benchmarks', ['false', 'true', 'true']],
+    ['venues', ['1', '3', U]],
+    ['team_management', ['false', 'false', 'true']],
+    ['assistant', ['false', 'true', 'true']],
+    ['assistant_level', ['', 'standard', 'advanced']],
+    ['api_access', ['false', 'false', 'true']],
+    ['support', ['email', 'chat', 'manager']],
+    ['passes', ['false', 'true', 'true']],
+    ['pass_limit', ['0', '2', U]],
+    ['pass_subscribers', ['0', '200', U]],
+    ['pass_analytics', ['', 'basic', 'full']],
+    ['multi_venue_passes', ['false', 'false', 'true']],
+    ['member_deals', ['false', 'true', 'true']],
+  ];
+  const ents = await Promise.all(
+    ladder.map(async (plan) =>
+      Object.fromEntries(
+        (await w.db.all<{ key: string; value: string }>(`SELECT key, value FROM plan_entitlements WHERE plan_id = $p`, { p: plan.id }))
+          .map((row) => [row.key, row.value]),
+      ),
+    ),
+  );
+  for (const [key, values] of table) {
+    eq(`§5 ${key}: Starter / Growth / Scale`, ents.map((e) => e[key]), values);
+  }
+  eq('Starter has no loyalty budget', ents[0].loyalty_budget, undefined);
+  eq('Growth’s loyalty budget is 3 900 zł or 2 000 000 so’m a month', JSON.parse(ents[1].loyalty_budget), { PLN: 390000, UZS: 2000000 });
+  eq('Scale’s is 12 000 zł or 6 000 000 so’m', JSON.parse(ents[2].loyalty_budget), { PLN: 1200000, UZS: 6000000 });
+  check('the unenforced seat count is gone from every plan', ents.every((e) => !('team_seats' in e)));
+
+  /* ── an older database: Chain, its subscriber, and a seat count ── */
+  await w.db.run(
+    `INSERT INTO plans (id, audience, code, name, price_minor, currency, interval, trial_days, rank, active)
+     VALUES ('pln_partner_chain', 'partner', 'chain', 'Chain', 79900, 'PLN', 'month', 0, 2, 1)`,
+  );
+  await w.db.run(`INSERT INTO plan_entitlements (plan_id, key, value) VALUES ('pln_partner_chain', 'team_seats', '25')`);
+  await w.db.run(`INSERT INTO plan_entitlements (plan_id, key, value) VALUES ('pln_partner_growth', 'team_seats', '5')`);
+  const chainSub = newId('sub');
+  await w.db.run(
+    `INSERT INTO subscriptions (id, venue_id, plan_id, status, source, started_at, renews_at, created_at, updated_at)
+     VALUES ($i, $v, 'pln_partner_chain', 'active', 'manual', $t, NULL, $t, $t)`,
+    { i: chainSub, v: w.venueId, t: at },
+  );
+  await seedPlatform(w.db);
+  const moved = await w.db.get<{ plan_id: string; status: string; started_at: string }>(
+    `SELECT plan_id, status, started_at FROM subscriptions WHERE id = $i`,
+    { i: chainSub },
+  );
+  eq('a Chain subscriber is moved onto Scale on boot, keeping its state and dates', [moved?.plan_id, moved?.status, moved?.started_at], ['pln_partner_scale', 'active', at]);
+  eq('…so the venue resolves to Scale', (await entitlements.planFor(w.db, { venueId: w.venueId })).code, 'scale');
+  eq('Chain is withdrawn, not deleted', (await w.db.get<{ active: number }>(`SELECT active FROM plans WHERE id = 'pln_partner_chain'`))?.active, 0);
+  eq('…and is off the catalogue', (await entitlements.plansFor(w.db, 'partner')).map((plan) => plan.code), ['starter', 'growth', 'scale']);
+  eq('the planted seat counts are deleted', (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM plan_entitlements WHERE key = 'team_seats'`))?.n, 0);
+  await seedPlatform(w.db);
+  eq('a second boot writes the same eight prices, not sixteen', (await w.db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM plan_prices p JOIN plans pl ON pl.id = p.plan_id WHERE pl.audience = 'partner'`,
+  ))?.n, 8);
+
+  /* ── Growth's "200 subscribers", across every pass the venue sells ── */
+  await entitlements.startSubscription(w.db, { subject: { venueId: w.venueId }, planCode: 'growth', source: 'manual', at });
+  const pass = await passes.createPass(w.db, {
+    venueId: w.venueId,
+    actorId: w.ownerId,
+    pass: { template: 'daily', name: 'Daily', benefitItem: 'Coffee', priceMinor: 4900 },
+    at,
+  });
+  await passes.setStatus(w.db, { venueId: w.venueId, passId: pass.id, action: 'publish', actorId: w.ownerId, at });
+  /* One rather than two hundred people: the ceiling is a row, and lowering it
+     is the cheapest way to reach it. The next boot puts the figure back. */
+  await w.db.run(`UPDATE plan_entitlements SET value = '1' WHERE plan_id = 'pln_partner_growth' AND key = 'pass_subscribers'`);
+  await passes.subscribe(w.db, { passId: pass.id, userId: w.customerId, at });
+  const full = await refusal(() => passes.subscribe(w.db, { passId: pass.id, userId: w.ownerId, at }));
+  eq('a venue at its plan’s subscriber ceiling refuses the next sign-up, naming it', [full?.code, full?.detail.entitlement], ['cap_reached', 'pass_subscribers']);
+  await seedPlatform(w.db);
+  eq('…and the boot restores the price card’s 200', (await w.db.get<{ value: string }>(
+    `SELECT value FROM plan_entitlements WHERE plan_id = 'pln_partner_growth' AND key = 'pass_subscribers'`,
+  ))?.value, '200');
+
+  /* ── the wire: what the plan sheet and #/business read ── */
+  const api = createApi({ db: w.db, routes: allRoutes, secret: SECRET, limits: false });
+  const server = await api.listen(0, '127.0.0.1');
+  const address = server.address();
+  const base = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  const wire = (await (await fetch(`${base}/v1/plans?audience=partner`)).json()) as Array<{
+    code: string;
+    prices: Array<{ currency: string; months: number; priceMinor: number; totalMinor: number }>;
+    entitlements: Array<{ key: string; value: string }>;
+  }>;
+  server.close();
+  eq('GET /v1/plans?audience=partner carries the price list', wire.map((plan) => [plan.code, plan.prices.length]), [
+    ['starter', 0],
+    ['growth', 4],
+    ['scale', 4],
+  ]);
+  eq('…with Scale’s annual so’m figure', wire[2].prices.find((p) => p.currency === 'UZS' && p.months === 12)?.priceMinor, 279000);
+  check('…and its entitlement rows', wire[1].entitlements.some((row) => row.key === 'pass_limit' && row.value === '2'));
+  const consumer = (await entitlements.plansFor(w.db, 'consumer'));
+  check('consumer plans carry an empty price list rather than a missing one', consumer.every((plan) => Array.isArray(plan.prices)));
+
+  await w.db.close();
 }
 
 async function entitlementRules(): Promise<void> {
@@ -4734,7 +5035,10 @@ async function entitlementRules(): Promise<void> {
   );
   eq('and takes nothing back', await ledger.balance(w.db, w.customerId), balanceBefore);
 
-  /* B7: capacity gates scale. Starter allows one live deal. */
+  /* B7: capacity gates scale — but not hot deals any more. The pricing
+     strategy (§5) makes them unlimited on every tier, Starter included, so the
+     free venue publishes a second one; the capacity gate still answers for
+     campaigns, venues and passes. */
   const first = await partners.createDeal(w.db, {
     actorId: w.ownerId,
     draft: { venueId: w.venueId, copy: { en: { title: 'One', description: 'x' } } },
@@ -4746,8 +5050,11 @@ async function entitlementRules(): Promise<void> {
     draft: { venueId: w.venueId, copy: { en: { title: 'Two', description: 'x' } } },
     at,
   });
-  await throws('a second live deal needs a bigger plan', 'entitlement_required', async () =>
-    await partners.publishDeal(w.db, { dealId: second.id, actorId: w.ownerId, at }),
+  await partners.publishDeal(w.db, { dealId: second.id, actorId: w.ownerId, at });
+  eq(
+    'Starter publishes a second live deal: hot deals are unlimited on every tier',
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM hot_deals WHERE venue_id = $v AND status = 'live'`, { v: w.venueId }))?.n,
+    2,
   );
 
   await w.db.close();
@@ -5053,7 +5360,8 @@ async function referralRules(): Promise<void> {
     eq('…and lists the person as joined', afterJoin.body.people.map((p: { name: string; status: string }) => [p.name, p.status]), [['Bek K.', 'joined']]);
     eq('…with nothing paid yet', afterJoin.body.pointsEarned, 0);
     const bekView = await call('GET', '/v1/referrals', { token: bek.token });
-    eq('the invitee sees who invited them', bekView.body.referredBy, { name: 'Amina T.', status: 'joined' });
+    /* `username` is null: Amina has not picked one, so the short name stands in. */
+    eq('the invitee sees who invited them', bekView.body.referredBy, { name: 'Amina T.', username: null, status: 'joined' });
     eq('…and cannot add a second code', bekView.body.canRedeem, false);
 
     /* Redeeming after sign-up, and every refusal with its reason. */
@@ -5578,6 +5886,20 @@ async function httpSurface(): Promise<void> {
   const health = await call('GET', '/v1/health');
   eq('health answers', health.status, 200);
 
+  /* The preflight allows every method the table serves. It was a typed list
+     without PUT, so a browser on the site's origin could not set a budget, a
+     voucher ladder, links or hours at all — the preflight refused, `fetch`
+     threw, and the dashboard read the throw as "could not reach the server". */
+  const preflight = await fetch(`${base}/v1/partner/venues/x/budget`, {
+    method: 'OPTIONS',
+    headers: { origin: 'http://localhost:5173', 'access-control-request-method': 'PUT' },
+  });
+  const allowed = (preflight.headers.get('access-control-allow-methods') ?? '').split(/,\s*/);
+  const served = [...new Set(allRoutes.map((route) => route.method.toUpperCase()))];
+  eq('the CORS preflight allows every method a route is served on',
+    served.filter((method) => !allowed.includes(method)), []);
+  check('…PUT among them, which the partner budget and ladder are written with', allowed.includes('PUT'));
+
   const signup = await call('POST', '/v1/auth/signup', {
     body: { email: 'http@verify.test', password: 'hunter22', name: 'HTTP', acceptTerms: true },
   });
@@ -5916,6 +6238,62 @@ async function httpSurface(): Promise<void> {
   );
   check('and the ladder', Array.isArray(overviewRoute.body.budget.tiers));
 
+  /* Setting up a loyalty budget from nothing, over the wire. The Loyalty screen
+     used to send the current total (0) and a new split — every split of 0 is
+     0 — so the owner was told "saved" and still had nothing. */
+  const loyaltyFromNothing = await call('PUT', `/v1/partner/venues/${mine.body.id}/budget`, {
+    token: ownerToken,
+    body: { loyaltyMinor: 50_000 },
+  });
+  eq('a loyalty budget can be set up on a venue with no total yet',
+    [loyaltyFromNothing.status, loyaltyFromNothing.body.loyalty?.base, loyaltyFromNothing.body.voucher?.base],
+    [200, 50_000, 0]);
+  const voucherAfter = await call('PUT', `/v1/partner/venues/${mine.body.id}/budget`, {
+    token: ownerToken,
+    body: { totalMinor: 80_000, loyaltyBp: 6250 },
+  });
+  eq('…and a total cut from it', [voucherAfter.body.loyalty.base, voucherAfter.body.voucher.base], [50_000, 30_000]);
+  const loyaltyAgain = await call('PUT', `/v1/partner/venues/${mine.body.id}/budget`, {
+    token: ownerToken,
+    body: { loyaltyMinor: 20_000 },
+  });
+  eq('moving the loyalty figure leaves the voucher pool where it was',
+    [loyaltyAgain.body.loyalty.base, loyaltyAgain.body.voucher.base], [20_000, 30_000]);
+  eq('a budget with neither figure is refused by name',
+    (await call('PUT', `/v1/partner/venues/${mine.body.id}/budget`, { token: ownerToken, body: {} })).body.error?.field,
+    'totalMinor');
+
+  /* The owner's voucher economics, over the wire, answered with the budget body. */
+  const economics = await call('PATCH', `/v1/partner/venues/${mine.body.id}/voucher-economics`, {
+    token: ownerToken,
+    body: { averageCheckMinor: 4_200, maxVoucherMinor: 900 },
+  });
+  eq('the owner’s average transaction is the one the budget reports',
+    [economics.status, economics.body.averageCheck?.minor, economics.body.averageCheck?.source, economics.body.averageCheck?.mode],
+    [200, 4_200, 'owner', 'manual']);
+  eq('…with "most off one voucher" beside it', economics.body.maxVoucherMinor, 900);
+  eq('…and it is the same body the budget route returns',
+    Object.keys(economics.body).sort().join(','),
+    Object.keys((await call('GET', `/v1/partner/venues/${mine.body.id}/budget`, { token: ownerToken })).body).sort().join(','));
+  eq('a zero average is refused by name',
+    (await call('PATCH', `/v1/partner/venues/${mine.body.id}/voucher-economics`, {
+      token: ownerToken,
+      body: { averageCheckMinor: 0 },
+    })).body.error?.field,
+    'averageCheckMinor');
+  eq('…and a switch that is not a boolean',
+    (await call('PATCH', `/v1/partner/venues/${mine.body.id}/voucher-economics`, {
+      token: ownerToken,
+      body: { averageCheckAuto: 'yes' },
+    })).status,
+    400);
+  eq('somebody else’s venue is not theirs to set',
+    (await call('PATCH', `/v1/partner/venues/${w.venueId}/voucher-economics`, {
+      token: ownerToken,
+      body: { averageCheckMinor: 100 },
+    })).status,
+    403);
+
   const unverified = await call('POST', `/v1/partner/venues/${mine.body.id}/deals`, {
     token: ownerToken,
     body: { copy: { en: { title: 'Hello', description: 'World' } } },
@@ -6093,7 +6471,7 @@ async function httpSurface(): Promise<void> {
 
   await call('PATCH', own, {
     token: ownerToken,
-    body: { subcategory: 'espresso', address: 'Rynek 1', priceRange: '$$', phone: '+48120000000', email: 'hello@http.test', imageUrl: 'data:image/png;base64,AAAA' },
+    body: { subcategory: 'coffee.coffee_shop', address: 'Rynek 1', priceRange: '$$', phone: '+48120000000', email: 'hello@http.test', imageUrl: 'data:image/png;base64,AAAA' },
   });
   const bareVenue = await call('PATCH', own, {
     token: ownerToken,
@@ -6713,6 +7091,30 @@ async function accountRules(): Promise<void> {
   check('the session resolves', (await accounts.resolveSession(w.db, signedIn.token)) !== null);
   await accounts.signOut(w.db, signedIn.session.id, at);
   check('and stops resolving once revoked', (await accounts.resolveSession(w.db, signedIn.token)) === null);
+
+  /* ── 2026-10-08: a guest who finished onboarding signs up — paid once ── */
+  {
+    const onboardedGuest = await accounts.provisional(w.db, 'device-onboarded', at);
+    const first = await accounts.completeOnboarding(w.db, onboardedGuest.id, at);
+    eq('a guest finishing onboarding is paid the welcome gift', first.points, CONFIG.earn.onboarding);
+    const signed = await accounts.signUp(w.db, {
+      email: 'onboarded-guest@verify.test', password: 'hunter22', name: 'Onboarded', provisionalId: onboardedGuest.id, at,
+    });
+    check('…the account it signs up as is already onboarded',
+      (await accounts.getUser(w.db, signed.id)).onboarded_at !== null);
+    const again = await accounts.completeOnboarding(w.db, signed.id, plusMinutes(at, 1));
+    eq('…so onboarding again pays nothing', [again.granted, again.points], [false, 0]);
+    eq('…and the ledger holds exactly one onboarding entry for the person',
+      (await w.db.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM points_ledger WHERE user_id = $u AND source_kind = 'onboarding'`, { u: signed.id }))?.n, 1);
+
+    /* The ledger guard on its own: a row whose stamp was lost (or predates the
+       carry-over) but whose ledger already holds an onboarding entry. */
+    await w.db.run(`UPDATE users SET onboarded_at = NULL WHERE id = $u`, { u: signed.id });
+    const stampless = await accounts.completeOnboarding(w.db, signed.id, plusMinutes(at, 2));
+    eq('the welcome gift is idempotent per person, read off the ledger', [stampless.granted, stampless.points], [false, 0]);
+    eq('…and the balance did not move', await ledger.reconcile(w.db, signed.id), 0);
+  }
 
   await w.db.close();
 }
@@ -7571,6 +7973,91 @@ function fakeAddress(label: string): string {
   return address;
 }
 
+/**
+ * The 2026-10-09 security pass (Globe `SECURITY.md`): response headers, the
+ * request-id echo, the media proxy's private-address guard, the assistant
+ * transcript's ownership check and the sign-in per-connection limit.
+ */
+async function securityHardening(): Promise<void> {
+  describe('security hardening');
+
+  /* The media proxy fetches a URL a venue owner typed. */
+  for (const address of ['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '::1', '::', 'fd00::1', 'fe80::1', '::ffff:127.0.0.1']) {
+    eq(`${address} is not public`, media.isPublicAddress(address), false);
+  }
+  for (const address of ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111']) {
+    eq(`${address} is public`, media.isPublicAddress(address), true);
+  }
+  for (const url of ['http://127.0.0.1:8787/v1', 'http://[::1]/', 'http://localhost/', 'http://api.localhost/', 'file:///etc/passwd', 'ftp://8.8.8.8/', 'http://169.254.169.254/latest/meta-data/', 'not a url']) {
+    eq(`${url} is refused before any fetch`, await media.isPublicUrl(url), false);
+  }
+
+  const db = await openDb(':memory:');
+  const api = createApi({ db, routes: allRoutes, secret: SECRET });
+  const server = await api.listen(0, '127.0.0.1');
+  const address = server.address();
+  const base = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  try {
+    const at = now();
+    const alice = await accounts.signUp(db, { email: 'sec-alice@verify.test', password: 'hunter22', name: 'Alice Sec', at, acceptTerms: true });
+    await accounts.signUp(db, { email: 'sec-bob@verify.test', password: 'hunter22', name: 'Bob Sec', at, acceptTerms: true });
+    const aliceToken = (await accounts.signIn(db, { email: 'sec-alice@verify.test', password: 'hunter22', at })).token;
+    const bobToken = (await accounts.signIn(db, { email: 'sec-bob@verify.test', password: 'hunter22', at })).token;
+
+    const index = await fetch(`${base}/v1`);
+    eq('responses are not cached', index.headers.get('cache-control'), 'no-store');
+    eq('…nosniff', index.headers.get('x-content-type-options'), 'nosniff');
+    eq('…never framed', index.headers.get('x-frame-options'), 'DENY');
+    check('…a CSP that loads nothing', (index.headers.get('content-security-policy') ?? '').includes("default-src 'none'"));
+    check('…HSTS', (index.headers.get('strict-transport-security') ?? '').startsWith('max-age='));
+
+    const echoed = await fetch(`${base}/v1`, { headers: { 'x-request-id': 'support-1234' } });
+    eq('a well-formed request id is echoed', echoed.headers.get('x-request-id'), 'support-1234');
+    const forged = await fetch(`${base}/v1`, { headers: { 'x-request-id': 'x'.repeat(65) } });
+    check('an oversized one is replaced', forged.headers.get('x-request-id') !== 'x'.repeat(65));
+
+    /* Somebody else's assistant conversation reads as empty, like no conversation. */
+    const sessionId = await assistant.startConversation(db, { userId: alice.id, side: 'consumer', at });
+    await db.run(
+      `INSERT INTO assistant_messages (id, session_id, seq, role, text, grounding, created_at)
+       VALUES ('msg_sec_verify', $s, 1, 'user', 'my private question', '[]', $t)`,
+      { s: sessionId, t: at },
+    );
+    const read = async (token: string) =>
+      (await (await fetch(`${base}/v1/assistant/sessions/${sessionId}`, { headers: { authorization: `Bearer ${token}` } })).json()) as unknown[];
+    eq('the owner reads their transcript', (await read(aliceToken)).length, 1);
+    eq('another account reads nothing', (await read(bobToken)).length, 0);
+
+    /* A guest is folded into a sign-up only by a request signed in as that guest. */
+    const post = async (path: string, body: Record<string, unknown>, token?: string) => {
+      const response = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(body),
+      });
+      return { status: response.status, body: (await response.json()) as Record<string, any> };
+    };
+    const victim = await post('/v1/auth/guest', { device: 'sec-victim-device-0001' });
+    const thief = await post('/v1/auth/signup', {
+      email: 'sec-thief@verify.test', password: 'hunter22', name: 'Thief', acceptTerms: true, provisionalId: victim.body.userId,
+    });
+    eq('a sign-up naming somebody else\'s guest still succeeds', thief.status, 200);
+    eq('…but that guest is not merged into it', (await accounts.getUser(db, victim.body.userId)).status, 'provisional');
+    const owner = await post('/v1/auth/signup', {
+      email: 'sec-owner@verify.test', password: 'hunter22', name: 'Owner', acceptTerms: true, provisionalId: victim.body.userId,
+    }, victim.body.token);
+    eq('the guest signing up with its own token is merged', [owner.status, (await accounts.getUser(db, victim.body.userId)).status], [200, 'erased']);
+
+    const odd = await fetch(`${base}/v1/media/constructor/x`);
+    eq('a media kind named like an Object property is a 404, not a 500', odd.status, 404);
+  } finally {
+    server.close();
+  }
+
+  const signin = allRoutes.find((route) => route.method === 'POST' && route.pattern === '/v1/auth/signin');
+  eq('sign-in is limited per connection (password spraying)', [signin?.limit?.by, signin?.limit?.perHour], ['connection', CONFIG.limits.signInPerHour]);
+}
+
 async function rateLimits(): Promise<void> {
   describe('rate limits');
 
@@ -7887,6 +8374,239 @@ async function wordListRules(): Promise<void> {
 }
 
 /**
+ * Usernames as a public name, and profile photos as uploads.
+ *
+ * Three promises. A handle is checked by the **same** rules the write applies
+ * (so "available" never precedes a refusal), and a taken one comes with free
+ * suggestions. Other people see the handle — on the public board and in an
+ * invite — and never the full display name. A photo is a picture by its bytes,
+ * is stored with the account on either database, is served from our own
+ * origin, and stops being served the moment the account lets go of it.
+ */
+async function handleAndPhotoRules(): Promise<void> {
+  describe('usernames in public, and uploaded profile photos');
+  const db = await openDb(':memory:');
+  /* The plans, because `GET /v1/me` (which the photo routes answer with)
+     resolves one for every account. */
+  await seedPlatform(db);
+  const at = now();
+
+  const kasia = await accounts.signUp(db, { email: 'kasia@verify.test', password: 'hunter22', name: 'Katarzyna Nowak', at, acceptTerms: true });
+  const other = await accounts.signUp(db, { email: 'other@verify.test', password: 'hunter22', name: 'Other Person', at, acceptTerms: true });
+  await accounts.updateProfile(db, other.id, { username: 'Kasia_PL' }, at);
+
+  /* ── availability ── */
+  const taken = await accounts.usernameAvailability(db, kasia.id, 'kasia_pl');
+  eq('a handle somebody holds is taken, whatever its case', [taken.available, taken.reason], [false, 'taken']);
+  check('…with up to three suggestions', taken.suggestions.length > 0 && taken.suggestions.length <= 3, taken.suggestions);
+  const free = new Set<string>();
+  for (const s of taken.suggestions) {
+    if ((await accounts.usernameAvailability(db, kasia.id, s)).available) free.add(s);
+  }
+  eq('…every one of which is itself available', free.size, taken.suggestions.length);
+  eq('a reserved word is reserved', (await accounts.usernameAvailability(db, kasia.id, 'Admin')).reason, 'reserved');
+  eq('two characters is too short', (await accounts.usernameAvailability(db, kasia.id, 'ab')).reason, 'length');
+  eq('a doubled underscore is the wrong shape', (await accounts.usernameAvailability(db, kasia.id, 'kas__ia')).reason, 'shape');
+  check('a misshapen one is still offered a shaped alternative',
+    (await accounts.usernameAvailability(db, kasia.id, 'Kasia.Nowak!')).suggestions.every((s) => /^[a-z0-9]+(?:[._][a-z0-9]+)*$/.test(s)));
+  /* The dot (2026-10-08): a single one between runs, never at an end, never
+     beside another separator — the same rule the underscore has always had. */
+  eq('a single dot is a handle', (await accounts.usernameAvailability(db, kasia.id, 'Kasia.Nowak')).available, true);
+  eq('…a leading or trailing dot is not',
+    [(await accounts.usernameAvailability(db, kasia.id, '.kasia')).reason, (await accounts.usernameAvailability(db, kasia.id, 'kasia.')).reason],
+    ['shape', 'shape']);
+  eq('…nor two separators together',
+    [(await accounts.usernameAvailability(db, kasia.id, 'kasia..pl')).reason, (await accounts.usernameAvailability(db, kasia.id, 'kasia._pl')).reason],
+    ['shape', 'shape']);
+  eq('anything outside a-z 0-9 . _ is the wrong shape', (await accounts.usernameAvailability(db, kasia.id, 'kasia-pl')).reason, 'shape');
+  eq('twenty-one characters is too long', (await accounts.usernameAvailability(db, kasia.id, 'a'.repeat(21))).reason, 'length');
+  /* The light word list: a root anywhere, a word only as a whole part. */
+  eq('a blocked root is refused anywhere in the handle, as reserved',
+    [(await accounts.usernameAvailability(db, kasia.id, 'xKurwa99')).reason, (await accounts.usernameAvailability(db, kasia.id, 'big.fuck')).reason],
+    ['reserved', 'reserved']);
+  eq('a blocked word is refused as a whole part', (await accounts.usernameAvailability(db, kasia.id, 'dick_77')).reason, 'reserved');
+  eq('…and not inside an ordinary word (no Scunthorpe problem)',
+    [(await accounts.usernameAvailability(db, kasia.id, 'dickens')).available, (await accounts.usernameAvailability(db, kasia.id, 'scunthorpe')).available],
+    [true, true]);
+  check('a blocked handle is not offered back with a number on it',
+    (await accounts.usernameAvailability(db, kasia.id, 'kurwa')).suggestions.every((s) => !s.includes('kurwa')));
+  await throws('the write refuses a blocked word too', 'validation_failed', async () =>
+    await accounts.updateProfile(db, kasia.id, { username: 'kurwa_pl' }, at),
+  );
+  const fresh = await accounts.usernameSuggestions(db, kasia.id);
+  check('suggestions before typing: one to three, shaped and free',
+    fresh.suggestions.length >= 1 && fresh.suggestions.length <= 3 &&
+      fresh.suggestions.every((s) => /^[a-z0-9]+(?:[._][a-z0-9]+)*$/.test(s) && s.length <= 20),
+    fresh.suggestions);
+  check('…built from the account’s own name', fresh.suggestions.some((s) => s.startsWith('katarzyna') || s.startsWith('kasia')), fresh.suggestions);
+  const open = await accounts.usernameAvailability(db, kasia.id, 'kasia_n');
+  eq('a free one is available, with nothing to suggest', [open.available, open.reason, open.suggestions], [true, null, []]);
+  await accounts.updateProfile(db, kasia.id, { username: 'kasia_n' }, at);
+  eq('your own handle is available to you, and says so',
+    [(await accounts.usernameAvailability(db, kasia.id, 'KASIA_N')).available, (await accounts.usernameAvailability(db, kasia.id, 'KASIA_N')).mine],
+    [true, true]);
+  eq('…and taken to anybody else', (await accounts.usernameAvailability(db, other.id, 'kasia_n')).reason, 'taken');
+  await throws('the write agrees with the check: a taken handle is a conflict', 'conflict', async () =>
+    await accounts.updateProfile(db, kasia.id, { username: 'KASIA_pl' }, at),
+  );
+
+  /* ── the public name ── */
+  eq('a handle is the public name', social.publicName('kasia_n', 'Katarzyna Nowak'), 'kasia_n');
+  eq('…and without one it is the short name, never the whole one', social.publicName(null, 'Katarzyna Nowak'), 'Katarzyna N.');
+  const noHandle = await accounts.signUp(db, { email: 'nohandle@verify.test', password: 'hunter22', name: 'Jan Kowalski', at, acceptTerms: true });
+  for (const [id, points] of [[kasia.id, 30], [noHandle.id, 20]] as const) {
+    await ledger.earn(db, { userId: id, points, reason: 'game_win', sourceKind: 'game', sourceRef: `gs_${id}`, at });
+  }
+  const board = await social.board(db, { scope: 'global', at });
+  const byId = new Map(board.rows.map((row) => [row.userId, row]));
+  eq('the public board names a player by their handle', [byId.get(kasia.id)?.name, byId.get(kasia.id)?.username], ['kasia_n', 'kasia_n']);
+  eq('…and one without a handle by the short name, not the full one',
+    [byId.get(noHandle.id)?.name, byId.get(noHandle.id)?.username], ['Jan K.', null]);
+  const code = await social.codeFor(db, kasia.id);
+  eq('an invite says who it is from by their handle', [(await social.lookup(db, code)).name, (await social.lookup(db, code)).username], ['kasia_n', 'kasia_n']);
+
+  /* ── a guest's handle survives sign-up, and is not left on the dead row ── */
+  const guest = await accounts.provisional(db, 'verify-handle-device', at);
+  await accounts.updateProfile(db, guest.id, { username: 'guest_handle' }, at);
+  const joined = await accounts.signUp(db, { email: 'joined@verify.test', password: 'hunter22', name: 'Joined', at, acceptTerms: true, provisionalId: guest.id });
+  eq('a guest’s handle moves to the account it signs up as', (await accounts.getUser(db, joined.id)).username, 'guest_handle');
+  eq('…and the erased guest row no longer holds it', (await accounts.getUser(db, guest.id)).username_norm, null);
+
+  /* ── photos ── */
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const saved = await media.storeAvatar(db, kasia.id, PNG, at);
+  check('an upload points the account at a path on this API, versioned by the bytes',
+    /^\/v1\/media\/user\/usr_[0-9a-f]+\?v=[0-9a-f]{10}$/.test(saved.display_avatar ?? ''), saved.display_avatar);
+  const served = await media.assetFor(db, 'user', kasia.id);
+  eq('…and that path serves the same bytes, typed by them', [served.mime, served.body.equals(PNG)], ['image/png', true]);
+  await throws('an SVG is not a photo, whatever it is called', 'validation_failed', async () =>
+    media.checkAvatar(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')),
+  );
+  await throws('nor is a GIF', 'validation_failed', async () => media.checkAvatar(Buffer.from('GIF89a......')));
+  await throws('nor anything over the ceiling', 'validation_failed', async () =>
+    media.checkAvatar(Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(CONFIG.media.avatarMaxBytes)])),
+  );
+  /* Cleared another way — a PATCH, not the DELETE route — and still not served:
+     the account's own column decides, not a row that happens to linger. */
+  await accounts.updateProfile(db, kasia.id, { clear: ['avatar'] }, at);
+  await throws('a photo the account let go of is a 404 at once', 'not_found', async () =>
+    await media.assetFor(db, 'user', kasia.id),
+  );
+  await media.storeAvatar(db, kasia.id, PNG, at);
+  await media.removeAvatar(db, kasia.id, at);
+  eq('removing it clears the answer and drops the bytes',
+    [(await accounts.getUser(db, kasia.id)).display_avatar,
+     (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM media_assets WHERE entity = 'user' AND entity_id = $u`, { u: kasia.id }))?.n],
+    [null, 0]);
+  await media.storeAvatar(db, kasia.id, PNG, at);
+  await consent.eraseUser(db, kasia.id, at);
+  eq('erasing the account takes the photo with it',
+    (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM media_assets WHERE entity = 'user' AND entity_id = $u`, { u: kasia.id }))?.n, 0);
+
+  /* ── the venue route that answered 500 for every id ── */
+  const ownerId = newId('usr');
+  await db.run(
+    `INSERT INTO users (id, email, email_norm, display_name, auth_provider, language, status, created_at, updated_at)
+     VALUES ($i, 'venueowner@verify.test', 'venueowner@verify.test', 'Owner', 'email', 'en', 'active', $t, $t)`,
+    { i: ownerId, t: at },
+  );
+  await db.run(
+    `INSERT INTO venues (id, owner_user_id, name, category, city, country_code, timezone, currency, status, image_url, created_at, updated_at)
+     VALUES ('ven_media_verify', $o, 'Media Café', 'cafe', 'Krakow', 'PL', 'Europe/Warsaw', 'PLN', 'live', $img, $t, $t)`,
+    { o: ownerId, img: `data:image/png;base64,${PNG.toString('base64')}`, t: at },
+  );
+  const venueImage = await media.assetFor(db, 'venue', 'ven_media_verify');
+  eq('a venue picture is served from the column venues actually have', [venueImage.mime, venueImage.body.equals(PNG)], ['image/png', true]);
+  await throws('…and an unknown venue is a 404, not a 500', 'not_found', async () =>
+    await media.assetFor(db, 'venue', 'ven_nobody'),
+  );
+
+  /* ── over the wire ── */
+  const api = createApi({ db, routes: allRoutes, secret: SECRET, limits: false });
+  const server = await api.listen(0, '127.0.0.1');
+  const address = server.address();
+  const base = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  try {
+    const signup = await fetch(`${base}/v1/auth/signup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'wire@verify.test', password: 'hunter22', name: 'Wire Person', acceptTerms: true }),
+    });
+    const token = ((await signup.json()) as { token: string }).token;
+    const call = async (method: string, path: string, body?: unknown) => {
+      const response = await fetch(`${base}${path}`, {
+        method,
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const text = await response.text();
+      return { status: response.status, body: text ? JSON.parse(text) : null };
+    };
+    const check1 = await call('GET', '/v1/usernames/Kasia_PL');
+    eq('GET /v1/usernames/:name answers taken, with suggestions', [check1.status, check1.body.available, check1.body.reason, check1.body.suggestions.length > 0], [200, false, 'taken', true]);
+    eq('…and is signed-in only', (await fetch(`${base}/v1/usernames/whoever`)).status, 401);
+
+    /* ── the username step's own two routes ── */
+    const ideas = await call('GET', '/v1/usernames');
+    check('GET /v1/usernames offers free handles before anything is typed',
+      ideas.status === 200 && Array.isArray(ideas.body.suggestions) && ideas.body.suggestions.length >= 1 &&
+        ideas.body.suggestions.every((s: string) => s.startsWith('wire')),
+      ideas.body);
+    eq('…signed-in only', (await fetch(`${base}/v1/usernames`)).status, 401);
+    const before = await call('GET', '/v1/me');
+    eq('a new account has no username yet', before.body.user.username, null);
+    const set = await call('PUT', '/v1/me/username', { username: 'Wire.Person' });
+    eq('PUT /v1/me/username sets it, as typed, and answers with the account',
+      [set.status, set.body.user.username], [200, 'Wire.Person']);
+    eq('…and it is now this account’s own',
+      [(await call('GET', '/v1/usernames/WIRE.PERSON')).body.available, (await call('GET', '/v1/usernames/WIRE.PERSON')).body.mine],
+      [true, true]);
+    const clash = await call('PUT', '/v1/me/username', { username: 'KASIA_PL' });
+    eq('…a handle somebody holds is a 409 naming the field, ignoring case',
+      [clash.status, clash.body.error.code, clash.body.error.field], [409, 'conflict', 'username']);
+    const short = await call('PUT', '/v1/me/username', { username: 'ab' });
+    eq('…a misshapen one is a 400 naming the field', [short.status, short.body.error.field], [400, 'username']);
+    const blank = await call('PUT', '/v1/me/username', {});
+    eq('…and an empty body is a 400, not a cleared handle', [blank.status, (await call('GET', '/v1/me')).body.user.username], [400, 'Wire.Person']);
+    const renamed = await call('PUT', '/v1/me/username', { username: 'wire_two' });
+    eq('it can be changed', [renamed.status, renamed.body.user.username], [200, 'wire_two']);
+    eq('…and the old one is free for anybody else the moment it is',
+      (await accounts.usernameAvailability(db, kasia.id, 'wire.person')).available, true);
+
+    /* ── sharing with visited venues is always on ── */
+    const optOut = await call('PATCH', '/v1/me', { venueSharingDefault: false });
+    eq('PATCH /v1/me still accepts venueSharingDefault: false from an older app…', optOut.status, 200);
+    eq('…but sharing stays on, on the wire and in the row',
+      [optOut.body.user.venueSharingDefault,
+       (await db.get<{ v: number }>(`SELECT venue_sharing_default AS v FROM users WHERE id = $u`, { u: optOut.body.user.id }))?.v],
+      [true, 1]);
+    eq('…and a non-boolean is still a 400', (await call('PATCH', '/v1/me', { venueSharingDefault: 'no' })).status, 400);
+
+    /* A photo larger than the server-wide 1 MB body limit, which only this
+       route lifts. JPEG magic, then padding: the bytes, not a header, decide. */
+    const big = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(900 * 1024, 7)]);
+    const upload = await call('POST', '/v1/me/avatar', { image: `data:image/jpeg;base64,${big.toString('base64')}` });
+    eq('POST /v1/me/avatar takes a photo past the 1 MB default and answers with the account',
+      [upload.status, String(upload.body?.user?.avatar ?? '').startsWith('/v1/media/user/')], [200, true]);
+    const fetched = await fetch(`${base}${upload.body.user.avatar}`);
+    eq('…which serves it back from our own origin', [fetched.status, fetched.headers.get('content-type'), Buffer.from(await fetched.arrayBuffer()).equals(big)], [200, 'image/jpeg', true]);
+    const svg = await call('POST', '/v1/me/avatar', { image: Buffer.from('<svg/>').toString('base64') });
+    eq('…refuses what is not a photo, naming the field', [svg.status, svg.body.error.field], [400, 'avatar']);
+    const removed = await call('DELETE', '/v1/me/avatar');
+    eq('DELETE /v1/me/avatar clears it', [removed.status, removed.body.user.avatar], [200, null]);
+    eq('…and the old URL is gone', (await fetch(`${base}${upload.body.user.avatar}`)).status, 404);
+    eq('the venue media route no longer answers 500', (await fetch(`${base}/v1/media/venue/ven_nobody`)).status, 404);
+  } finally {
+    server.close();
+  }
+
+  await db.close();
+}
+
+/**
  * Logos — the image proxy, and the two things it must refuse.
  *
  * `domain/media.ts` exists because the front end makes no third-party runtime
@@ -8108,7 +8828,90 @@ async function rateRules(): Promise<void> {
   check('nineteen currencies are quoted', Object.keys(rates.QUOTED).length === 19,
     Object.keys(rates.QUOTED).length);
 
+  /* `stale` is judged on the last *write*, not the last attempt. It was the
+     attempt, so a sheet failing every attempt for a week read as fresh. */
+  eq('rates written 2 days ago are stale even after a fresh failed attempt',
+    rates.isStale(after.ratesUpdatedAt, '2026-03-03T01:00:00.000Z', 36), true);
+  eq('…and rates written 12 hours ago are not',
+    rates.isStale('2026-03-03T00:00:00.000Z', '2026-03-03T12:00:00.000Z', 36), false);
+  eq('no rates at all is stale', rates.isStale(null, '2026-03-03T12:00:00.000Z', 36), true);
+
   await db.close();
+
+  /* The sync itself, against a stub sheet. Offline like everything else here:
+     `fetch` is replaced for the duration and put back. */
+  const sdb = await openDb(':memory:');
+  const realFetch = globalThis.fetch;
+  let sheet = '';
+  let served = 0;
+  const pairs = (values: Record<string, string>) =>
+    '"Currency Pair","Formula","PAYLEZ","Check","Backup"\n' +
+    Object.entries(values)
+      .map(([code, v]) => `"EUR${code}","${v}","${v}","TRUE","1"`)
+      .join('\n');
+  const base: Record<string, string> = {
+    USD: '1.12', GBP: '0.85', PLN: '4.37', UAH: '50.2', RUB: '95.3', UZS: '13,214.0000000',
+    KZT: '504', TRY: '55.2', CZK: '24.4', CHF: '0.93', BYN: '3.43', MDL: '19.9', GEL: '2.9',
+    AMD: '402.9', AZN: '1.9', TMT: '3.93', KGS: '97.9', TJS: '10.3',
+  };
+  globalThis.fetch = (async () => {
+    served += 1;
+    return new Response(sheet, { status: 200 });
+  }) as typeof fetch;
+  try {
+    const rateOf = async (code: string) =>
+      (await sdb.get<{ rate: number }>(`SELECT rate FROM exchange_rates WHERE code = $c`, { c: code }))?.rate;
+
+    check('a database that never synced is due', await rates.isDue(sdb, '2026-05-01T07:00:00.000Z'));
+    sheet = pairs(base);
+    const first = await rates.sync(sdb, '2026-05-01T07:00:00.000Z');
+    eq('every quoted currency arrives from the sheet', [first.status, first.written, first.missing], ['ok', 19, []]);
+    eq('the comma-grouped soum is read whole', await rateOf('UZS'), 13214);
+
+    /* The schedule: fixed UTC slots, read from the database. */
+    eq('not due again before the next slot', await rates.isDue(sdb, '2026-05-01T17:59:00.000Z'), false);
+    eq('due once the 18:00 slot has passed', await rates.isDue(sdb, '2026-05-01T18:01:00.000Z'), true);
+    eq('…and a boot the next morning after a missed evening is due at once',
+      await rates.isDue(sdb, '2026-05-02T03:00:00.000Z'), true);
+    eq('the slot before 06:00 is yesterday 18:00',
+      new Date(rates.lastSlot('2026-05-02T03:00:00.000Z')).toISOString(), '2026-05-01T18:00:00.000Z');
+
+    /* The guard: a zero, a wild jump and an absurd value are each refused per
+       currency, and the stored rate stays. */
+    sheet = pairs({ ...base, PLN: '0', UAH: '80.0', KZT: '99999999', USD: '1.13' });
+    const guarded = await rates.sync(sdb, '2026-05-01T19:00:00.000Z');
+    eq('a sheet with a few bad cells still syncs the rest', [guarded.status, await rateOf('USD')], ['ok', 1.13]);
+    eq('a 59% jump is held, not written', [await rateOf('UAH'), guarded.rejected.find((r) => r.code === 'UAH')?.reason], [50.2, 'jump']);
+    eq('an absurd value is refused', [await rateOf('KZT'), guarded.rejected.find((r) => r.code === 'KZT')?.reason], [504, 'range']);
+    eq('a zero is never written and the old rate is kept', await rateOf('PLN'), 4.37);
+    check('…and the zero is reported missing', guarded.missing.includes('PLN'), guarded.missing);
+
+    /* Past the hold, the sheet is believed: a real devaluation gets through. */
+    sheet = pairs({ ...base, UAH: '80.0' });
+    const later = await rates.sync(sdb, '2026-05-05T07:00:00.000Z');
+    eq('a jump still in the sheet after the hold is written', [later.status, await rateOf('UAH')], ['ok', 80]);
+
+    /* More than half the sheet failing the guard is a broken sheet: nothing moves. */
+    const halved = Object.fromEntries(Object.entries(base).map(([c, v]) => [c, String(Number(v.replace(/,/g, '')) * 3)]));
+    sheet = pairs(halved);
+    const broken = await rates.sync(sdb, '2026-05-05T19:00:00.000Z');
+    eq('a sheet that moved every rate 3× is a failure', [broken.status, await rateOf('USD')], ['failed', 1.12]);
+    eq('…and a failure is retried after 30 minutes, not at the next slot',
+      [await rates.isDue(sdb, '2026-05-05T19:10:00.000Z'), await rates.isDue(sdb, '2026-05-05T19:31:00.000Z')],
+      [false, true]);
+
+    /* The job wrapper runs only when due and never throws. */
+    sheet = pairs(base);
+    const before = served;
+    eq('the timer job syncs when due', (await jobs.runRatesIfDue(sdb, '2026-05-05T19:40:00.000Z')) !== null, true);
+    eq('…and does nothing when not', [await jobs.runRatesIfDue(sdb, '2026-05-05T20:00:00.000Z'), served - before], [null, 1]);
+    globalThis.fetch = (async () => { throw new Error('offline'); }) as typeof fetch;
+    const offline = await rates.sync(sdb, '2026-05-06T07:00:00.000Z');
+    eq('offline keeps the last good rates', [offline.status, await rateOf('USD')], ['failed', 1.12]);
+  } finally {
+    globalThis.fetch = realFetch;
+    await sdb.close();
+  }
 }
 
 /**
@@ -9382,7 +10185,17 @@ async function counterRules(): Promise<void> {
   }
   await k.db.run(`UPDATE venues SET currency = 'UZS' WHERE id = $v`, { v: k.venueId });
   const inSoum = await analytics.costPerNewCustomer(k.db, k.venueId, { at: P });
-  eq('a złoty plan fee is counted in the venue’s own currency', [inSoum.breakdown.subscription, inSoum.excluded], [Math.round((29900 / 100 / 4.25) * 14000), []]);
+  /* The price list quotes Growth in so'm (149 000, pricing strategy §5), so a
+     Tashkent venue counts that figure — not 149 zł through the rate sheet. */
+  eq('a Tashkent venue counts the plan fee from the so’m price list', [inSoum.breakdown.subscription, inSoum.excluded], [149000, []]);
+  await k.db.run(`UPDATE venues SET currency = 'EUR' WHERE id = $v`, { v: k.venueId });
+  await k.db.run(
+    `INSERT INTO exchange_rates (code, base, rate, decimals, updated_at) VALUES ('EUR', 'EUR', 1, 2, $t)
+       ON CONFLICT (code) DO UPDATE SET rate = excluded.rate, decimals = excluded.decimals`,
+    { t: P },
+  );
+  const inEuro = await analytics.costPerNewCustomer(k.db, k.venueId, { at: P });
+  eq('…and a currency the price list does not quote converts the złoty fee', [inEuro.breakdown.subscription, inEuro.excluded], [Math.round(14900 / 4.25), []]);
   await k.db.run(`UPDATE venues SET currency = 'XTS' WHERE id = $v`, { v: k.venueId });
   const unrated = await analytics.costPerNewCustomer(k.db, k.venueId, { at: P });
   eq('…and one with no rate is left out and named, never added in the wrong unit', [unrated.breakdown.subscription, unrated.excluded], [0, ['subscription']]);
@@ -9428,17 +10241,22 @@ async function missionRules(): Promise<void> {
 
   /* ── the shape ── */
   const fresh = await view();
-  eq('five bands on a quiet day, in the rulebook’s order', fresh.bands.map((band) => band.key),
-    ['daily', 'weekly', 'ongoing', 'once', 'learning']);
+  eq('four bands on a quiet day, in the rulebook’s order — no Learn band', fresh.bands.map((band) => band.key),
+    ['daily', 'weekly', 'ongoing', 'once']);
   const numbers = fresh.bands.flatMap((band) => band.missions.map((mission) => mission.number));
   /* #51 (first gift card) is served only where `gift_card_priority` is true —
      Pro and Premium under §9.4, restored 2026-10-04 — so not to this free
      account. #52–54 (the Pass, order-ahead) are not
      served until those features exist — a row nobody can finish in this build
      is omitted, never served locked. #46 (turn on notifications) and #48
-     (first review) are the same: the app has no push and no review screen. */
-  eq('…holding every static mission a free account can finish: 1–50 but 46 and 48, 55, 56 and 66–68', numbers,
-    [...Array.from({ length: 50 }, (_, i) => i + 1).filter((n) => n !== 46 && n !== 48), 55, 56, 66, 67, 68]);
+     (first review) are the same: the app has no push and no review screen.
+     #66–68 (the learning modules) too, since 2026-10-08: no module screen. */
+  /* The 2026-10-08 rebalance tunes seven no-visit missions to 0, and a 0 is not
+     served: #2 today's game, #3 warm up, #11 night owl, #12 on a roll, #16
+     point hunter, #19 ten rounds, #20 unbroken. */
+  const zeroed = [2, 3, 11, 12, 16, 19, 20];
+  eq('…holding every static mission a free account can finish: 1–50 but 46, 48 and the seven zeroed, 55 and 56', numbers,
+    [...Array.from({ length: 50 }, (_, i) => i + 1).filter((n) => n !== 46 && n !== 48 && !zeroed.includes(n)), 55, 56]);
   {
     /* A granted Pro plan opens the shop, and with it #51. */
     const proUser = await person(w, 'mission-pro', plusDays(at, -30));
@@ -9482,40 +10300,63 @@ async function missionRules(): Promise<void> {
     new Date(fresh.bands[1].resetsAt ?? '').getUTCDay() === 1, fresh.bands[1].resetsAt);
   eq('nothing but the check-in is waiting on a fresh account', fresh.unclaimed, 1);
 
+  /* ── the 2026-10-08 rebalance: the numbers, and a 0 is not served ── */
+  eq('rebalance: the daily no-visit rewards', [
+    'daily.todays_game', 'daily.warm_up', 'daily.night_owl', 'daily.on_a_roll',
+    'daily.empty_the_tank', 'daily.flawless', 'daily.mix_it_up', 'daily.new_record', 'daily.window_shopping',
+  ].map((id) => CONFIG.missions.rewards[id]), [0, 0, 0, 0, 5, 5, 5, 5, 5]);
+  eq('rebalance: the weekly no-visit rewards', [
+    'weekly.point_hunter', 'weekly.ten_rounds', 'weekly.unbroken',
+    'weekly.five_day_player', 'weekly.full_deck', 'weekly.quiz_master',
+  ].map((id) => CONFIG.missions.rewards[id]), [0, 0, 0, 30, 40, 30]);
+  eq('rebalance: visit-linked rewards unchanged', [
+    'daily.record_a_visit', 'daily.early_bird', 'weekly.three_venues', 'weekly.regular',
+    'weekly.somewhere_new', 'weekly.cash_it_in', 'weekly.weekend_warrior', 'weekly.explorer',
+  ].map((id) => CONFIG.missions.rewards[id]), [20, 15, 60, 50, 50, 40, 40, 55]);
+  for (const id of ['daily.todays_game', 'daily.warm_up', 'daily.night_owl', 'daily.on_a_roll',
+    'weekly.point_hunter', 'weekly.ten_rounds', 'weekly.unbroken']) {
+    eq(`a zero-reward mission is not served: ${id}`, await one(id), undefined);
+    await throws(`…and claiming it is a 404: ${id}`, 'not_found', async () =>
+      await missions.claim(w.db, { userId: w.customerId, missionId: id, at }));
+  }
+  check('no served mission offers a reward of 0',
+    !fresh.bands.some((band) => band.missions.some((mission) => !mission.autoPaid && mission.reward === 0)));
+
   /* ── a claimable daily mission, end to end ── */
-  eq('today’s game starts open', (await one('daily.todays_game'))?.status, 'open');
+  eq('mix it up starts open', (await one('daily.mix_it_up'))?.status, 'open');
   await throws('a mission that is not complete cannot be claimed', 'conflict', async () =>
-    await missions.claim(w.db, { userId: w.customerId, missionId: 'daily.todays_game', at }));
+    await missions.claim(w.db, { userId: w.customerId, missionId: 'daily.mix_it_up', at }));
 
   const round = await games.startSession(w.db, { userId: w.customerId, gameType: featured, at });
   const finished = await games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at });
   check('the fixture round is a paid featured round', finished.paid && finished.featured, finished);
-
-  eq('playing the featured game completes today’s game', (await one('daily.todays_game'))?.status, 'complete');
-  eq('…and warm up', (await one('daily.warm_up'))?.status, 'complete');
-  eq('…and counts one towards ten rounds', (await one('weekly.ten_rounds'))?.progress, 1);
+  eq('one game is not yet a mix', (await one('daily.mix_it_up'))?.status, 'open');
+  eq('…and counts one day towards five-day player', (await one('weekly.five_day_player'))?.progress, 1);
+  const otherQuiz = games.DAILY_GAME_POOL.find((slot) => !slot.includes(featured) && games.QUIZZES.has(slot[0]))![0];
+  const second = await games.startSession(w.db, { userId: w.customerId, gameType: otherQuiz, at: plusMinutes(at, 1) });
+  await games.finish(w.db, { sessionId: second.sessionId, userId: w.customerId, at: plusMinutes(at, 1) });
+  eq('a second, different game completes mix it up', (await one('daily.mix_it_up', plusMinutes(at, 1)))?.status, 'complete');
 
   const before = await ledger.balance(w.db, w.customerId);
-  const claimed = await missions.claim(w.db, { userId: w.customerId, missionId: 'daily.todays_game', at });
-  eq('claiming pays the rulebook’s 25', claimed.points, CONFIG.missions.rewards['daily.todays_game']);
-  eq('…into the balance', claimed.balance, before + 25);
+  /* Two claims racing: both read `complete`, one inserts. */
+  const race = await Promise.allSettled([
+    missions.claim(w.db, { userId: w.customerId, missionId: 'daily.mix_it_up', at: plusMinutes(at, 2) }),
+    missions.claim(w.db, { userId: w.customerId, missionId: 'daily.mix_it_up', at: plusMinutes(at, 2) }),
+  ]);
+  eq('two simultaneous claims pay once', race.filter((r) => r.status === 'fulfilled').length, 1);
+  const claimed = (race.find((r) => r.status === 'fulfilled') as PromiseFulfilledResult<Awaited<ReturnType<typeof missions.claim>>>).value;
+  eq('claiming pays the rebalanced 5', claimed.points, 5);
+  eq('…into the balance', claimed.balance, before + 5);
   eq('…and the mission reads claimed', claimed.mission.status, 'claimed');
   await throws('a second claim the same day is a conflict', 'conflict', async () =>
-    await missions.claim(w.db, { userId: w.customerId, missionId: 'daily.todays_game', at: plusMinutes(at, 5) }));
+    await missions.claim(w.db, { userId: w.customerId, missionId: 'daily.mix_it_up', at: plusMinutes(at, 5) }));
   eq('…and the ledger holds exactly one entry for it', (await missionRows()).map((row) => row.source_ref),
-    [`daily.todays_game:${day}`]);
+    [`daily.mix_it_up:${day}`]);
   eq('…flat on the plan: the entry carries no multiplier', (await w.db.get<{ multiplier: number }>(
     `SELECT multiplier FROM points_ledger WHERE user_id = $u AND reason = 'mission'`, { u: w.customerId }))?.multiplier, 1);
   eq('the balance is still the ledger’s sum', await ledger.reconcile(w.db, w.customerId), 0);
 
-  /* Two claims racing: both read `complete`, one inserts. */
-  const race = await Promise.allSettled([
-    missions.claim(w.db, { userId: w.customerId, missionId: 'daily.warm_up', at }),
-    missions.claim(w.db, { userId: w.customerId, missionId: 'daily.warm_up', at }),
-  ]);
-  eq('two simultaneous claims pay once', race.filter((r) => r.status === 'fulfilled').length, 1);
-
-  eq('tomorrow the daily mission is open again', (await one('daily.todays_game', plusDays(at, 1)))?.status, 'open');
+  eq('tomorrow the daily mission is open again', (await one('daily.mix_it_up', plusDays(at, 1)))?.status, 'open');
 
   /* ── an auto-paid mirror never pays ── */
   eq('finish setup is open before onboarding', (await one('once.finish_setup'))?.status, 'open');
@@ -9550,16 +10391,16 @@ async function missionRules(): Promise<void> {
   const pesel = learning.moduleFor('pesel');
   const wrong = await learning.grade(w.db, { userId: w.customerId, moduleId: 'pesel', answers: [0, 0, 0, 0] });
   check('a wrong answer does not pass the module', !wrong.passed && !wrong.completed);
-  eq('…and the mission stays open with the best score as progress', [(await one('learning.pesel'))?.status,
-    (await one('learning.pesel'))?.progress], ['open', wrong.correct]);
   const right = await learning.grade(w.db, {
     userId: w.customerId, moduleId: 'learning.pesel', answers: pesel.questions.map((q) => q.answer),
   });
   check('every answer right passes it', right.passed && right.completed);
-  await learning.grade(w.db, { userId: w.customerId, moduleId: 'pesel', answers: [] });
-  eq('…and a worse attempt afterwards does not un-pass it', (await one('learning.pesel'))?.status, 'complete');
-  eq('a passed module is claimed for its reward',
-    (await missions.claim(w.db, { userId: w.customerId, missionId: 'learning.pesel', at })).points, 60);
+  /* The learning missions are not served in this build (no module screen in
+     the app, 2026-10-08): even a passed module's mission is absent, and its
+     claim is the 404 of any unserved mission — never a payout. */
+  eq('…but the learning mission is not served, even once passed', await one('learning.pesel'), undefined);
+  await throws('…and its claim is a 404', 'not_found', async () =>
+    await missions.claim(w.db, { userId: w.customerId, missionId: 'learning.pesel', at }));
   check('the module served to a client carries no answers',
     !JSON.stringify(learning.publicModule(pesel)).includes('"answer"'));
 
@@ -9578,9 +10419,9 @@ async function missionRules(): Promise<void> {
   });
   const withCampaigns = await view();
   eq('a live campaign brings its band, in order', withCampaigns.bands.map((band) => band.key),
-    ['daily', 'weekly', 'ongoing', 'once', 'seasonal', 'partner', 'learning']);
-  eq('…the rulebook’s numbers present with one of each kind shown, less the six not served',
-    new Set(withCampaigns.bands.flatMap((b) => b.missions.map((m) => m.number))).size, 55);
+    ['daily', 'weekly', 'ongoing', 'once', 'seasonal', 'partner']);
+  eq('…the rulebook’s numbers present with one of each kind shown, less the nine not served and the seven zeroed',
+    new Set(withCampaigns.bands.flatMap((b) => b.missions.map((m) => m.number))).size, 45);
   eq('the holiday is complete — a round was played in its window',
     (await one('seasonal.mcp_verify_holiday'))?.status, 'complete');
   eq('…and pays the configured default', (await missions.claim(w.db, {
@@ -9590,7 +10431,7 @@ async function missionRules(): Promise<void> {
   eq('…recorded against the venue', (await w.db.get<{ venue_id: string }>(
     `SELECT venue_id FROM points_ledger WHERE source_ref = 'partner.mcp_verify_takeover:campaign'`))?.venue_id, w.venueId);
   eq('an ended campaign takes its band with it', (await view(plusDays(at, 2))).bands.map((band) => band.key),
-    ['daily', 'weekly', 'ongoing', 'once', 'learning']);
+    ['daily', 'weekly', 'ongoing', 'once']);
 
   /* ── the HTTP surface ── */
   const api = createApi({ db: w.db, routes: allRoutes, secret: SECRET, limits: false });
@@ -9616,13 +10457,17 @@ async function missionRules(): Promise<void> {
   check('…with camelCase bands and missions',
     Array.isArray(listed.body.bands) && typeof listed.body.unclaimed === 'number' &&
       'resetsAt' in listed.body.bands[0] && 'rewardLabel' in listed.body.bands[0].missions[0]);
-  eq('POST …/claim on an open mission is a 409', (await call('POST', '/v1/missions/daily.warm_up/claim', token)).status, 409);
-  eq('…with the conflict code', (await call('POST', '/v1/missions/daily.warm_up/claim', token)).body.error.code, 'conflict');
+  eq('POST …/claim on an open mission is a 409', (await call('POST', '/v1/missions/daily.flawless/claim', token)).status, 409);
+  eq('…with the conflict code', (await call('POST', '/v1/missions/daily.flawless/claim', token)).body.error.code, 'conflict');
+  eq('POST …/claim on a zero-reward (unserved) mission is a 404',
+    (await call('POST', '/v1/missions/daily.warm_up/claim', token)).status, 404);
   eq('an unknown mission is a 404', (await call('POST', '/v1/missions/daily.nope/claim', token)).status, 404);
   eq('the check-in claims through the mission route', (await call('POST', '/v1/missions/daily.check_in/claim', token)).status, 200);
   eq('…once', (await call('POST', '/v1/missions/daily.check_in/claim', token)).status, 409);
-  const module = await call('GET', '/v1/missions/learning/pharmacy_polish', token);
-  eq('a learning module is served', [module.status, module.body.questions.length], [200, 5]);
+  /* The learning missions are not served in this build (2026-10-08), so the
+     module behind one is the same 404 as the mission itself. */
+  eq('a learning module is not served', (await call('GET', '/v1/missions/learning/pharmacy_polish', token)).status, 404);
+  eq('…nor its mission claimed', (await call('POST', '/v1/missions/learning.pharmacy_polish/claim', token)).status, 404);
   eq('the campaign console is admin-only', (await call('GET', '/v1/admin/mission-campaigns', token)).status, 403);
   server.close();
 
@@ -10211,6 +11056,18 @@ async function passRules(): Promise<void> {
     pass: { template: 'weekend', name: 'Weekend', benefitItem: 'Coffee', priceMinor: 2900, allowedDays: [(weekday + 3) % 7] },
     at: base,
   });
+  /* Growth sells two passes at once (pricing strategy §5) — daily and VIP are
+     both on the shelf, so a third is refused by name until the venue moves to
+     Scale, which has no ceiling. A paused pass counts: it comes back with one
+     press. */
+  const overLimit = await refusal(() =>
+    passes.setStatus(w.db, { venueId: w.venueId, passId: weekend.id, action: 'publish', actorId: w.ownerId, at: base }));
+  eq('Growth refuses a third pass on the shelf, naming the limit', [overLimit?.code, overLimit?.detail.entitlement, overLimit?.detail.limit], ['entitlement_required', 'pass_limit', 2]);
+  await passes.setStatus(w.db, { venueId: w.venueId, passId: daily.id, action: 'pause', actorId: w.ownerId, at: base });
+  await rejects('…and a paused one still holds its place', () =>
+    passes.setStatus(w.db, { venueId: w.venueId, passId: weekend.id, action: 'publish', actorId: w.ownerId, at: base }), 'entitlement_required');
+  await passes.setStatus(w.db, { venueId: w.venueId, passId: daily.id, action: 'resume', actorId: w.ownerId, at: base });
+  await entitlements.startSubscription(w.db, { subject: { venueId: w.venueId }, planCode: 'scale', source: 'manual', at: base });
   await passes.setStatus(w.db, { venueId: w.venueId, passId: weekend.id, action: 'publish', actorId: w.ownerId, at: base });
   const wsub = await passes.subscribe(w.db, { passId: weekend.id, userId: w.customerId, at: base });
   const refusedDay = await refusal(() => passes.redeem(w.db, { venueId: w.venueId, actorId: w.ownerId, code: wsub.code, at: base }));
@@ -10432,6 +11289,251 @@ async function passRules(): Promise<void> {
   await w.db.close();
 }
 
+/**
+ * The venue taxonomy (`domain/categories.ts`): the one list the Deals filter
+ * draws, the legacy words that keep today's venues filed somewhere sensible,
+ * the stored list on a venue, and the two public routes that send them.
+ */
+async function categoryRules(): Promise<void> {
+  describe('the venue taxonomy');
+
+  /* ── the tree, exactly as the owner asked for it ── */
+  const tree = categories.taxonomyFor('en').categories;
+  eq('eight categories, in order', tree.map((c) => c.label),
+    ['Coffee', 'Restaurant', 'Shopping', 'Leisure', 'Beauty', 'Housing', 'Bakery', 'Halal']);
+  const subs = (key: string) => tree.find((c) => c.key === key)?.subcategories.map((s) => s.label);
+  eq('Coffee', subs('coffee'), ['Coffee shop']);
+  eq('Restaurant', subs('restaurant'), ['Turkish', 'Indian', 'Polish', 'Asian', 'Pizza', 'Burgers', 'Kebabs', 'Sushi']);
+  eq('Shopping', subs('shopping'),
+    ['Turkish store', 'Indian store', 'Korean store', 'Beauty store', 'Electronics', 'Fashion', 'Home']);
+  eq('Leisure', subs('leisure'), ['Gaming', 'Culture', 'Sports', 'Wellness']);
+  eq('Beauty', subs('beauty'), ['Hair salon', 'Barbershop', 'Nail salon', 'Massage']);
+  eq('Housing', subs('housing'), ['Student house', 'Long-term rentals', 'Hotels']);
+  eq('Bakery', subs('bakery'), ['Bakery cafe']);
+  eq('Halal', subs('halal'), ['Restaurant', 'Meat store', 'Burgers', 'Kebabs']);
+  check('every subcategory key is its category, a dot and a word',
+    tree.every((c) => /^[a-z]+$/.test(c.key) && c.subcategories.every((s) => s.key.startsWith(`${c.key}.`) && /^[a-z]+\.[a-z_]+$/.test(s.key))));
+  eq('the keys are unique', categories.TAXONOMY_KEYS.size, tree.length + tree.reduce((n, c) => n + c.subcategories.length, 0));
+  check('every label is filled in all five languages',
+    categories.TAXONOMY.every((c) => [c, ...c.subcategories].every((n) => Object.values(n.labels).every((v) => v.trim().length > 0))));
+  eq('a reader in Polish gets Polish labels', categories.taxonomyFor('pl').categories[0].label, 'Kawa');
+  eq('…and an unknown language English', categories.taxonomyFor('xx').categories[7].label, 'Halal');
+
+  /* ── a picked list ── */
+  eq('a list is checked, deduplicated and put in tree order',
+    categories.checkTags(['halal.kebabs', 'restaurant.kebabs', 'halal.kebabs']), ['restaurant.kebabs', 'halal.kebabs']);
+  await throws('an unknown key is refused', 'validation_failed', () => categories.checkTags(['restaurant.martian']));
+  await throws('…and so is a list that is not a list', 'validation_failed', () => categories.checkTags('coffee'));
+  await throws('…and more than the cap', 'validation_failed', () =>
+    categories.checkTags([...categories.TAXONOMY_KEYS].slice(0, categories.MAX_TAGS + 1)));
+  eq('a stored list that is not JSON reads as not picked', categories.parseStored('{oops'), []);
+
+  /* ── the venues that have not picked ── */
+  const legacy = (category: string, subcategory: string | null = null, name = 'x') =>
+    categories.legacyTags({ category, subcategory, name });
+  eq('cafe is a coffee shop', legacy('cafe'), ['coffee.coffee_shop']);
+  eq('the importer’s places + restaurant', legacy('places', 'restaurant'), ['restaurant']);
+  eq('places + halal_food is halal', legacy('places', 'halal_food'), ['halal']);
+  eq('places + bakery', legacy('places', 'bakery'), ['bakery']);
+  eq('the old form’s Specialty coffee', legacy('cafe', 'Specialty coffee'), ['coffee.coffee_shop']);
+  eq('the old form’s Bakery café is a coffee shop and a bakery cafe', legacy('cafe', 'Bakery café'),
+    ['coffee.coffee_shop', 'bakery.bakery_cafe']);
+  eq('a barbershop', legacy('barbershop', 'Classic barber'), ['beauty.barbershop']);
+  eq('housing + hotels', legacy('housing', 'hotels'), ['housing.hotels']);
+  eq('fitness is sports', legacy('fitness', 'Gym'), ['leisure.sports']);
+  eq('a translator is filed nowhere, and still listed under All', legacy('legal', 'translation'), []);
+  eq('a name that says halal adds Halal to its kind', legacy('places', 'restaurant', 'Halal Kebab Kraków'), ['restaurant', 'halal']);
+  eq('a picked list wins over the words',
+    categories.tagsOf({ tags: '["restaurant.kebabs","halal.kebabs"]', category: 'cafe', name: 'x' }), ['restaurant.kebabs', 'halal.kebabs']);
+  check('a category is under itself and its subcategories', categories.under(['restaurant.kebabs'], 'restaurant'));
+  check('…a subcategory only under itself', !categories.under(['restaurant'], 'restaurant.kebabs'));
+  check('…and not under a category that merely starts the same', !categories.under(['restaurant.kebabs'], 'rest'));
+
+  /* ── stored on the venue, through the owner's writer ── */
+  const w = await world();
+  const stored = async () =>
+    (await w.db.get<{ tags: string | null }>(`SELECT tags FROM venues WHERE id = $v`, { v: w.venueId }))?.tags;
+  await partners.updateVenue(w.db, { venueId: w.venueId, actorId: w.ownerId, patch: { tags: ['restaurant.kebabs', 'halal.kebabs'] } });
+  eq('the list is stored as JSON', await stored(), '["restaurant.kebabs","halal.kebabs"]');
+  await partners.updateVenue(w.db, { venueId: w.venueId, actorId: w.ownerId, patch: { name: 'Verify Kebab' } });
+  eq('a patch without tags leaves them', await stored(), '["restaurant.kebabs","halal.kebabs"]');
+
+  const api = createApi({ db: w.db, routes: allRoutes, secret: SECRET, limits: false });
+  const server = await api.listen(0, '127.0.0.1');
+  const address = server.address();
+  const base = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const get = async (path: string): Promise<{ status: number; body: any }> => {
+    const response = await fetch(`${base}${path}`);
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const listed = await get('/v1/categories');
+    eq('GET /v1/categories is public', listed.status, 200);
+    eq('…and sends the tree', listed.body.categories.map((c: { key: string }) => c.key),
+      ['coffee', 'restaurant', 'shopping', 'leisure', 'beauty', 'housing', 'bakery', 'halal']);
+    eq('…with every language’s labels', listed.body.categories[1].subcategories[0].labels.uz, 'Turk');
+
+    const venues = await get('/v1/venues?limit=200');
+    const mine = venues.body.find((v: { id: string }) => v.id === w.venueId);
+    eq('the listing carries the venue’s keys', mine?.categories, ['restaurant.kebabs', 'halal.kebabs']);
+    check('…and not the raw column', mine !== undefined && !('tags' in mine));
+    check('every listed venue has a categories list', venues.body.every((v: { categories?: unknown }) => Array.isArray(v.categories)));
+
+    const halal = await get('/v1/venues?category=halal&limit=200');
+    check('?category=<key> filters by the taxonomy', halal.body.some((v: { id: string }) => v.id === w.venueId)
+      && halal.body.every((v: { categories: string[] }) => categories.under(v.categories, 'halal')));
+    const sushi = await get('/v1/venues?category=restaurant.sushi&limit=200');
+    check('…down to a subcategory', !sushi.body.some((v: { id: string }) => v.id === w.venueId));
+
+    const detail = await get(`/v1/venues/${w.venueId}`);
+    eq('the detail carries them too', detail.body.venue.categories, ['restaurant.kebabs', 'halal.kebabs']);
+
+    await partners.updateVenue(w.db, { venueId: w.venueId, actorId: w.ownerId, patch: { tags: [] } });
+    eq('an empty list goes back to the derived one', (await get(`/v1/venues/${w.venueId}`)).body.venue.categories, ['coffee.coffee_shop']);
+    eq('…the column back to NULL', await stored(), null);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await w.db.close();
+  }
+}
+
+/**
+ * A venue's own kind (`categories.checkKind`): one category key of the tree
+ * and one subcategory key under it, as the listing form, the console and an
+ * older app write them — plus the category defaults keyed on the same eight,
+ * and boot's tidy that moves words written before the tree onto its keys.
+ */
+async function venueKindRules(): Promise<void> {
+  describe('a venue’s category and subcategory');
+
+  /* ── the write rule ── */
+  eq('a category key and a subcategory under it', categories.checkKind('restaurant', 'restaurant.turkish'),
+    { category: 'restaurant', subcategory: 'restaurant.turkish' });
+  eq('…the subcategory’s last part is enough', categories.checkKind('halal', 'meat_store'),
+    { category: 'halal', subcategory: 'halal.meat_store' });
+  eq('…and a category alone is allowed', categories.checkKind('bakery'), { category: 'bakery', subcategory: null });
+  eq('an older app’s word is placed on the tree', categories.checkKind('cafe'),
+    { category: 'coffee', subcategory: 'coffee.coffee_shop' });
+  eq('…with its subcategory word', categories.checkKind('barbershop', 'Classic barber'),
+    { category: 'beauty', subcategory: 'beauty.barbershop' });
+  await throws('a word nothing places is refused', 'validation_failed', () => categories.checkKind('dental'));
+  await throws('a subcategory of another category is refused', 'validation_failed', () =>
+    categories.checkKind('halal', 'restaurant.sushi'));
+  await throws('…and so is an invented one', 'validation_failed', () => categories.checkKind('coffee', 'espresso'));
+  eq('an unplaceable word is in no category', categories.kindOf('language', 'English'), null);
+  eq('a stored key files itself in the app’s list', categories.tagsOf({ category: 'housing', subcategory: 'housing.hotels' }),
+    ['housing.hotels']);
+  eq('…a bare category as itself', categories.tagsOf({ category: 'leisure', subcategory: null }), ['leisure']);
+  eq('…and a subcategory that is not its category’s is ignored',
+    categories.tagsOf({ category: 'halal', subcategory: 'restaurant.sushi' }), ['halal']);
+
+  /* ── a PATCH ── */
+  eq('a new category without a subcategory clears the old one',
+    categories.checkKindPatch({ category: 'beauty' }, 'restaurant'),
+    { category: 'beauty', subcategory: undefined, clearSubcategory: true });
+  eq('…resending the same one keeps it', categories.checkKindPatch({ category: 'restaurant' }, 'restaurant'),
+    { category: 'restaurant', subcategory: undefined, clearSubcategory: false });
+  eq('a subcategory alone is checked against the stored category',
+    categories.checkKindPatch({ subcategory: 'restaurant.pizza' }, 'restaurant'),
+    { subcategory: 'restaurant.pizza', clearSubcategory: false });
+  await throws('…and refused when it is not under it', 'validation_failed', () =>
+    categories.checkKindPatch({ subcategory: 'restaurant.pizza' }, 'halal'));
+  eq('a patch that does not touch the kind does not', categories.checkKindPatch({}, 'coffee'), { clearSubcategory: false });
+
+  /* ── boot: the defaults, and the tidy ── */
+  const { db } = await boot({ file: ':memory:', quiet: true });
+  eq('one average-check default per category, and no other',
+    (await db.all<{ category: string }>(`SELECT category FROM category_defaults ORDER BY category`)).map((r) => r.category),
+    [...categories.CATEGORY_KEYS].sort());
+  const at = now();
+  for (const [id, category, subcategory] of [
+    ['ven_kind_cafe', 'cafe', 'Specialty coffee'],
+    ['ven_kind_halal', 'places', 'halal_food'],
+    ['ven_kind_dentist', 'dental', 'Implants'],
+    ['ven_kind_tidy', 'restaurant', 'restaurant.sushi'],
+  ] as const) {
+    await db.run(
+      `INSERT INTO venues (id, name, category, subcategory, created_at, updated_at) VALUES ($i, $i, $c, $s, $t, $t)`,
+      { i: id, c: category, s: subcategory, t: at },
+    );
+  }
+  for (const [id, category] of [['del_kind_old', 'cafe'], ['del_kind_offer', 'free_item']] as const) {
+    await db.run(
+      `INSERT INTO hot_deals (id, venue_id, category, created_at, updated_at) VALUES ($i, 'ven_kind_cafe', $c, $t, $t)`,
+      { i: id, c: category, t: at },
+    );
+  }
+  eq('boot’s tidy moves the rows it can place', await categories.normaliseStoredKinds(db), 3);
+  const kindOfRow = async (id: string) =>
+    await db.get<{ category: string; subcategory: string | null }>(
+      `SELECT category, subcategory FROM venues WHERE id = $i`, { i: id });
+  eq('…a café is a coffee shop', await kindOfRow('ven_kind_cafe'), { category: 'coffee', subcategory: 'coffee.coffee_shop' });
+  eq('…an import’s halal food is Halal', await kindOfRow('ven_kind_halal'), { category: 'halal', subcategory: null });
+  eq('…a word nothing places is left as it was', await kindOfRow('ven_kind_dentist'), { category: 'dental', subcategory: 'Implants' });
+  eq('…a row already on the tree is untouched', await kindOfRow('ven_kind_tidy'), { category: 'restaurant', subcategory: 'restaurant.sushi' });
+  eq('…a deal copied from its venue follows it, and an offer kind stays an offer kind',
+    (await db.all<{ category: string }>(`SELECT category FROM hot_deals WHERE id LIKE 'del!_kind!_%' ESCAPE '!' ORDER BY id`))
+      .map((r) => r.category),
+    ['free_item', 'coffee']);
+  eq('…and a second run moves nothing', await categories.normaliseStoredKinds(db), 0);
+
+  /* ── over HTTP ── */
+  const api = createApi({ db, routes: allRoutes, secret: SECRET, limits: false });
+  const server = await api.listen(0, '127.0.0.1');
+  const address = server.address();
+  const base = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const send = async (method: string, path: string, token?: string, body?: unknown): Promise<{ status: number; body: any }> => {
+    const response = await fetch(`${base}${path}`, {
+      method,
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  try {
+    const owner = await send('POST', '/v1/auth/signup', undefined, {
+      email: 'kinds@verify.test', password: 'hunter22', name: 'Kinds', partner: true, acceptTerms: true,
+    });
+    const token = owner.body.token as string;
+    const made = await send('POST', '/v1/partner/venues', token, {
+      name: 'Kebab Kind', category: 'restaurant', subcategory: 'restaurant.kebabs', city: 'Krakow',
+    });
+    eq('POST /v1/partner/venues stores the two keys', [made.status, made.body.category, made.body.subcategory],
+      [200, 'restaurant', 'restaurant.kebabs']);
+    /* A second owner, because a free plan lists one venue. */
+    const oldApp = await send('POST', '/v1/auth/signup', undefined, {
+      email: 'kinds-old@verify.test', password: 'hunter22', name: 'Old App', partner: true, acceptTerms: true,
+    });
+    const old = await send('POST', '/v1/partner/venues', oldApp.body.token as string, {
+      name: 'Old App Café', category: 'cafe', city: 'Krakow',
+    });
+    eq('…an older app’s word is stored as its key', [old.status, old.body.category, old.body.subcategory],
+      [200, 'coffee', 'coffee.coffee_shop']);
+    const unknown = await send('POST', '/v1/partner/venues', token, { name: 'Dentist', category: 'dental', city: 'Krakow' });
+    eq('…a category off the tree is a 400 naming it', [unknown.status, unknown.body.error?.field], [400, 'category']);
+    const stray = await send('POST', '/v1/partner/venues', token, {
+      name: 'Stray', category: 'coffee', subcategory: 'restaurant.sushi', city: 'Krakow',
+    });
+    eq('…and a subcategory off its category a 400 naming that', [stray.status, stray.body.error?.field], [400, 'subcategory']);
+
+    const venue = `/v1/partner/venues/${made.body.id as string}`;
+    const pizza = await send('PATCH', venue, token, { subcategory: 'restaurant.pizza' });
+    eq('PATCH a subcategory under the stored category', [pizza.status, pizza.body.subcategory], [200, 'restaurant.pizza']);
+    const wrong = await send('PATCH', venue, token, { subcategory: 'halal.kebabs' });
+    eq('…one under another category is a 400', [wrong.status, wrong.body.error?.field], [400, 'subcategory']);
+    const moved = await send('PATCH', venue, token, { category: 'halal' });
+    eq('…a new category clears the old subcategory', [moved.status, moved.body.category, moved.body.subcategory],
+      [200, 'halal', null]);
+    const both = await send('PATCH', venue, token, { category: 'halal', subcategory: 'halal.kebabs' });
+    eq('…and takes one of its own beside it', [both.status, both.body.subcategory], [200, 'halal.kebabs']);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await db.close();
+  }
+}
+
 async function run(): Promise<void> {
   const started = Date.now();
 
@@ -10445,11 +11547,14 @@ async function run(): Promise<void> {
   sqliteOnlySql();
   postgresLockdown();
   await rateLimits();
+  await securityHardening();
   await boardDefaultRules();
   await bootOrdering();
+  await catalogueRetirement({ describe, check, eq });
   await ledgerRules();
   await budgetRules();
   await gateRules();
+  await nfcTaps({ describe, check, eq });
   await voucherRules();
   await voucherCaps();
   await giftCardStock();
@@ -10489,6 +11594,7 @@ async function run(): Promise<void> {
   await dashboardWorld.d.db.close();
   await counterRules();
   await entitlementRules();
+  await partnerPriceCard();
   await assistantRules();
   await socialRules();
   await referralRules();
@@ -10497,9 +11603,13 @@ async function run(): Promise<void> {
   await accountRules();
   await emailCodeRules();
   await profileRules();
+  await handleAndPhotoRules();
   await missionRules();
   await teamRules();
   await passRules();
+  await categoryRules();
+  await venueKindRules();
+  await voucherEconomicsRules();
   await httpSurface();
 
   const ms = Date.now() - started;
@@ -11239,6 +12349,18 @@ async function arcadeRules(): Promise<void> {
   ) as arcade.CannonState;
   eq('it is scored on the blocks this server destroyed', cannonDone.performance, Math.min(100, held.destroyed * CONFIG.games.cannonPerformancePerBlock));
 
+  /* The website's Canon Numbers never fires on the board; it reports correct
+     and wrong hits, each wrong one taking a correct one off, bounded by time. */
+  const webCannon = async (report: Record<string, unknown>, seconds: number, from: number) => {
+    const opened = await games.startSession(w.db, { userId: w.customerId, gameType: 'cannon_numbers', language: 'en', at: day(1, from) });
+    return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, clientReport: report, at: day(1, from + seconds * 1000) });
+  };
+  eq('a reported round is 4 a net hit', (await webCannon({ hits: 12, wrong: 2 }, 90, 100_000)).performance, 40);
+  eq('…wrong hits never take it below zero', (await webCannon({ hits: 1, wrong: 9 }, 90, 300_000)).performance, 0);
+  eq('…and a claim is capped by the round’s length',
+    (await webCannon({ hits: 500, wrong: 0 }, 10, 500_000)).performance,
+    Math.min(100, (10 * CONFIG.games.cannonHitsPerSecond + CONFIG.games.cannonHitAllowance) * CONFIG.games.cannonPerformancePerHit));
+
   /* ── the three reported games ── */
   eq('a report is capped by what exists', arcade.bounded(500, 40, 1000, 4, 4), 40);
   eq('…and by what the time allows', arcade.bounded(40, 40, 2, 4, 4), 12);
@@ -11262,7 +12384,7 @@ async function arcadeRules(): Promise<void> {
     at: day(3, 1000),
   });
   eq('…and a whole wall in one second is held to what a second allows', fastDone.performance,
-    Math.round(((1 * CONFIG.games.breakoutBricksPerSecond + CONFIG.games.breakoutAllowance) / wall.length) * 100));
+    Math.round(((Math.floor(1 * CONFIG.games.breakoutBricksPerSecond) + CONFIG.games.breakoutAllowance) / wall.length) * 100));
 
   const doodle = await games.startSession(w.db, { userId: w.customerId, gameType: 'doodle_jump', language: 'en', at: day(4) });
   eq('Doodle Jump deals the seed’s platforms', (doodle.content as { platforms: number[] }).platforms.length, arcade.DOODLE_PLATFORMS);
@@ -11275,6 +12397,72 @@ async function arcadeRules(): Promise<void> {
     chain.every((c, i) => i < 2 || !(chain[i - 1] === c && chain[i - 2] === c)));
   const zumaDone = await games.finish(w.db, { sessionId: zuma.sessionId, userId: w.customerId, clientReport: { cleared: 30 }, at: day(5, 60_000) });
   eq('Zuma pays the share of the chain cleared', zumaDone.performance, Math.round((30 / arcade.ZUMA_CHAIN) * 100));
+
+  /*
+   * ── the arcade economics table (`ARCADE_ECONOMY` in config.ts) ──
+   *
+   * The per-minute target: no arcade game may credit a perfect round sooner
+   * than the quickest honest perfect quiz (`MIN_PERFECT_SECONDS`), or it would
+   * out-earn the question games per minute of play. For each row, the shortest
+   * round the rate bound still credits as perfect is checked against it — and
+   * then the same claim is played through `games.finish` a second short of
+   * that, so the table and the scorer cannot drift apart.
+   */
+  const perfectUnits: Record<keyof typeof ARCADE_ECONOMY, number> = {
+    snake: Math.ceil(100 / ARCADE_ECONOMY.snake.performancePerUnit),
+    cannon_numbers: Math.ceil(100 / ARCADE_ECONOMY.cannon_numbers.performancePerUnit),
+    breakout: arcade.BREAKOUT_COLS * arcade.BREAKOUT_ROWS,
+    doodle_jump: Math.ceil(100 / ARCADE_ECONOMY.doodle_jump.performancePerUnit),
+    zuma: arcade.ZUMA_CHAIN,
+    food_ninja: Math.ceil(100 / ARCADE_ECONOMY.food_ninja.performancePerUnit),
+  };
+  for (const [game, row] of Object.entries(ARCADE_ECONOMY) as Array<[keyof typeof ARCADE_ECONOMY, (typeof ARCADE_ECONOMY)[keyof typeof ARCADE_ECONOMY]]>) {
+    const soonest = (perfectUnits[game] - row.allowance) / row.unitsPerSecond;
+    check(`${game}: a perfect round cannot be credited sooner than the quickest perfect quiz (${soonest.toFixed(1)}s >= ${MIN_PERFECT_SECONDS}s)`, soonest >= MIN_PERFECT_SECONDS);
+    check(`${game}: its result maps onto the 0..100 scale`, row.measure === 'share' ? row.performancePerUnit === 0 : row.performancePerUnit > 0 && row.performancePerUnit <= 100);
+    check(`${game}: a typical round is no quicker than the quickest perfect quiz`, row.typicalSeconds >= MIN_PERFECT_SECONDS);
+  }
+  /* Canon Numbers' flat keys are aliases of its row, as every other game's are —
+     the scorer reads the flat names, so they must be the row's values. */
+  check('cannon_numbers: the flat keys the scorer reads are its row',
+    CONFIG.games.cannonPerformancePerHit === ARCADE_ECONOMY.cannon_numbers.performancePerUnit &&
+      CONFIG.games.cannonHitsPerSecond === ARCADE_ECONOMY.cannon_numbers.unitsPerSecond &&
+      CONFIG.games.cannonHitAllowance === ARCADE_ECONOMY.cannon_numbers.allowance &&
+      CONFIG.games.cannonMaxHits === ARCADE_ECONOMY.cannon_numbers.maxUnits);
+  {
+    /* …and a perfect claim a second short of the bound is played through the
+       scorer, as the three below are. */
+    const row = ARCADE_ECONOMY.cannon_numbers;
+    const perfect = Math.ceil(100 / row.performancePerUnit);
+    const cannonEarly = await games.startSession(w.db, { userId: w.customerId, gameType: 'cannon_numbers', language: 'en', at: day(10) });
+    const cannonEarlyDone = await games.finish(w.db, {
+      sessionId: cannonEarly.sessionId,
+      userId: w.customerId,
+      clientReport: { hits: perfect * 4, wrong: 0 },
+      at: day(10, (Math.ceil(MIN_PERFECT_SECONDS) - 1) * 1000),
+    });
+    check('…nor twenty-five sums answered', cannonEarlyDone.performance < 100);
+  }
+  const early = Math.ceil(MIN_PERFECT_SECONDS) - 1;
+  const brickEarly = await games.startSession(w.db, { userId: w.customerId, gameType: 'breakout', language: 'en', at: day(6) });
+  const brickEarlyDone = await games.finish(w.db, {
+    sessionId: brickEarly.sessionId,
+    userId: w.customerId,
+    clientReport: { broken: (brickEarly.content as { wall: number[] }).wall.map((_, i) => i) },
+    at: day(6, early * 1000),
+  });
+  check('a whole wall claimed before the quickest perfect quiz is not a perfect round', brickEarlyDone.performance < 100);
+  const doodleEarly = await games.startSession(w.db, { userId: w.customerId, gameType: 'doodle_jump', language: 'en', at: day(7) });
+  const doodleEarlyDone = await games.finish(w.db, { sessionId: doodleEarly.sessionId, userId: w.customerId, clientReport: { reached: 400 }, at: day(7, early * 1000) });
+  check('…nor fifty platforms', doodleEarlyDone.performance < 100);
+  const zumaEarly = await games.startSession(w.db, { userId: w.customerId, gameType: 'zuma', language: 'en', at: day(8) });
+  const zumaEarlyDone = await games.finish(w.db, { sessionId: zumaEarly.sessionId, userId: w.customerId, clientReport: { cleared: 60 }, at: day(8, early * 1000) });
+  check('…nor a whole chain', zumaEarlyDone.performance < 100);
+  const zumaLate = await games.startSession(w.db, { userId: w.customerId, gameType: 'zuma', language: 'en', at: day(9) });
+  const zumaLateDone = await games.finish(w.db, { sessionId: zumaLate.sessionId, userId: w.customerId, clientReport: { cleared: 60 }, at: day(9, 90_000) });
+  eq('…while a whole chain over an honest minute and a half is perfect', zumaLateDone.performance, 100);
+  check('…and pays no more than the formula’s per-round ceiling plus its flat bonuses',
+    zumaLateDone.score <= Math.round(CONFIG.games.maxRoundPoints * CONFIG.games.featuredMultiplier * 1.75) + CONFIG.games.perfectRoundBonus + CONFIG.games.newGameBonus + CONFIG.games.personalBestBonus);
 
   await w.db.close();
 }

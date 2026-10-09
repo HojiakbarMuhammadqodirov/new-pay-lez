@@ -21,15 +21,25 @@
  *
  * The disc keeps its own size and colours; this only decides what goes in it.
  */
+import { mediaUrl } from '../api/client';
 import { initial } from './context';
 import { isPicture } from './picture';
+
+/**
+ * A photo uploaded from the app (`POST /v1/me/avatar`) comes back as a path on
+ * the API — `/v1/media/user/:id?v=…` — which is first-party, so it is drawn,
+ * joined to the API base the way every other `/v1/media` path is.
+ */
+const uploaded = (photo: string): string | null =>
+  photo.startsWith('/v1/media/user/') ? mediaUrl(photo) : null;
 
 export function Face({ name, photo }: { name: string; photo: string }) {
   /* `alt=""` and no `aria-hidden` of its own: every disc that renders this is
      already `aria-hidden`, and the name is beside it in real text. A photo of
      somebody captioned with their own name is the definition of decorative. */
-  return isPicture(photo) ? (
-    <img className="avatar-face" src={photo} alt="" />
+  const src = isPicture(photo) ? photo : uploaded(photo ?? '');
+  return src ? (
+    <img className="avatar-face" src={src} alt="" />
   ) : (
     <>{initial({ name })}</>
   );

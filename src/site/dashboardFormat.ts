@@ -13,7 +13,7 @@
  * A re-export would not have helped — the rule is about what the *module*
  * exports, not where the binding came from.
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useCopy, useCurrency, useGroupSeparator, useLanguage } from './i18n/context';
 import { group as groupDigits } from './i18n/currency';
 import { FX, formatFx, type FxCode } from './i18n/fx';
@@ -125,3 +125,49 @@ export function useVenueDates(timezone: string | null) {
     };
   }, [language, timezone]);
 }
+
+/**
+ * Keep a typed amount meaning the same money when the reader switches currency.
+ *
+ * Every money field on the dashboard holds the **reader's** currency, and a
+ * field's number is only half of an amount — the other half is the symbol
+ * beside it. Switching currency with a draft open changed the symbol and kept
+ * the number, so 400 typed as złoty became $400 on the next save: the one
+ * currency bug the read-outs could not have, because they are recomputed from
+ * euros on every render and a draft is state. `rescale` is called with
+ * `new rate / old rate` once per switch, and multiplies whatever is held.
+ */
+export function useRescaleOnCurrency(rescale: (ratio: number) => void) {
+  const rate = useCurrency().rate;
+  const last = useRef(rate);
+  const latest = useRef(rescale);
+  useEffect(() => {
+    latest.current = rescale;
+  });
+  useEffect(() => {
+    if (last.current === rate) return;
+    const ratio = rate / last.current;
+    last.current = rate;
+    latest.current(ratio);
+  }, [rate]);
+}
+
+/** A held amount, multiplied by a rate ratio and kept to two decimals. */
+export const rescaled = (value: number, ratio: number): number => Math.round(value * ratio * 100) / 100;
+
+/** The same for a field's text: blank and non-numbers stay as they are. */
+export const rescaledText = (text: string, ratio: number): string => {
+  const value = Number(text.replace(',', '.'));
+  return text.trim() === '' || !Number.isFinite(value) ? text : String(rescaled(value, ratio));
+};
+
+/**
+ * A default amount written in złoty — the market the product's defaults were
+ * written for — as a whole number of the reader's currency, never below one.
+ *
+ * Several drawers opened on a bare number (a 15 minimum spend, a 10 reward, a
+ * 400 spending stop) that took whatever symbol the reader had chosen: 15 means
+ * something in złoty and dollars and nothing at all in soum.
+ */
+export const fromZloty = (zloty: number, readerRate: number): number =>
+  Math.max(1, Math.round((zloty / FX.PLN.rate) * readerRate));

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ApiError, call } from './api/client';
-import { inviteCodeFromPath } from './router';
+import { rememberReferral } from './auth/referral';
+import { inviteCodeFromPath, PATHS } from './router';
 
 /**
  * `/i/<code>` — where a friend's invite lands for somebody without the app.
@@ -52,7 +53,12 @@ export function InvitePage() {
     if (!code) return;
     const abort = new AbortController();
     call<Lookup>(`/v1/referrals/codes/${encodeURIComponent(code)}`, { signal: abort.signal })
-      .then((lookup) => setState({ kind: 'found', lookup }))
+      .then((lookup) => {
+        /* Kept for the web sign-up below, the same 30-day hold a `?ref=` link
+           gets — and only once the server has said the code is real. */
+        rememberReferral(lookup.code);
+        setState({ kind: 'found', lookup });
+      })
       .catch((error: unknown) => {
         if (abort.signal.aborted) return;
         setState({ kind: error instanceof ApiError && error.status === 404 ? 'unknown' : 'offline' });
@@ -94,6 +100,11 @@ export function InvitePage() {
                 </div>
                 <a className="btn btn-solid btn-lg auth-submit" href={openInAppHref(shown ?? '')}>
                   Open in the app
+                </a>
+                {/* The web is the whole product too, and the code is already in
+                    the sign-up form's field when this lands there. */}
+                <a className="btn btn-ghost auth-submit" href={PATHS.signin}>
+                  Sign up on the website
                 </a>
               </>
             )}

@@ -72,6 +72,13 @@ export interface Route {
    * everything that can move the ledger carries one.
    */
   limit?: Limit;
+  /**
+   * The largest request body this route reads, in bytes, when it needs more
+   * than the server-wide 1 MB. Only an upload does (`POST /v1/me/avatar`
+   * carries a photo as base64); every other route keeps the default, so one
+   * route's allowance is not every route's.
+   */
+  maxBody?: number;
   /** For the audit trail and rate limiting, a stable name. */
   name?: string;
 }

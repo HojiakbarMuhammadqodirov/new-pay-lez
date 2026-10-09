@@ -892,8 +892,11 @@ export const FOOD_BOMB = '💣';
  * The referral figures, mirroring `CONFIG.earn.inviteeJoin` /
  * `referrerFirstVisit` (both 100) and `friendMilestoneAt` /
  * `friendMilestone` on the server — the same kept-level arrangement as the
- * slides below, with the same cost if one side moves alone. Read by the
- * sign-up form's code field, the invite card and the third slide.
+ * slides below, with the same cost if one side moves alone. `INVITE_POINTS`
+ * is only a **fallback** now: the sign-up form's code field and the points
+ * card's invite slide both print the server's figure when they have it
+ * (`inviteeReward` / `referrerReward` from the referral routes) and this one
+ * while the answer is missing.
  */
 export const INVITE_POINTS = 100;
 export const FRIEND_MILESTONE_AT = 5;
@@ -1044,17 +1047,6 @@ export const ADMIN_CARD_ICONS: IconName[] = [
 /* ─────────────────────────────────────────────────────────────── listing ── */
 
 /**
- * Business categories and their subcategories, as ids.
- *
- * The taxonomy is the partner prototype's. Ids here, names in the dictionaries:
- * "Café" and "Kawiarnia" are the same category, and a listing that stored the
- * word would change category when the reader changed language.
- *
- * `subs` is a count rather than a list because the subcategory names are copy
- * too — `copy.listing.subcategories[i]` is the array for category `i`, and this
- * number is what the two are checked against.
- */
-/**
  * The kinds of offer a deal can be, index-aligned with
  * `copy.dashboard.drawer.deal.kinds`.
  *
@@ -1070,17 +1062,55 @@ export const ADMIN_CARD_ICONS: IconName[] = [
  */
 export const DEAL_KINDS = ['percentage', 'free_item', 'money_off', 'extra_stamp'] as const;
 
-export const BUSINESS_CATEGORIES: Array<{
+/**
+ * Business categories and their subcategories, as the server's keys.
+ *
+ * The venue taxonomy, which lives on the server (`server/domain/categories.ts`,
+ * served at `GET /v1/categories`) and is restated here because the two halves
+ * share no code — so this is the second copy, and the keys must match it
+ * exactly: a key the server does not know is a refused save. Ids here, names in
+ * the dictionaries: "Coffee" and "Kawa" are the same category, and a listing
+ * that stored the word would change category when the reader changed language.
+ *
+ * `subs` are the subcategory keys, `<category>.<word>` as the server writes
+ * them; `copy.listing.subcategories[i]` is the array of names for category
+ * `i`, index-aligned with these, and `npm run verify` checks the lengths.
+ */
+export const BUSINESS_CATEGORIES: ReadonlyArray<{
   id: BusinessCategory;
-  subs: number;
+  subs: readonly string[];
 }> = [
-  { id: 'cafe', subs: 4 },
-  { id: 'restaurant', subs: 5 },
-  { id: 'barbershop', subs: 3 },
-  { id: 'beauty', subs: 4 },
-  { id: 'dental', subs: 3 },
-  { id: 'language', subs: 3 },
-  { id: 'fitness', subs: 3 },
+  { id: 'coffee', subs: ['coffee.coffee_shop'] },
+  {
+    id: 'restaurant',
+    subs: [
+      'restaurant.turkish',
+      'restaurant.indian',
+      'restaurant.polish',
+      'restaurant.asian',
+      'restaurant.pizza',
+      'restaurant.burgers',
+      'restaurant.kebabs',
+      'restaurant.sushi',
+    ],
+  },
+  {
+    id: 'shopping',
+    subs: [
+      'shopping.turkish_store',
+      'shopping.indian_store',
+      'shopping.korean_store',
+      'shopping.beauty_store',
+      'shopping.electronics',
+      'shopping.fashion',
+      'shopping.home',
+    ],
+  },
+  { id: 'leisure', subs: ['leisure.gaming', 'leisure.culture', 'leisure.sports', 'leisure.wellness'] },
+  { id: 'beauty', subs: ['beauty.hair_salon', 'beauty.barbershop', 'beauty.nail_salon', 'beauty.massage'] },
+  { id: 'housing', subs: ['housing.student_house', 'housing.long_term_rentals', 'housing.hotels'] },
+  { id: 'bakery', subs: ['bakery.bakery_cafe'] },
+  { id: 'halal', subs: ['halal.restaurant', 'halal.meat_store', 'halal.burgers', 'halal.kebabs'] },
 ];
 
 /** Index-aligned with `copy.listing.countries`. */
@@ -1501,38 +1531,19 @@ export const BUSINESS_SITES = [
 export const BUSINESS_AUDIENCE_SIZES = [1840, 620, 2310, 480];
 
 /**
- * Pricing, index-aligned with `copy.business.pricing.tiers`.
- *
- * `price` is in euros and is converted into the reader's currency at render,
- * rounded to a step that currency actually uses — a price tag reading £126.65
- * is an exchange-rate artefact, and nobody chose it. It is null on the tier that
- * is quoted rather than listed: a multi-site rollout with POS integration does
- * not have a shelf price, and inventing one would be the only dishonest number
- * on the page.
- */
-export const BUSINESS_TIERS: Array<{ price: number | null; featured?: boolean; partner?: boolean }> = [
-  { price: 0 },
-  /* `partner`: the button is "Become a partner" and opens the business
-     sign-up, like the hero's. The free tier keeps its own button. */
-  { price: 149, featured: true, partner: true },
-  { price: null, partner: true },
-];
-
-/**
- * The partner plan comparison (item 24), index-aligned with
- * `copy.dashboard.planPanel.rows`.
+ * The partner plan rows — the dashboard's plan sheet and `#/business` both draw
+ * these, in this order, keyed by the server's entitlement key.
  *
  * ## Keys, not values
  *
  * This table holds the **order and the shape** of the rows and none of the
  * figures: every number comes from `plan_entitlements` on the server, fetched
- * per plan by `GET /v1/plans?audience=partner`. That is the opposite of
- * `SUB_ROWS` one screen over, which mirrors the seeded consumer figures here in
- * `content.ts` — and the difference is which side of the paywall the reader is
- * on. A visitor reading the marketing page is being *sold* a plan and the page
- * has to price it with no session; a venue owner reading this panel is being
- * told what they have, and a figure typed here would be a second opinion about
- * their own account.
+ * per plan by `GET /v1/plans?audience=partner`, and every price from the same
+ * response's `prices` (`partnerPlans.ts`). The seed that writes them is the
+ * pricing strategy's §5 transcribed (`server/domain/settings.ts`), so the plan
+ * sheet, the pitch page and the strategy cannot quote three price lists. That
+ * is the opposite of `SUB_ROWS` above, which mirrors the consumer figures here
+ * — and the consumer ladder is not sold on any page.
  *
  * ## Why a fixed list rather than whatever the server sends
  *
@@ -1540,44 +1551,108 @@ export const BUSINESS_TIERS: Array<{ price: number | null; featured?: boolean; p
  * on this list the server does not send reads as "not included". Both are
  * deliberate, and the alternative is the failure this repo has already had
  * twice: a lookup that misses falling through to its own key, so a screen
- * prints `identified_profiles` at somebody. Adding an entitlement to the server
- * is therefore one row here and one label in five dictionaries — which is the
- * same cost as adding a service or a feature anywhere else in this file, and
- * the five failures are build errors rather than raw ids on a screen.
+ * prints `identified_profiles` at somebody. The labels are
+ * `copy.partnerPlans.rows`, **keyed by the same key**, so a row added here
+ * without a label in the dictionaries is a build error, not a blank.
+ *
+ * ## The kinds
+ *
+ * - `number` — a count; the server's `UNLIMITED` sentinel (`PLAN_UNLIMITED`)
+ *   reads as a word. `unlimited` names a different word for that case (the
+ *   strategy calls unlimited loyalty campaigns "Full"), `zero` names the word
+ *   for a zero (Starter's passes are a "Preview only", not nothing).
+ * - `flag` — a thing the tier has or does not.
+ * - `level` — a graded row the strategy names rather than counts ("Standard",
+ *   "Advanced"): the value is a key of `copy.partnerPlans.levels`. A boolean
+ *   key can be drawn as a level with `on` / `off` (deal analytics is the
+ *   `deep_analytics` gate, which the strategy calls "Basic" and "Full").
+ * - `money` — a JSON map of currency to minor units, because the strategy sets
+ *   the loyalty budget per market the way it sets the prices.
  *
  * ## The order
  *
- * Capacity first — the four numbers a plan is actually chosen by, and the ones
- * `requireCapacity` refuses against — then the capabilities, which are yes or
- * no. Within the capabilities, the ones an owner notices on the first afternoon
- * come before the ones they notice in a month.
+ * The strategy's own table, row for row (§5), so the sheet can be read beside
+ * the document.
  */
-export const PARTNER_PLAN_ROWS: Array<{
-  key: string;
-  /** How the value is written: a count, or a thing you either have or do not. */
-  kind: 'number' | 'flag';
-}> = [
+export type PartnerPlanKey =
+  | 'live_deals'
+  | 'deep_analytics'
+  | 'active_campaigns'
+  | 'loyalty_budget'
+  | 'voucher_tiers'
+  | 'push_quota'
+  | 'identified_profiles'
+  | 'benchmarks'
+  | 'venues'
+  | 'team_management'
+  | 'assistant_level'
+  | 'api_access'
+  | 'support'
+  | 'pass_limit'
+  | 'pass_subscribers'
+  | 'pass_analytics'
+  | 'multi_venue_passes'
+  | 'member_deals';
+
+/** The words a graded row can take, keys of `copy.partnerPlans.levels`. */
+export type PartnerPlanLevel =
+  | 'basic'
+  | 'full'
+  | 'standard'
+  | 'advanced'
+  | 'email'
+  | 'chat'
+  | 'manager'
+  | 'preview';
+
+export interface PartnerPlanRow {
+  key: PartnerPlanKey;
+  kind: 'number' | 'flag' | 'level' | 'money';
+  /** `number`: the word for the unlimited sentinel, when it is not "Unlimited". */
+  unlimited?: PartnerPlanLevel;
+  /** `number`: the word for zero, when zero is not simply "not included". */
+  zero?: PartnerPlanLevel;
+  /** `level` over a boolean key: the words for true and false. */
+  on?: PartnerPlanLevel;
+  off?: PartnerPlanLevel;
+}
+
+export const PARTNER_PLAN_ROWS: PartnerPlanRow[] = [
   { key: 'live_deals', kind: 'number' },
-  { key: 'active_campaigns', kind: 'number' },
+  { key: 'deep_analytics', kind: 'level', on: 'full', off: 'basic' },
+  { key: 'active_campaigns', kind: 'number', unlimited: 'full' },
+  { key: 'loyalty_budget', kind: 'money' },
+  { key: 'voucher_tiers', kind: 'flag' },
   { key: 'push_quota', kind: 'number' },
-  { key: 'team_seats', kind: 'number' },
-  { key: 'venues', kind: 'number' },
-  { key: 'deep_analytics', kind: 'flag' },
   { key: 'identified_profiles', kind: 'flag' },
-  { key: 'assistant', kind: 'flag' },
   { key: 'benchmarks', kind: 'flag' },
-  { key: 'export_csv', kind: 'flag' },
+  { key: 'venues', kind: 'number' },
+  { key: 'team_management', kind: 'flag' },
+  { key: 'assistant_level', kind: 'level' },
+  { key: 'api_access', kind: 'flag' },
+  { key: 'support', kind: 'level' },
+  { key: 'pass_limit', kind: 'number', zero: 'preview' },
+  { key: 'pass_subscribers', kind: 'number' },
+  { key: 'pass_analytics', kind: 'level' },
+  { key: 'multi_venue_passes', kind: 'flag' },
+  { key: 'member_deals', kind: 'flag' },
 ];
 
 /**
- * How many of the rows above are the panel's headline figures.
+ * The rows the plan sheet pairs with what the venue already uses — "3 of 5".
  *
- * The same split `SUB_HERO` makes on the consumer card and for the same
- * reason: the first few are the difference an owner feels immediately and the
- * rest is a list they read once. Four, because that is the capacity block — the
- * numbers a plan is chosen by.
+ * Only counts, and only the ones the dashboard has already read the usage of
+ * (live deals and running campaigns); a pairing with a usage nobody measured
+ * would be "0 of 4" over a venue that has sent four pushes.
  */
-export const PARTNER_PLAN_HERO = 4;
+export const PARTNER_PLAN_USAGE: PartnerPlanKey[] = ['live_deals', 'active_campaigns'];
+
+/**
+ * The server's "unlimited", written in a text column as a number
+ * (`UNLIMITED` in `server/domain/settings.ts`). Anything at or above it is drawn
+ * as a word, never as 9999.
+ */
+export const PLAN_UNLIMITED = 9999;
 
 /** Index-aligned with `copy.business.operators.items`. */
 export const BUSINESS_OPERATOR_INITIALS = ['SS', 'HC', 'PY', 'NB'];

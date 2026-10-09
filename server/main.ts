@@ -1,11 +1,13 @@
 /**
  * The entry point: open the database, migrate, seed, import if empty, serve.
  *
- * The import runs when the database has no venues *or* when a question bank the
- * code can ask for is empty, so `npm run server` on a fresh clone comes up with
- * the old data in it, a restart does not do it again, and a bank added after
- * this database was first filled is not left out forever. `--reimport` forces
- * it; `--import-only` does it and exits.
+ * The import runs when the database has never had the old export imported
+ * (the `legacy_import` marker) *or* when a question bank the code can ask for is
+ * empty, so `npm run server` on a fresh clone comes up with the old data in it,
+ * a restart does not do it again, and a bank added after this database was
+ * first filled is not left out forever. `--reimport` forces it; `--import-only`
+ * does it and exits. Once the catalogue is retired (`--purge-catalogue --yes`)
+ * no import writes a venue, a deal or anything promoted with them again.
  *
  * **Nothing else writes a venue, a deal or a voucher at boot.** There was a
  * demonstration set — seven invented Kraków and Warsaw cafés with deals,
@@ -20,8 +22,12 @@ import { pathToFileURL } from 'node:url';
 import { CONFIG } from './config.ts';
 import { openDb, type Db } from './db/db.ts';
 import { openDb as openPgDb } from './db/pg.ts';
-import { WORD_BANK_CSV, WORD_LANGUAGES, importLegacy } from './db/import.ts';
+import {
+  CATALOGUE_RETIRED, LEGACY_IMPORTED, WORD_BANK_CSV, WORD_LANGUAGES, importLegacy, readMarker, setMarker,
+} from './db/import.ts';
+import { purgeCatalogueCli } from './db/purgeCatalogue.ts';
 import { provisionAdmin } from './domain/accounts.ts';
+import { normaliseStoredKinds } from './domain/categories.ts';
 import { QUIZZES } from './domain/games.ts';
 import { seedPlatform } from './domain/settings.ts';
 import { createApi } from './http/server.ts';
@@ -40,7 +46,7 @@ export interface BootOptions {
   gamesDir?: string;
   /** A Postgres connection string. Overrides `PAYLEZ_PG_URL`; used by tests. */
   postgresUrl?: string;
-  /** Import even when the database already has venues. */
+  /** Import even when the export has been imported before (a retired catalogue stays retired). */
   reimport?: boolean;
   quiet?: boolean;
 }
@@ -81,7 +87,31 @@ export async function boot(
      it means a drift can never outlive a restart. */
   await reconcileGiftStock(db);
 
-  const venues = (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venues`))?.n ?? 0;
+  /*
+   * **Has the old export been imported into this database before?**
+   *
+   * This was `venues === 0`, which read as "a fresh database" and stopped
+   * meaning that the day an operator emptied the catalogue to start again with
+   * real partners: the next restart would have written the eleven Base44
+   * venues and their deals straight back. It is a marker now
+   * (`LEGACY_IMPORTED` in `db/import.ts`), set by the import itself — and set
+   * here on a database that already holds imported rows, so a box filled
+   * before the marker existed is covered by its first boot on this code. A
+   * fresh checkout has neither the marker nor the rows and imports exactly as
+   * it did. A retired catalogue (`--purge-catalogue`) counts as imported.
+   */
+  let legacyImported =
+    (await readMarker(db, LEGACY_IMPORTED)) !== null || (await readMarker(db, CATALOGUE_RETIRED)) !== null;
+  if (!legacyImported) {
+    const footprint = await db.get<{ n: number }>(
+      `SELECT (SELECT COUNT(*) FROM venues) + (SELECT COUNT(*) FROM guidance_services)
+            + (SELECT COUNT(*) FROM points_ledger WHERE source_kind = 'legacy_import') AS n`,
+    );
+    if (Number(footprint?.n ?? 0) > 0) {
+      await setMarker(db, LEGACY_IMPORTED, `backfilled ${new Date().toISOString()}`);
+      legacyImported = true;
+    }
+  }
 
   /*
    * **A bank that was added after this database was first filled.**
@@ -202,13 +232,13 @@ export async function boot(
     ))?.n ?? 0) > 0;
 
   const reimported =
-    options.reimport || venues === 0 || missing.length > 0 || short.length > 0 ||
+    options.reimport || !legacyImported || missing.length > 0 || short.length > 0 ||
     starved.length > 0 || untranslated || untiled;
   if (reimported) {
     if (!options.quiet && untiled) {
       console.log(`re-importing: the word bank predates ${WORD_BANK_CSV}`);
     }
-    if (!options.quiet && untranslated && venues > 0) {
+    if (!options.quiet && untranslated && legacyImported) {
       console.log('re-importing: word hints have no translations');
     }
     if (!options.quiet && starved.length > 0) {
@@ -217,7 +247,7 @@ export async function boot(
           starved.map((row) => `${row.language} (${row.n})`).join(', '),
       );
     }
-    if (!options.quiet && missing.length > 0 && venues > 0) {
+    if (!options.quiet && missing.length > 0 && legacyImported) {
       console.log(`re-importing: empty question bank(s) ${missing.join(', ')}`);
     }
     if (!options.quiet && short.length > 0) {
@@ -236,6 +266,18 @@ export async function boot(
       console.log(`imported: ${total || 'nothing (new-data/ not found)'}`);
       for (const note of summary.notes) console.log(`  note: ${note}`);
     }
+  }
+
+  /*
+   * **Venues filed under words the taxonomy no longer has.** `venues.category`
+   * is a key of the eight-category tree in `domain/categories.ts`; a row
+   * written before it (`cafe`, `places` + `halal_food`) is moved to the key
+   * its words place it under. After the import, so a re-import is tidied too.
+   * A word that places nowhere stays as it was — see `normaliseStoredKinds`.
+   */
+  const recategorised = await normaliseStoredKinds(db);
+  if (!options.quiet && recategorised > 0) {
+    console.log(`recategorised: ${recategorised} venue(s) and deal(s) onto the taxonomy`);
   }
 
   /*
@@ -284,10 +326,26 @@ function indexRoute(routes: Route[]): Route {
 export async function main(): Promise<void> {
   const args = new Set(process.argv.slice(2));
 
+  /* A maintenance command, not a server: it opens the database the way `boot`
+     would and nothing else of `boot` runs — no import, no seeding. */
+  if (args.has('--purge-catalogue')) {
+    process.exitCode = await purgeCatalogueCli({ yes: args.has('--yes') });
+    return;
+  }
+
   /* Refused before anything else starts, for the `PAYLEZ_BILLING` reason: a
      server that would fail every push should not come up looking healthy. */
   if (!push.configured()) {
     throw new Error('PAYLEZ_PUSH=live but VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY are unset — refusing to start.');
+  }
+  /* The warning below is right for a laptop and wrong for anything holding real
+     data: there, the repo's key would let anybody mint a scan for any venue. A
+     Postgres URL or NODE_ENV=production means real data, so refuse outright. */
+  if (
+    CONFIG.server.secret === 'dev-only-insecure-secret' &&
+    (process.env.PAYLEZ_PG_URL || process.env.NODE_ENV === 'production')
+  ) {
+    throw new Error('PAYLEZ_SECRET is unset on a real deployment — refusing to start with the key from the repo.');
   }
   const { db, routes } = await boot({ reimport: args.has('--reimport') });
 

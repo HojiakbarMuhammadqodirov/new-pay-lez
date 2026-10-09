@@ -292,13 +292,14 @@ function ServiceCard({
   /*
    * The category select, and the one thing it must not do.
    *
-   * The server's taxonomy is wider than the listing form's — it carries
-   * `hotels` and `bakery`, which `BUSINESS_CATEGORIES` does not — so a select
-   * built from the form's list alone would have no option matching a venue in
-   * one of the others, land on the first entry, and turn a hotel into a café
-   * the moment somebody corrected its phone number. The row's own value is
-   * appended when it is not in the list, so the current answer is always
-   * selectable and the only way to change it is to choose a different one.
+   * The options are the taxonomy's eight (`BUSINESS_CATEGORIES`, the server's
+   * keys), but a venue the server could not place on it keeps its old word
+   * (`dental`), and a select with no option matching it would land on the
+   * first entry and turn a dentist into a coffee shop the moment somebody
+   * corrected its phone number. The row's own value is appended when it is
+   * not in the list, so the current answer is always selectable and the only
+   * way to change it is to choose a different one. Choosing one clears the
+   * subcategory on the server, which belonged to the old category.
    */
   const categories = BUSINESS_CATEGORIES.map((row, index) => ({
     value: row.id,
@@ -315,6 +316,18 @@ function ServiceCard({
         : [...categories, { value: venue.category, label: venue.category }],
     },
     { key: 'city', label: act.fields.city, value: venue.city ?? '' },
+    /* The app's Deals filter. Starts from the venue's own pick, or the list the
+       server derived from its old category when it has not made one. */
+    ...(venue.categories !== undefined
+      ? [
+          {
+            key: 'tags',
+            label: dictionary.listing.fields.appCategories,
+            type: 'tags' as const,
+            value: JSON.stringify(venue.tags?.length ? venue.tags : venue.categories),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -430,7 +443,11 @@ function ServiceCard({
             manage.write.run(
               editKey,
               async () => {
-                await updateVenue(venue.id, patch);
+                const { tags, ...rest } = patch;
+                await updateVenue(venue.id, {
+                  ...rest,
+                  ...(tags === undefined ? {} : { tags: JSON.parse(tags) as string[] }),
+                });
                 manage.setOpen(null);
                 return act.saved;
               },

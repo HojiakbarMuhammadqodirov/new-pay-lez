@@ -119,11 +119,39 @@ lives in refs in one rAF loop; React hears only the count and whole seconds.
 `games/Snake.tsx`, `CannonNumbers.tsx`, `Breakout.tsx`, `DoodleJump.tsx`,
 `Zuma.tsx`, appended to `GAMES` in that order after `ninja`. Snake's turns are
 **replayed** by the server (its step must stay identical on both sides — both
-suites pin the same cases); Canon Numbers' board is **held** like 2048's; the
-three physics games are **bounded** by duration like the flight. Zuma's four
-ball kinds are four *marks* (dot, ring, bar, cross), not hues. All draw on a
-canvas in one rAF loop except Canon Numbers (a DOM grid). Classes: `.ar-*`
-shared frame, `.cn-*` Canon Numbers.
+suites pin the same cases); the three physics games are **bounded** by duration
+like the flight. Zuma's four ball kinds are four *marks* (dot, ring, bar,
+cross), not hues. All five draw on a canvas in one rAF loop. Classes: `.ar-*`
+shared frame, `.cn-*` Canon Numbers' clock and goal banner.
+
+**Canon Numbers is a maths shooter on the web** — a sum at the top, numbered
+discs falling, tap one (or ← → and Space) and the cannon fires at it; the
+answer scores and deals a new sum, a wrong number costs a point; 90 seconds,
+sums climbing with the net score. Tunables in `games/cannon/config.ts`
+(`CANNON_SCORING` is the block the `cannon_numbers` economics row must agree with), the maths
+in `games/cannon/goals.ts` (pinned by `npm run verify`). It is **reported**
+(`{hits, wrong}`) and bounded by duration (`scoreCannon`). The server still
+**holds** the old turn-based board for the Flutter app — `turn > 0` picks that
+scoring — and the web never fires on it. It was rebuilt because the board game
+had no maths in it: the numbers were hit points.
+
+**The arcade games' economics are one table.** `ARCADE_ECONOMY` in
+`server/config.ts` holds, per game after the rulebook's eight, how a result maps
+onto 0..100 and how fast it may honestly arrive; payouts come only from the
+master formula. The target is per minute: no game may credit a perfect round
+sooner than `MIN_PERFECT_SECONDS` (20, an honest perfect quiz), and
+`verify:api` checks every row — Canon Numbers' is `cannon_numbers`, with the
+old flat `cannon*` keys kept as aliases like every other game's.
+`npm run verify` holds the offline mirror's per-unit rates to the table, and
+`CANNON_SCORING` to the Canon Numbers row.
+
+**Every arcade header is the originals' header** (`games/hud.tsx`): progress
+toward a perfect round on the left (`n / perfect`), a clock in `.round-clock` on
+the right (`RoundClock` counts up, or the game's own countdown / moves left),
+and `PerfectBar` — the quiz's `.round-bar` filled by performance. The ready veil
+is Bird's Flight's (field visible, muted hint, shade from the bottom), the end
+veil its `.fly-over`. The result card names the server's `nearest` venue
+voucher ("You're 60 from 10% off at …") whenever a server round returns one.
 
 ## Scoring, streak and energy
 

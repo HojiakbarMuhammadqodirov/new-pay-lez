@@ -195,17 +195,21 @@ function SnakePreview() {
   );
 }
 
-/** Three columns of numbered blocks, the middle one under fire. */
+/**
+ * The round in one frame: a sum, three falling numbers with the answer struck,
+ * the cannon under them. The distractors are the round's own kind — one either
+ * side of the answer — so the picture teaches the rule.
+ */
 function CannonPreview() {
-  const cells = [3, 0, 2, 1, 4, 0, 0, 2, 1];
   return (
     <span className="pv-cannon">
-      {cells.map((n, i) => (
-        <i key={i} data-on={n > 0 ? 'true' : undefined} data-hit={i === 4 ? 'true' : undefined}>
-          {n > 0 ? n : ''}
-        </i>
-      ))}
-      <b aria-hidden>▲</b>
+      <em>3 + 4 = ?</em>
+      <span>
+        <i>6</i>
+        <i data-hit="true">7</i>
+        <i>8</i>
+      </span>
+      <b aria-hidden />
     </span>
   );
 }

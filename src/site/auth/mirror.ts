@@ -23,7 +23,7 @@ import type { Account, AccountType, ProfilePatch, ProfileResult, UserProfile } f
 import { isPicture } from './picture';
 import { ENERGY_REGEN_MINUTES, newPlayer, type PlayerState } from './player';
 import { isOccupation } from './users';
-import { resolveRoute, type Route } from '../router';
+import { needsUsername, resolveRoute, type Route } from '../router';
 
 /**
  * Which kind of account this is, decided by the server wherever it can be.
@@ -81,6 +81,10 @@ export function awaitsServer(account: Account | null, requested: Route): boolean
   const missing =
     account.type === null ||
     (account.type === 'individual' && account.onboardedAt === null) ||
+    /* No handle in the mirror is the same shape of missing fact: one picked on
+       the phone since this browser last asked would hold them at the username
+       step and then release them home rather than where they were going. */
+    needsUsername(account) ||
     (account.type === 'business' && account.business === null) ||
     /* Never asked whether this account manages a venue, and it asked for the
        dashboard: the mirror alone would send a manager home. */
@@ -196,12 +200,24 @@ export function foldServer(held: Account, answers: ServerAnswers, language: stri
     player = answers.games ? playerFromGames(ledger, answers.games, regenMinutes) : ledger;
   }
 
+  /*
+   * A held listing that carries a server id the server no longer lists is
+   * stale, and is dropped: the venue was removed (a purge, an operator), and
+   * keeping the cached copy sent the owner to a dashboard with nothing behind
+   * it instead of to setup. `me.venues` is the owned list, so an empty one is
+   * the server's own answer, not a failed read. A listing with no `venueId`
+   * never reached the server — saved while it was unreachable — and is kept:
+   * it is the owner's typing, and setup is where it gets sent.
+   */
+  const gone = me.venues.length === 0 && held.business?.venueId !== undefined;
   const business =
     type === 'individual' || type === 'admin'
       ? null
       : answers.listing
         ? businessFromSource(answers.listing, language, held.business)
-        : held.business;
+        : gone
+          ? null
+          : held.business;
 
   return {
     ...held,

@@ -11,6 +11,7 @@ import {
   doodlePlatforms,
   localRng,
 } from './arcade';
+import { PerfectBar, RoundClock } from './hud';
 
 /**
  * Doodle Jump — bounce from platform to platform, as high as you can; falling
@@ -220,8 +221,10 @@ export function DoodleJump({
   return (
     <div className="round ar-round">
       <div className="round-top">
-        <span className="round-count">{fill(copy.doodle.height, { n: String(reached) })}</span>
+        <span className="round-count">{fill(copy.doodle.height, { n: `${reached} / ${DOODLE_PERFECT}` })}</span>
+        <RoundClock running={phase === 'playing'} />
       </div>
+      <PerfectBar performance={reached * DOODLE_PER_PLATFORM} label={copy.perfectProgress} />
 
       <div className="ar-field ar-tall" style={{ aspectRatio: `${1} / ${ASPECT}` }}>
         <canvas

@@ -3,6 +3,7 @@ import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
 import { usePalette } from '../theme/context';
 import { ZUMA_CHAIN, ZUMA_COLORS, arcadeMilestones, arcadePoints, localRng, zumaChain, zumaShots } from './arcade';
+import { PerfectBar, RoundClock } from './hud';
 
 /**
  * Zuma — a chain of balls rolls along a winding track towards a hole; shoot a
@@ -337,7 +338,9 @@ export function Zuma({
     <div className="round ar-round">
       <div className="round-top">
         <span className="round-count">{fill(copy.zuma.cleared, { n: String(cleared), total: String(ZUMA_CHAIN) })}</span>
+        <RoundClock running={phase === 'playing'} />
       </div>
+      <PerfectBar performance={(cleared / ZUMA_CHAIN) * 100} label={copy.perfectProgress} />
 
       <div className="ar-field ar-tall">
         <canvas

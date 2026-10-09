@@ -1,6 +1,6 @@
 /**
  * The profile's half of the API: which cities, where somebody plays, the seven
- * answers themselves, and which venues may see who they are.
+ * answers themselves, and the username's availability check.
  *
  * The profile used to be decided locally and only the city list was asked for.
  * That made the page a form onto a record nobody else could read — a venue never
@@ -171,33 +171,30 @@ export interface ProfileWrite {
  */
 export const saveMe = (body: ProfileWrite) => call<Me>('/v1/me', { method: 'PATCH', body });
 
-/* ═══════════════════════════════════════════════ who can see who you are ══ */
+/* ═══════════════════════════════════════════════════════ the username ══ */
 
-/**
- * One venue this person has agreed may see them as themselves.
- *
- * Snake case because that is the server's shape (`consent.sharingWith`),
- * transcribed rather than adapted, as `api/consumer.ts` does.
- */
-export interface SharingGrant {
-  venue_id: string;
-  name: string;
-  granted_at: string;
+/** Why a handle cannot be had — the server's `reason`, word for word. */
+export type HandleProblem = 'length' | 'shape' | 'reserved' | 'taken';
+
+/** `GET /v1/usernames/:name`. */
+export interface HandleCheck {
+  username: string;
+  available: boolean;
+  /** Already this account's own handle — and so available to it. */
+  mine: boolean;
+  reason: HandleProblem | null;
+  /** Up to three free handles near the one asked about; empty when it is free. */
+  suggestions: string[];
 }
 
-export interface Consents {
-  account: Array<{ kind: string; granted: boolean }>;
-  /** §1.4 on the server: a separate list from the account consents, on purpose. */
-  dataSharing: SharingGrant[];
-}
-
-export const useConsents = (): ApiResult<Consents> => useApi<Consents>('/v1/me/consents');
-
 /**
- * Withdraw one venue's view of this person. Takes effect at once on the server:
- * every identified-customer query passes through `hasSharingGrant`.
+ * Whether a handle can be had, asked as somebody types (debounced by the
+ * caller). Advice, not a reservation: the save is what claims it, and can
+ * still be refused if somebody took it in between.
  */
-export const stopSharing = (venueId: string) =>
-  call<{ revoked: boolean }>(`/v1/me/sharing/${encodeURIComponent(venueId)}`, {
-    method: 'DELETE',
-  });
+export const checkHandle = (name: string, signal?: AbortSignal) =>
+  call<HandleCheck>(`/v1/usernames/${encodeURIComponent(name)}`, { signal });
+
+/** `GET /v1/usernames` — three free handles for this account, before typing. */
+export const handleSuggestions = (signal?: AbortSignal) =>
+  call<{ suggestions: string[] }>('/v1/usernames', { signal });

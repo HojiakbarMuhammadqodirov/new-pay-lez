@@ -19,20 +19,23 @@
  *
  * ── what is a field and what is a fact ────────────────────────────────────
  *
- * v3 draws four wells. Two of them are facts here — a figure the screen cannot
- * honestly make editable is shown as a fact rather than a field:
+ * v3 draws four wells, and all four are fields:
  *
- *  - **Total discount budget** is a field. `PUT …/budget` takes it, and the
- *    loyalty split rides along so resizing the total cannot silently
- *    reallocate the other pool.
- *  - **Points needed** is a field per rung. `PUT …/tiers` upserts on the
- *    percentage, so one rung is sent and the others are left alone.
- *  - **Average transaction** is a fact: the median of the venue's own confirmed
- *    scans (`averageCheck` on the server), and no endpoint sets it. v3's "your
- *    own figure" override has nothing behind it, so it is not drawn.
- *  - **Most off one voucher** is a fact: `max_discount_minor` is stored **per
- *    rung**, and one well over three of them would flatten a 10/25/40 ladder to
- *    25 on the first blur with nothing in the response saying so.
+ *  - **Total discount budget**. `PUT …/budget` takes it, and the loyalty
+ *    split rides along so resizing the total cannot silently reallocate the
+ *    other pool.
+ *  - **Points needed**, per rung. `PUT …/tiers` upserts on the percentage, so
+ *    one rung is sent and the others are left alone.
+ *  - **Average transaction** — the owner's own figure, with a switch to
+ *    **automatic**, which is the median of their own confirmed sales over the
+ *    last 30 days. The owner flips it once *they* think enough sales are in;
+ *    until then the figure they typed is the one every reserve and estimate is
+ *    built from (`PATCH …/voucher-economics`, `venues.averageCheck`).
+ *  - **Most off one voucher** — one figure that, when set, is every rung's cap.
+ *    The rungs keep their own caps underneath (`tierMaxDiscountMinor`), so a
+ *    save of a rung sends those back and clearing the field restores them;
+ *    sending the applied cap instead would write the owner's figure into every
+ *    rung for good.
  *
  * Money typed into a field is in the **reader's** currency and goes back
  * through the rate on the way out, because the site stores euros and converts
@@ -49,6 +52,7 @@ import {
   euroToMinor,
   minorToEuro,
   setBudget,
+  setVoucherEconomics,
   setVoucherTiers,
   usePartnerBudget,
   usePartnerVenue,
@@ -56,8 +60,8 @@ import {
   type TierDraft,
 } from './api/partner';
 import { DEMO_BUDGET } from './dashboardDemo';
-import { useNum } from './dashboardFormat';
-import { Button, Card, CardHead, DxIcon, EmptyState, Eyebrow, Progress, UnitField } from './dashboardKit';
+import { rescaledText, useNum, useRescaleOnCurrency } from './dashboardFormat';
+import { Button, Card, CardHead, DxIcon, EmptyState, Eyebrow, Progress, Toggle, UnitField } from './dashboardKit';
 import { Screen } from './dashboardScreens';
 import { useDashboard } from './dashboardShell';
 import { useCopy, useCurrency, useLanguage, useMoney } from './i18n/context';
@@ -269,6 +273,7 @@ function BudgetCard({
      server's figure after a reload without an effect to copy it across. A
      failed save keeps the draft: the number on screen is the one asked for. */
   const [draft, setDraft] = useState<string | null>(null);
+  useRescaleOnCurrency((ratio) => setDraft((typed) => (typed === null ? null : rescaledText(typed, ratio))));
   const server = Math.round(toReader(budget.total));
 
   const save = () => {
@@ -292,7 +297,6 @@ function BudgetCard({
   };
 
   const pool = budget.voucher;
-  const caps = budget.tiers.map((rung) => toEuro(rung.maxDiscountMinor));
   const day = dayFormatOf(language);
   const monthName = new Intl.DateTimeFormat(language, { month: 'long' });
 
@@ -302,10 +306,13 @@ function BudgetCard({
   const forecastLine =
     forecast.kind === 'out'
       ? copy.forecastOut
-      : runsOut !== null
-        ? fill(copy.forecast, { date: day.format(runsOut) })
-        : forecast.kind === 'ok'
-          ? fill(copy.forecastSafe, { month: monthName.format(forecast.last) })
+      : /* A pool that outlasts the month says so. Naming its day printed "runs
+           out around August 21" in October — a date years ahead, written
+           without its year, read as one already gone. */
+        forecast.kind === 'ok'
+        ? fill(copy.forecastSafe, { month: monthName.format(forecast.last) })
+        : runsOut !== null
+          ? fill(copy.forecast, { date: day.format(runsOut) })
           : copy.forecastOut;
 
   const avg = budget.averageCheck.minor > 0 ? money(toEuro(budget.averageCheck.minor), 'unit') : null;
@@ -403,26 +410,169 @@ function BudgetCard({
           {avg !== null && <p>{fill(copy.buysNote, { amount: avg })}</p>}
         </div>
 
-        {/* A fact, not a field: the median check is the venue's own trading,
-            and no endpoint sets it. Zero is a venue the server has nothing for,
-            which is a dash. */}
-        <div>
-          <span className="dx-vch-foot-label">{copy.avgTitle}</span>
-          {avg === null ? <Missing /> : <b className="dx-vch-foot-fact">{avg}</b>}
-          {budget.averageCheck.source !== undefined && (
-            <p>{budget.averageCheck.source === 'computed' ? copy.avgNote : copy.avgCategory}</p>
-          )}
-        </div>
-
-        {/* Also a fact, and for the harder reason: the cap is per rung. The
-            largest is the number "however large the order" is true of. */}
-        <div>
-          <span className="dx-vch-foot-label">{copy.maxTitle}</span>
-          {caps.length > 0 ? <b className="dx-vch-foot-fact">{money(Math.max(...caps), 'unit')}</b> : <Missing />}
-          <p>{copy.maxNote}</p>
-        </div>
+        <Economics budget={budget} reload={reload} />
       </div>
     </Card>
+  );
+}
+
+/* ──────────────────────────────────────────── the owner's two figures ── */
+
+/**
+ * "Average transaction" and "Most off one voucher" — the two figures every
+ * voucher reserve and estimate is built from, and both the owner's to set.
+ *
+ * Typed in the reader's currency and sent as minor units of the venue's, like
+ * every money field here; both save on leaving the field, like the total
+ * beside them. An emptied field sends `null`, which hands the figure back to
+ * the rule: the venue's category typical (or a month of its own sales) for the
+ * average, and each rung's own cap for the most off one voucher.
+ *
+ * The automatic switch is a separate write on purpose. It is a judgement —
+ * "there are enough of my sales now" — and the figure it brings in is the
+ * median the server measures, which the field then shows and does not take.
+ */
+function Economics({ budget, reload }: { budget: BudgetBody; reload: () => void }) {
+  const dashboard = useCopy().dashboard;
+  const copy = dashboard.vouchers;
+  const currency = useCurrency();
+  const money = useMoney();
+  const num = useNum();
+  const { busy, commit } = useCommit(reload);
+
+  const toEuro = (minor: number) => minorToEuro(minor, budget.currency);
+  /* Two decimals in the field: an average check is a figure with pence in it. */
+  const toReader = (minor: number) => Math.round(toEuro(minor) * currency.rate * 100) / 100;
+  const toMinor = (typed: number) => euroToMinor(typed / currency.rate, budget.currency);
+
+  const check = budget.averageCheck;
+  const auto = check.mode === 'automatic';
+  const [avgDraft, setAvgDraft] = useState<string | null>(null);
+  const [maxDraft, setMaxDraft] = useState<string | null>(null);
+  useRescaleOnCurrency((ratio) => {
+    setAvgDraft((typed) => (typed === null ? null : rescaledText(typed, ratio)));
+    setMaxDraft((typed) => (typed === null ? null : rescaledText(typed, ratio)));
+  });
+
+  const avgShown = check.minor > 0 ? String(toReader(check.minor)) : '';
+  /* The rungs' own caps, which are what applies while the owner has set none. */
+  const rungCaps = budget.tiers
+    .filter((rung) => rung.active !== false)
+    .map((rung) => rung.tierMaxDiscountMinor ?? rung.maxDiscountMinor);
+  const largestRungCap = rungCaps.length > 0 ? Math.max(...rungCaps) : null;
+  const ownCap = budget.maxVoucherMinor ?? null;
+  const maxShown = ownCap === null ? '' : String(toReader(ownCap));
+
+  /** What a field's text means: null for empty, a positive amount, or undefined for nonsense. */
+  const meaning = (text: string): number | null | undefined => {
+    if (text.trim() === '') return null;
+    const value = Number(text.replace(',', '.'));
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  };
+
+  const saveAvg = () => {
+    if (avgDraft === null) return;
+    const meant = meaning(avgDraft);
+    if (meant === undefined || avgDraft.trim() === avgShown || (meant === null && (check.ownerMinor ?? null) === null)) {
+      setAvgDraft(null);
+      return;
+    }
+    void commit(meant === null ? copy.avgCleared : copy.avgSaved, async () => {
+      await setVoucherEconomics(budget.venueId, {
+        averageCheckMinor: meant === null ? null : Math.max(1, toMinor(meant)),
+      });
+      setAvgDraft(null);
+    });
+  };
+
+  const saveMax = () => {
+    if (maxDraft === null) return;
+    const meant = meaning(maxDraft);
+    if (meant === undefined || maxDraft.trim() === maxShown || (meant === null && ownCap === null)) {
+      setMaxDraft(null);
+      return;
+    }
+    void commit(meant === null ? copy.maxCleared : copy.maxSaved, async () => {
+      await setVoucherEconomics(budget.venueId, {
+        maxVoucherMinor: meant === null ? null : Math.max(1, toMinor(meant)),
+      });
+      setMaxDraft(null);
+    });
+  };
+
+  const switchAuto = (next: boolean) =>
+    void commit(next ? copy.avgAutoSaved : copy.avgManualSaved, async () => {
+      setAvgDraft(null);
+      await setVoucherEconomics(budget.venueId, { averageCheckAuto: next });
+    });
+
+  /* The line under the average says where the figure in the field came from. */
+  const sales =
+    check.salesMinor !== undefined && check.salesMinor !== null && check.samples !== undefined
+      ? fill(copy.avgSales, { amount: money(toEuro(check.salesMinor), 'unit'), n: num(check.samples) })
+      : null;
+  const avgLine = auto
+    ? check.source === 'computed'
+      ? fill(copy.avgAutoOn, { n: num(check.samples ?? 0) })
+      : copy.avgAutoWaiting
+    : check.source === 'owner'
+      ? [copy.avgOwner, sales].filter(Boolean).join(' ')
+      : check.source === 'computed'
+        ? copy.avgNote
+        : check.source === 'category'
+          ? [copy.avgCategory, sales].filter(Boolean).join(' ')
+          : null;
+
+  return (
+    <>
+      <div>
+        <span className="dx-vch-foot-label">{copy.avgTitle}</span>
+        <label className="dx-vch-total-well" data-size="sm">
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step="0.01"
+            aria-label={copy.avgTitle}
+            disabled={busy || auto}
+            value={auto ? avgShown : (avgDraft ?? avgShown)}
+            onChange={(event) => setAvgDraft(event.target.value)}
+            onBlur={saveAvg}
+            onKeyDown={blurOnEnter}
+          />
+          <em>{currency.symbol}</em>
+        </label>
+        <div className="dx-vch-auto">
+          <Toggle checked={auto} onChange={switchAuto} label={copy.avgAuto} disabled={busy || check.mode === undefined} />
+        </div>
+        {avgLine !== null && <p>{avgLine}</p>}
+      </div>
+
+      <div>
+        <span className="dx-vch-foot-label">{copy.maxTitle}</span>
+        <label className="dx-vch-total-well" data-size="sm">
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step="0.01"
+            aria-label={copy.maxTitle}
+            placeholder={largestRungCap === null ? undefined : String(toReader(largestRungCap))}
+            disabled={busy || budget.maxVoucherMinor === undefined}
+            value={maxDraft ?? maxShown}
+            onChange={(event) => setMaxDraft(event.target.value)}
+            onBlur={saveMax}
+            onKeyDown={blurOnEnter}
+          />
+          <em>{currency.symbol}</em>
+        </label>
+        <p>
+          {ownCap !== null || largestRungCap === null
+            ? copy.maxNote
+            : fill(copy.maxPerTier, { amount: money(toEuro(largestRungCap), 'unit') })}
+        </p>
+      </div>
+    </>
   );
 }
 
@@ -473,8 +623,14 @@ function Ladder({ budget, reload }: { budget: BudgetBody; reload: () => void }) 
     void commit(dashboard.acts.tiersSaved, async () => {
       /* No cap keys: a rung sent without them keeps the caps it has, so saving
          a price never clears a limit set on the card below. */
+      /* The rung's own cap, not the applied one: see `tierMaxDiscountMinor`. */
       await setVoucherTiers(budget.venueId, [
-        { discountPct: rung.discountPct, pointsCost: next, maxDiscountMinor: rung.maxDiscountMinor, active: true },
+        {
+          discountPct: rung.discountPct,
+          pointsCost: next,
+          maxDiscountMinor: rung.tierMaxDiscountMinor ?? rung.maxDiscountMinor,
+          active: true,
+        },
       ]);
       drop(rung.discountPct);
     });
@@ -710,7 +866,7 @@ function Limits({ budget, reload }: { budget: BudgetBody; reload: () => void }) 
         return {
           discountPct: rung.discountPct,
           pointsCost: rung.pointsCost,
-          maxDiscountMinor: rung.maxDiscountMinor,
+          maxDiscountMinor: rung.tierMaxDiscountMinor ?? rung.maxDiscountMinor,
           ...('redeemLimit' in fields ? { redeemLimit: meant(rung, 'redeemLimit') } : {}),
           ...('perUserLimit' in fields ? { perUserLimit: meant(rung, 'perUserLimit') } : {}),
         };

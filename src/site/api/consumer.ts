@@ -200,6 +200,27 @@ export interface Referrals {
   completed: number;
   /** What this player was paid for it, milestone included, reversals netted. */
   pointsEarned: number;
+  /*
+   * What an invite pays, read from the server's `CONFIG.earn` rather than
+   * restated here: the site used to print its own `INVITE_POINTS` and a
+   * milestone pair from `content.ts`, three numbers that agreed with the
+   * server only until somebody moved one of them.
+   */
+  /** Paid to this player when a friend makes a first counted visit. */
+  referrerReward: number;
+  /** Paid to the friend at that same visit. */
+  inviteeReward: number;
+  /** Friends who have visited, at which the one-off bonus lands… */
+  friendMilestoneAt: number;
+  /** …and the bonus itself. */
+  friendMilestone: number;
+  /** Newest first. A deleted friend still counts in `joined` and is not listed. */
+  people: Array<{
+    name: string;
+    status: 'joined' | 'completed';
+    joinedAt: string;
+    pointsAwarded: number;
+  }>;
 }
 
 /**
@@ -262,17 +283,6 @@ export const completePasswordReset = (email: string, code: string, password: str
 
 export const patchLanguage = (language: string) =>
   call<Me>('/v1/me', { method: 'PATCH', body: { language } });
-
-/**
- * §1.4's standing answer.
- *
- * Switching it off declines *future* grants and withdraws none of the ones that
- * stand — those are per venue and come off on the venue's own sheet. Same
- * shape as the board's switch, and the same reason it is its own call: a
- * privacy preference applies when you flip it.
- */
-export const setVenueSharingDefault = (on: boolean) =>
-  call<Me>('/v1/me', { method: 'PATCH', body: { venueSharingDefault: on } });
 
 /* ═════════════════════════════════════════════════════════════ the tank ══ */
 
@@ -575,7 +585,9 @@ export const finishRound = (sessionId: string, report?: Record<string, unknown>)
 export interface BoardRow {
   rank: number;
   userId: string;
+  /** The username, or the short name for an account without one. */
   name: string;
+  username: string | null;
   avatar: string | null;
   points: number;
   isYou: boolean;

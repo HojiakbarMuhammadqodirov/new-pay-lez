@@ -34,6 +34,7 @@ import {
   URL_PATHS,
   canonicalUrl,
   pathRoute,
+  needsUsername,
   resolveRoute,
   routeOf,
   type Route,
@@ -42,10 +43,12 @@ import { listedRoutes, robotsTxt, sitemapXml } from './sitemap';
 import { draw, shuffledRange } from '../src/site/games/bag';
 import { DAILY_POOL, dailyGame, dailyGameIndex } from '../src/site/games/rules';
 import * as arcade from '../src/site/games/arcade';
+import * as cannonConfig from '../src/site/games/cannon/config';
+import * as cannonGoals from '../src/site/games/cannon/goals';
 import * as board2048 from '../src/site/games/board2048';
 import * as foodBoard from '../src/site/games/foodBoard';
 import * as ninjaField from '../src/site/games/ninjaField';
-import { mergeMilestones, mergePoints } from '../src/site/auth/player';
+import { mergeMilestones, mergePoints, NINJA_PER_FOOD } from '../src/site/auth/player';
 import { SCOPES } from '../src/site/api/board';
 import { lineCap, longestLine } from '../src/site/heroLines';
 import { ratesFrom } from '../src/site/api/fx';
@@ -128,8 +131,8 @@ import {
   ADMIN_TABS,
   BUSINESS_CATEGORIES,
   DASH_SCREENS,
-  PARTNER_PLAN_HERO,
   PARTNER_PLAN_ROWS,
+  PARTNER_PLAN_USAGE,
   DEAL_KINDS,
   GAMES,
   LEARN_STATS,
@@ -211,6 +214,7 @@ import {
   pickDescription,
   sourceFromRow,
   subcategoryIndex,
+  subcategoryLabel,
   subcategoryWord,
   webAddress,
   type ListingSource,
@@ -913,7 +917,10 @@ console.log('\naccess control');
   const anon = null;
   const undecided: Account = {
     id: 'u', name: 'A', email: 'a@b.c', type: null, business: null, player: null,
-    profile: EMPTY_PROFILE,
+    /* A handle on every established fixture, for the same reason the stamp
+       below is a date: a player without one is now held at the username step
+       from every route. `noHandle` is the fixture that carries the blank. */
+    profile: { ...EMPTY_PROFILE, username: 'player_one' },
     /*
      * A date rather than `null` on the fixtures that stand for *established*
      * accounts, because `null` now means something: an individual carrying it
@@ -929,6 +936,7 @@ console.log('\naccess control');
   };
   const person: Account = { ...undecided, type: 'individual' };
   const newPlayer: Account = { ...person, onboardedAt: null };
+  const noHandle: Account = { ...person, profile: EMPTY_PROFILE };
   const ownerNew: Account = { ...undecided, type: 'business' };
   const ownerSet: Account = { ...ownerNew, business: blankBusiness() };
   /* An owner who has never been through onboarding, because none of them has:
@@ -1071,6 +1079,26 @@ console.log('\naccess control');
     resolveRoute('onboarding', person) === 'landing',
   );
 
+  /*
+   * The username gate. A player who finished onboarding before it asked for a
+   * username is asked once, at the same route, from everywhere — and released
+   * the moment one is saved. Players only: an owner and an operator are never
+   * on a board, and must not be held for a name nobody will see.
+   */
+  check('a player without a username is held at the welcome route', resolveRoute('landing', noHandle) === 'onboarding');
+  check(
+    '…from every route',
+    ([...consumer, 'business', 'analytics', 'dashboard', 'admin', 'profile', 'signin', 'onboarding'] as Route[])
+      .every((r) => resolveRoute(r, noHandle) === 'onboarding'),
+  );
+  check('…and a blank of spaces is no username', needsUsername({ ...person, profile: { ...EMPTY_PROFILE, username: '   ' } }));
+  check('…released by saving one', !needsUsername(person) && resolveRoute('onboarding', person) === 'landing');
+  check('an owner is never asked for one', !needsUsername({ ...ownerSet, profile: EMPTY_PROFILE }) &&
+    resolveRoute('dashboard', { ...ownerSet, profile: EMPTY_PROFILE }) === 'dashboard');
+  check('…nor an operator', resolveRoute('admin', { ...admin, profile: EMPTY_PROFILE }) === 'admin');
+  check('a stale mirror without a handle waits for the server before routing on it',
+    awaitsServer(noHandle, 'learn'));
+
   /* Exempt by *type*, not by the stamp: neither of these has a player state, so
      neither has a first minute. Both have to behave exactly as they did before
      the field existed. */
@@ -1097,6 +1125,7 @@ console.log('\naccess control');
     anon, undecided, { ...undecided, onboardedAt: null },
     person, newPlayer, ownerNew, ownerSet, ownerRaw, admin, adminRaw,
     manager, ownerManaging, { ...newPlayer, manages: true },
+    noHandle, { ...noHandle, onboardedAt: null },
   ];
   let unstable = '';
   for (const account of accounts) {
@@ -1178,7 +1207,11 @@ console.log('\nthe profile');
   check('a leading underscore is refused', why('_kasia') === 'shape');
   check('a trailing underscore is refused', why('kasia_') === 'shape');
   check('a doubled underscore is refused', why('kasia__pl') === 'shape');
-  check('a dot is refused', why('kasia.pl') === 'shape');
+  check('a single dot is a handle (2026-10-08)', why('kasia.pl') === 'ok');
+  check('…but not at either end, nor beside another separator',
+    [why('.kasia'), why('kasia.'), why('kasia..pl'), why('kasia._pl')].every((r) => r === 'shape'));
+  check('a blocked root is refused anywhere, as the server does', why('xKurwa99') === 'reserved');
+  check('a blocked word is refused only as a whole part', why('dick_77') === 'reserved' && why('dickens') === 'ok');
   /* ASCII only: a Cyrillic `а` in an otherwise Latin word is a working
      impersonation that no amount of case folding catches. */
   check('a non-ASCII letter is refused', why('kаsia') === 'shape');
@@ -1718,17 +1751,21 @@ console.log('\nthe wallet reads the server');
     names.length === BUSINESS_CATEGORIES.length,
     `${names.length} words, ${BUSINESS_CATEGORIES.length} ids`,
   );
-  check('a known category is translated', categoryLabel('cafe', names) === names[0], categoryLabel('cafe', names));
+  check('a known category is translated', categoryLabel('coffee', names) === names[0], categoryLabel('coffee', names));
+  check('…and is the server’s eight, in the server’s order',
+    BUSINESS_CATEGORIES.map((row) => row.id).join(',') === 'coffee,restaurant,shopping,leisure,beauty,housing,bakery,halal');
+  check('every subcategory key sits under its own category',
+    BUSINESS_CATEGORIES.every(({ id, subs }) => subs.length > 0 && subs.every((sub) => /^[a-z]+\.[a-z_]+$/.test(sub) && sub.startsWith(`${id}.`))));
   check(
     '…every one of them, and none to undefined',
     BUSINESS_CATEGORIES.every((row, i) => categoryLabel(row.id, names) === names[i]),
   );
-  /* `hotels` and `bakery` are on the server and are not in this site's listing
-     form. Neither may render as `undefined` under a venue's name, and neither
-     may arrive looking like a column name. */
+  /* A word the server could not place on the taxonomy stays on its venue
+     (`dental`, an old import's `hotels`). Neither may render as `undefined`
+     under a venue's name, and neither may arrive looking like a column name. */
   for (const [id, expected] of [
     ['hotels', 'Hotels'],
-    ['bakery', 'Bakery'],
+    ['dental', 'Dental'],
     ['something_new', 'Something new'],
   ] as const) {
     check(`an unknown category is readable (${id})`, categoryLabel(id, names) === expected,
@@ -3473,10 +3510,9 @@ console.log('\nthe daily game, and the region rule');
   check('…and Memory Match follows it', GAMES[1].id === 'memory');
   for (const code of LANGUAGE_ORDER) {
     const names = LANGUAGES[code].games.names;
-    /* The flight's name is the one game in the set named for birds, in every
-       language — which is what makes it checkable without a table of eight
-       translations here. */
-    check(`${code}'s first name is the flight's`, /bird|птиц|птах|qush|ptak/i.test(names[0]), names[0]);
+    /* The flight is named for its bird, Pico, in every language — which is
+       what makes it checkable without a table of five translations here. */
+    check(`${code}'s first name is the flight's`, /pico|пико|піко/i.test(names[0]), names[0]);
     /* Found by id: the local Word Builder is no longer the last row. That is
        safe because the grid names a card by its index in `GAMES`, never in
        the filtered list — see `visibleGames` in `games.tsx`. */
@@ -3510,16 +3546,77 @@ console.log('\nthe arcade games, as the server plays them');
   check('turning straight back is ignored, not a crash', !arcade.snakeStep(arcade.snakeStart(list), list, 3).dead);
   check('the snake quickens as it eats, to a floor', arcade.snakeTickMs(0) === 140 && arcade.snakeTickMs(100) === 70);
 
+  /* The offline mirror prices a round from the same per-unit rates the server's
+     economics table does (`ARCADE_ECONOMY` in `server/config.ts`). Read as text,
+     because the two programs share no code. */
+  {
+    const table = readFileSync(new URL('../server/config.ts', import.meta.url), 'utf8')
+      .match(/export const ARCADE_ECONOMY[^=]*=\s*\{([\s\S]*?)\n\};/)?.[1] ?? '';
+    const rate = (game: string) => Number(table.match(new RegExp(`\\n  ${game}: \\{[^}]*performancePerUnit: (\\d+)`))?.[1]);
+    check('Snake pays per food what the server’s table says', rate('snake') === arcade.SNAKE_PER_FOOD, String(rate('snake')));
+    check('…Doodle Jump per platform', rate('doodle_jump') === arcade.DOODLE_PER_PLATFORM, String(rate('doodle_jump')));
+    check('…Food Ninja per food', rate('food_ninja') === NINJA_PER_FOOD, String(rate('food_ninja')));
+    /* Canon Numbers' row is laid out one key a line, so it is read by key. */
+    const cannonRow = table.match(/\n  cannon_numbers: \{([^}]*)\}/)?.[1] ?? '';
+    const cannonRate = Number(cannonRow.match(/performancePerUnit: (\d+)/)?.[1]);
+    check('…Canon Numbers per net hit', cannonRate === cannonConfig.CANNON_SCORING.perHit, String(cannonRate));
+    /* The server takes a wrong hit off one for one (`scoreCannon`, hits − wrong). */
+    check('…and a wrong hit costs one there too', cannonConfig.CANNON_SCORING.wrongCost === 1);
+  }
+
   const rng = (n: number) => (n * 2654435761) >>> 0;
-  const opened = arcade.cannonStart(rng);
-  check('Canon Numbers opens on two rows', opened.board.slice(2 * arcade.CANNON_COLS).every((v) => v === 0) && opened.spawns === 2);
-  const col = opened.board.findIndex((v) => v > 0) % arcade.CANNON_COLS;
-  const fired = arcade.cannonFire(opened, col, rng);
-  check('a volley hits the lowest block in the column first', fired.hits[0] === arcade.cannonHits(opened.board, col, 0)[0]);
-  check('…fires no more than its balls', fired.hits.length <= arcade.cannonShots(0));
-  let round = opened;
-  for (let i = 0; i < 40 && !round.over; i += 1) round = arcade.cannonFire(round, 0, rng).state;
-  check('…and a round always ends', round.over && round.turn <= arcade.CANNON_TURNS);
+  {
+    /*
+     * Canon Numbers' maths (`games/cannon/goals.ts`). The promise the game
+     * makes is "one of these numbers answers the sum and the others do not",
+     * so every level's goals are dealt many times over a fixed sequence and
+     * both halves of that promise are checked on each.
+     */
+    let seed = 7;
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    let answerOk = true;
+    let distractorOk = true;
+    let inRange = true;
+    for (let level = 0; level < cannonConfig.LEVELS.length; level += 1) {
+      for (let i = 0; i < 400; i += 1) {
+        const goal = cannonGoals.dealGoal(level, rand);
+        const yes = cannonGoals.answerValue(goal, rand);
+        const no = cannonGoals.distractorValue(goal, rand);
+        if (!cannonGoals.answers(goal, yes)) answerOk = false;
+        if (cannonGoals.answers(goal, no)) distractorOk = false;
+        for (const v of [yes, no]) if (!Number.isInteger(v) || v < 1 || v > cannonGoals.MAX_VALUE) inRange = false;
+        const exact = cannonGoals.answerOf(goal);
+        if (exact !== null && !Number.isInteger(exact)) inRange = false;
+      }
+    }
+    check('Canon Numbers: every dealt answer answers its goal', answerOk);
+    check('…every distractor does not', distractorOk);
+    check('…and every number is a whole number a disc can carry', inRange);
+    check('…a level opens on sums inside ten', (() => {
+      for (let i = 0; i < 200; i += 1) {
+        const goal = cannonGoals.dealGoal(0, rand);
+        if (goal.kind !== 'add' || goal.a + goal.b > 10) return false;
+      }
+      return true;
+    })());
+    check('…a hit never deals the same sum straight back', (() => {
+      for (let i = 0; i < 200; i += 1) {
+        const before = cannonGoals.dealGoal(0, rand);
+        if (JSON.stringify(cannonGoals.dealGoal(0, rand, before)) === JSON.stringify(before)) return false;
+      }
+      return true;
+    })());
+    check('…the level climbs with the net score', cannonGoals.levelIndex(0) === 0 &&
+      cannonGoals.levelIndex(cannonConfig.LEVELS[cannonConfig.LEVELS.length - 1].from) === cannonConfig.LEVELS.length - 1);
+    check('…a wrong hit takes one off, never below zero',
+      cannonGoals.netHits(5, 2) === 3 && cannonGoals.netHits(1, 4) === 0);
+    check('…performance is 4 a net hit, so 25 is a perfect round',
+      cannonGoals.cannonPerformance(10, 0) === 40 && cannonGoals.cannonPerformance(30, 5) === 100 &&
+      cannonConfig.CANNON_PERFECT === 25);
+  }
 
   const chain = arcade.zumaChain(rng);
   check('the Zuma chain never arrives with three of a kind touching',
@@ -4798,32 +4895,44 @@ console.log('\nthe partner dashboard');
   }
 
   /*
-   * The partner plan panel (item 24).
+   * The partner plan panel (item 24) and the `#/business` pricing table —
+   * both drawn through `partnerPlans.ts` from the server's price list.
    *
    * `PARTNER_PLAN_ROWS` holds the comparison's order and **none of its
-   * figures** — every number comes from `plan_entitlements` on the server — so
-   * what there is to check here is the alignment and the labels, which is
-   * exactly the half a type can not catch: `Dictionary` proves `rows` exists
-   * and says nothing about its length.
-   *
-   * The failure it prevents is the one this repo has had twice. A row added to
-   * the table without a label in five dictionaries renders `undefined`, and the
-   * version of the same mistake that survives longer is a *short* array: the
-   * last row of the comparison silently loses its name in four languages and
-   * nobody who reads English ever sees it.
+   * figures**, and its labels are `copy.partnerPlans.rows`, keyed by the same
+   * entitlement key — so a missing label is a type error. What a type cannot
+   * catch is a *blank* label, or a template that lost its hole: "Save % yearly"
+   * in one language and nobody who reads English ever sees it.
    */
   {
     for (const code of LANGUAGE_ORDER) {
       const panel = LANGUAGES[code].dashboard.planPanel;
+      const plans = LANGUAGES[code].partnerPlans;
+      const pricing = LANGUAGES[code].business.pricing;
       check(
-        `${code} labels every comparison row`,
-        panel.rows.length === PARTNER_PLAN_ROWS.length,
-        `${panel.rows.length} labels, ${PARTNER_PLAN_ROWS.length} rows`,
+        `${code} labels every comparison row, none of them blank`,
+        PARTNER_PLAN_ROWS.every((row) => (plans.rows[row.key] ?? '').trim() !== ''),
+        PARTNER_PLAN_ROWS.filter((row) => (plans.rows[row.key] ?? '').trim() === '').map((row) => row.key).join(', '),
       );
       check(
-        `…and none of them is blank`,
-        panel.rows.every((row) => row.trim() !== ''),
-        panel.rows.filter((row) => row.trim() === '').length + ' blank',
+        `${code}: every level word a row can take is written`,
+        PARTNER_PLAN_ROWS.every((row) =>
+          [row.on, row.off, row.unlimited, row.zero].every((level) => !level || plans.levels[level].trim() !== ''),
+        ) && Object.values(plans.levels).every((word) => word.trim() !== ''),
+      );
+      check(`${code}: a feature line says the label and the value`, plans.line.includes('{label}') && plans.line.includes('{value}'), plans.line);
+      check(`${code}: "everything in" names the plan`, plans.everythingIn.includes('{plan}'), plans.everythingIn);
+      check(`${code}: the annual saving says the percent`, plans.save.includes('{pct}'), plans.save);
+      check(`${code}: the yearly invoice says the total`, plans.billedYearly.includes('{total}'), plans.billedYearly);
+      check(`${code}: the pitch page's annual line says the amount`, pricing.annualNote.includes('{amount}'), pricing.annualNote);
+      check(`${code}: …and "up to n venues" says n`, pricing.venues.upTo.includes('{n}'), pricing.venues.upTo);
+      check(
+        `${code}: both priced markets are named with their amount`,
+        plans.markets.PLN.includes('{amount}') && plans.markets.UZS.includes('{amount}'),
+      );
+      check(
+        `${code}: the three tiers each have a sentence`,
+        (['starter', 'growth', 'scale'] as const).every((tier) => pricing.blurbs[tier].trim() !== ''),
       );
       /* The four `subscriptions.source` values, named. A venue owner reading a
          plan they did not buy needs to know whether somebody paid for it. */
@@ -4840,7 +4949,6 @@ console.log('\nthe partner dashboard');
         panel.usage.includes('{used}') && panel.usage.includes('{total}'),
         panel.usage,
       );
-      check(`${code}: the price says the amount`, panel.perMonth.includes('{amount}'));
       check(`${code}: the renewal says the date`, panel.renews.includes('{date}'));
       check(`${code}: the dated change says the date`, panel.until.includes('{date}'));
       /* And the plan box's own two keys, which the rail reads when the session
@@ -4851,20 +4959,13 @@ console.log('\nthe partner dashboard');
       check(`${code}: …and one for what the press does`, box.open.trim() !== '');
     }
 
-    /* The hero split has to fit inside the table, or `slice` silently draws
-       fewer rows than the panel claims. Four, which is the capacity block. */
+    /* Only a count can be shown as "3 of 5" — a yes/no entitlement has nothing
+       to be three of, and the usage list would draw a tick where a pairing
+       belongs. */
     check(
-      'the panel headline rows are a prefix of the comparison',
-      PARTNER_PLAN_HERO > 0 && PARTNER_PLAN_HERO < PARTNER_PLAN_ROWS.length,
-      String(PARTNER_PLAN_HERO),
-    );
-    /* The first four are the *counted* ones, because only a count can be shown
-       as "3 of 5" — a yes/no entitlement has nothing to be three of, and the
-       panel's usage list would draw a tick where a pairing belongs. */
-    check(
-      '…and every one of them is a number',
-      PARTNER_PLAN_ROWS.slice(0, PARTNER_PLAN_HERO).every((row) => row.kind === 'number'),
-      PARTNER_PLAN_ROWS.slice(0, PARTNER_PLAN_HERO).map((row) => row.kind).join(', '),
+      'every usage row is a counted row of the comparison',
+      PARTNER_PLAN_USAGE.every((key) => PARTNER_PLAN_ROWS.find((row) => row.key === key)?.kind === 'number'),
+      PARTNER_PLAN_USAGE.join(', '),
     );
     /* No key twice: the comparison reads each by name out of the server's
        entitlement rows, so a duplicate would draw one row twice and hide
@@ -4872,6 +4973,13 @@ console.log('\nthe partner dashboard');
     check(
       'no entitlement key appears twice',
       new Set(PARTNER_PLAN_ROWS.map((row) => row.key)).size === PARTNER_PLAN_ROWS.length,
+    );
+    /* The strategy's eighteen rows (§5, with the loyalty budget and the pass
+       subscribers split out of the rows that carry them), in its order. */
+    check(
+      'the comparison follows the pricing strategy’s table',
+      PARTNER_PLAN_ROWS.map((row) => row.key).join(',') ===
+        'live_deals,deep_analytics,active_campaigns,loyalty_budget,voucher_tiers,push_quota,identified_profiles,benchmarks,venues,team_management,assistant_level,api_access,support,pass_limit,pass_subscribers,pass_analytics,multi_venue_passes,member_deals',
     );
   }
 
@@ -5333,8 +5441,8 @@ console.log('\nthe plan table says what the product does');
 const LISTING_FIXTURE: ListingSource = {
   id: 'ven_fixture',
   name: 'Café Bratysławska',
-  category: 'cafe',
-  subcategory: 'Specialty coffee',
+  category: 'coffee',
+  subcategory: 'coffee.coffee_shop',
   city: 'Krakow',
   countryCode: 'PL',
   address: 'Bratysławska 6',
@@ -5464,6 +5572,21 @@ console.log('\nhydration — what the server says an account is');
   const unlisted = foldServer(blank, answers(me({}, ['consumer', 'partner_owner'])), 'en');
   check('an owner with nothing on the server still goes to setup',
     resolveRoute('signin', unlisted) === 'business-setup');
+  /* A cached listing whose venue the server no longer lists (a purge, an
+     operator's delete) is dropped, so the router sends them to setup rather
+     than to a dashboard with nothing behind it; one that never reached the
+     server has no id and is the owner's own typing, so it is kept. */
+  const purged = foldServer(
+    { ...blank, type: 'business', business: owner.business },
+    answers(me({}, ['consumer', 'partner_owner'])),
+    'en',
+  );
+  check('a cached listing the server no longer holds is dropped',
+    purged.business === null && resolveRoute('dashboard', purged) === 'business-setup');
+  const deviceOnly = owner.business ? { ...owner.business, venueId: undefined } : null;
+  check('…but one that never reached the server is kept',
+    foldServer({ ...blank, type: 'business', business: deviceOnly }, answers(me({}, ['consumer', 'partner_owner'])), 'en')
+      .business === deviceOnly);
 
   /*
    * A manager comes home as what the server's workspaces say. The player
@@ -5473,7 +5596,7 @@ console.log('\nhydration — what the server says an account is');
   const managingPlayer = foldServer(
     { ...blank, onboardedAt: '2026-03-02' },
     {
-      ...answers(me({ onboardedAt: '2026-03-02T10:00:00Z' })),
+      ...answers(me({ onboardedAt: '2026-03-02T10:00:00Z', username: 'kasia_m' })),
       workspaces: {
         workspaces: [
           { kind: 'personal', venueId: null, venueName: null, memberId: null, role: null, perms: null },
@@ -5585,8 +5708,8 @@ console.log('\nthe listing, both ways');
   check('a listing reads onto the form',
     read.name === 'Café Bratysławska' && read.street === 'Bratysławska 6' && read.price === '18–45 zł'
       && read.logo === LISTING_FIXTURE.imageUrl && read.country === 'pl' && read.city === 'Krakow');
-  check('…its category and subcategory by their words',
-    read.category === 'cafe' && read.subcategory === 0 && read.unmapped === undefined);
+  check('…its category and subcategory by their keys',
+    read.category === 'coffee' && read.subcategory === 0 && read.unmapped === undefined);
   check('…its description in the reader’s language',
     read.description === 'Mała kawiarnia na Kleparzu.' && read.descriptionLanguage === 'pl');
   check('…its links by kind',
@@ -5610,15 +5733,24 @@ console.log('\nthe listing, both ways');
       === 'https://maps.google.com/?q=bratyslawska');
   check('a language the chips do not offer is kept',
     (unchanged.languages ?? []).includes('de') && (unchanged.languages ?? []).includes('pl'));
-  check('a subcategory is written as its English label', unchanged.subcategory === 'Specialty coffee');
-  check('…and every label reads back to its own index',
+  check('a subcategory is written as its taxonomy key', unchanged.subcategory === 'coffee.coffee_shop'
+    && unchanged.category === 'coffee');
+  check('…and every key reads back to its own index',
     BUSINESS_CATEGORIES.every(({ id, subs }) =>
-      Array.from({ length: subs }, (_, index) => subcategoryIndex(id, subcategoryWord(id, index)) === index)
-        .every(Boolean)));
-  check('…including a Polish one written by another client', subcategoryIndex('cafe', 'Kawa specialty') === 0);
+      subs.every((_, index) => subcategoryIndex(id, subcategoryWord(id, index)) === index)));
+  check('…as does the bare last part of one', subcategoryIndex('restaurant', 'kebabs') === 6);
+  check('…and a label an earlier client wrote, in any language',
+    subcategoryIndex('restaurant', 'Pizza') === 4 && subcategoryIndex('halal', 'Sklep mięsny') === 1);
+  check('a key under another category is not this one’s', subcategoryIndex('halal', 'restaurant.kebabs') === null);
+  check('a subcategory prints in the reader’s words',
+    subcategoryLabel('housing', 'housing.long_term_rentals', LANGUAGES.pl.listing.subcategories) === 'Najem długoterminowy'
+      && subcategoryLabel('places', 'halal_food', en.listing.subcategories) === 'halal_food'
+      && subcategoryLabel('coffee', null, en.listing.subcategories) === '');
   check('every language names as many subcategories as the form offers',
     LANGUAGE_ORDER.every((code) =>
-      BUSINESS_CATEGORIES.every(({ subs }, at) => LANGUAGES[code].listing.subcategories[at]?.length === subs)));
+      BUSINESS_CATEGORIES.every(({ subs }, at) => LANGUAGES[code].listing.subcategories[at]?.length === subs.length)));
+  check('…and as many categories',
+    LANGUAGE_ORDER.every((code) => LANGUAGES[code].listing.categories.length === BUSINESS_CATEGORIES.length));
 
   const rewritten = listingWrite({ ...read, description: 'Nowy opis.' }, LISTING_FIXTURE, 'en');
   check('an edited description goes back to the language it came from',

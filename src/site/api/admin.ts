@@ -289,6 +289,8 @@ export interface VenueEdit {
   name?: string;
   city?: string;
   category?: string;
+  /** App taxonomy keys (`GET /v1/categories`); `[]` goes back to the derived list. */
+  tags?: string[];
   address?: string;
   phone?: string;
   email?: string;

@@ -78,6 +78,8 @@ import {
   WriteStrip,
 } from './adminControls';
 import { useWrite } from './adminWrite';
+import { categoryLabel } from './adminMetrics';
+import { BUSINESS_CATEGORIES } from './content';
 
 import { Icon } from './icons';
 import { PATHS } from './router';
@@ -599,7 +601,7 @@ export function AdminPeople({ editing }: { editing: boolean }) {
                         <b>{venue.name}</b>
                       </td>
                       <td>{venue.city ?? '—'}</td>
-                      <td>{venue.category}</td>
+                      <td>{categoryLabel(venue.category, dictionary.listing.categories)}</td>
                       <td>{venue.owner ?? '—'}</td>
                       <td className="adm-db-num">{venue.visits}</td>
                       <td>
@@ -651,6 +653,18 @@ export function AdminPeople({ editing }: { editing: boolean }) {
                                 key: 'category',
                                 label: act.fields.category,
                                 value: venue.category,
+                                /* The taxonomy's eight, plus the venue's own word when
+                                   the server could not place it — see the note on the
+                                   same select in `admin.tsx`. */
+                                options: [
+                                  ...BUSINESS_CATEGORIES.map((row, index) => ({
+                                    value: row.id,
+                                    label: dictionary.listing.categories[index] ?? row.id,
+                                  })),
+                                  ...(BUSINESS_CATEGORIES.some((row) => row.id === venue.category)
+                                    ? []
+                                    : [{ value: venue.category, label: venue.category }]),
+                                ],
                               },
                             ]}
                             busy={write.busy === venueEditKey}

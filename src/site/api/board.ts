@@ -36,8 +36,14 @@ export type Scope = (typeof SCOPES)[number];
 export interface BoardRow {
   rank: number;
   userId: string;
-  /** The display name. Never the address — see §8.2 in `domain/social.ts`. */
+  /**
+   * The public name: the player's username, or "Marta K." for an account that
+   * has not picked one. Never the full name, never the address — see
+   * `publicName` and §8.2 in `domain/social.ts`.
+   */
   name: string;
+  /** The handle alone, or null. */
+  username: string | null;
   avatar: string | null;
   points: number;
   isYou: boolean;

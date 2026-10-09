@@ -3711,6 +3711,20 @@ button {
   opacity: 0.75;
 }
 
+/* The app-category picker on the listing form: one labelled group per category. */
+.app-categories {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.app-category-name {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-fnt);
+}
+
 .send-row {
   margin-top: 1.1rem;
   padding-top: 1.1rem;
@@ -6381,6 +6395,89 @@ button {
   background: transparent;
 }
 
+/* ── the username field's live check (`UsernameField.tsx`) ──────────────────
+   One field, drawn on the welcome step and in the profile editor. The `@` sits
+   inside the well because the handle *is* written with one everywhere it is
+   shown, and typing one is stripped rather than refused. The verdict line keeps
+   its height when empty so the suggestions do not jump as it fills; "free" is
+   the accent ink and a refusal is weighted, never coloured — the same rule
+   `.field-error` states for the palette's one hue. */
+.uname {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.uname-input {
+  position: relative;
+}
+
+.uname-at {
+  position: absolute;
+  left: 0.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-fnt);
+  font-size: 0.9375rem;
+  pointer-events: none;
+}
+
+.field .uname-input input {
+  padding-left: 1.7rem;
+}
+
+.uname-status {
+  margin: 0;
+  min-height: 1.15rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-fnt);
+}
+
+.uname-status[data-tone='ok'] {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.uname-status[data-tone='bad'] {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.uname-ideas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+.uname-idea {
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    border-color 200ms var(--ease),
+    background 200ms var(--ease);
+}
+
+.uname-idea:hover {
+  border-color: var(--accent-soft);
+  background: var(--surface-2);
+}
+
+.uname-idea:focus-visible {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: 1px;
+}
+
 /* The arrow the native control draws is the one thing here that cannot be
    tokenised, so the control keeps it and only the well around it is restyled. */
 .field select {
@@ -7760,6 +7857,17 @@ button {
 }
 
 /* ── the switch (the profile's leaderboard opt-out) ── */
+
+/* The switches at the foot of the profile — the board's opt-out and the
+   pushes. They sat flush against one another (and against the record above),
+   so four bordered rows read as one box with lines through it. A column with a
+   real gap makes each one a separate decision, which is what each one is. */
+.prof-switches {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
 
 .prof-switch-row {
   display: flex;
@@ -17203,6 +17311,12 @@ button {
    `.onb-place` is the city question and the leaderboard consent on one screen;
    see the note on `PlaceStep` for why they are one screen and not two. */
 
+/* The username step's form: there so Enter submits, and otherwise invisible to
+   layout, so its field and buttons stack in `.onb-shell` like every step's. */
+.onb-handle {
+  display: contents;
+}
+
 .onb-place {
   display: flex;
   flex-direction: column;
@@ -20843,7 +20957,7 @@ p.lst-soft {
 /* ══ the five arcade games ══════════════════════════════════════════════════
    `.ar-*` is the frame all five share — a field the canvas fills, an overlay
    for the start and the end, a direction pad — and `.cn-*` is Canon Numbers'
-   board, the one of the five drawn in the DOM rather than on a canvas. Both
+   clock and goal banner, the DOM that sits above its canvas. Both
    prefixes were grepped and free. Everything is the one accent, at alphas. */
 .ar-field {
   position: relative;
@@ -20898,6 +21012,55 @@ p.lst-soft {
   color: var(--text);
   font-size: 0.95rem;
   line-height: 1.5;
+}
+
+/*
+ * The two veils, in Bird's Flight's terms — the one arcade game that came
+ * first, and so the reference the rest are held to.
+ *
+ * **Before the round** the flight shows its field with nothing over it but a
+ * pulsing hint near the bottom (`.fly-hint`). The arcade games had a frosted
+ * panel across the whole field instead, which hid the very board the intro was
+ * describing — a snake, a wall, a chain — behind a blur. So the ready veil is
+ * now a shade that rises from the bottom edge, the field stays legible above
+ * it, and the intro is set as the flight's hint is: muted, bold, small. The
+ * Start press stays (these games have no first tap that is also a move).
+ *
+ * **After it** the flight holds a frosted `.fly-over` for a beat with the
+ * outcome set in the display face; the arcade end veil now reads the same.
+ * `role='status'` is what tells the two apart, and it is already on every one.
+ */
+.ar-overlay:not([role='status']),
+.nj-overlay:not([role='status']) {
+  justify-content: flex-end;
+  gap: 0.85rem;
+  padding: 1.25rem 1.25rem 9%;
+  background: linear-gradient(to top, rgba(var(--panel-rgb), 0.92) 0%, rgba(var(--panel-rgb), 0.7) 38%, rgba(var(--panel-rgb), 0) 72%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.ar-overlay:not([role='status']) p,
+.nj-overlay:not([role='status']) p {
+  max-width: 20rem;
+  color: var(--text-mut);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.ar-overlay[role='status'],
+.nj-overlay[role='status'] {
+  background: rgba(var(--panel-rgb), 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.ar-overlay[role='status'] p,
+.nj-overlay[role='status'] p {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
 }
 
 .ar-round .round-quit {
@@ -20969,87 +21132,121 @@ p.lst-soft {
   }
 }
 
-/* Canon Numbers: the board, and a cannon under each column. */
-.cn-board {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.3rem;
-  max-width: min(24rem, 52svh);
-  margin: 0 auto;
-  padding: 0.4rem;
-  border-radius: var(--r);
-  border: 1px solid var(--border-2);
-  background: var(--surface);
+/* The arcade games' header bar (`PerfectBar`, `games/hud.tsx`): the quiz's
+   `.round-bar`, filled by the round's result toward performance 100 rather
+   than by a countdown. It eases where the quiz's is linear — a count jumps
+   when a food is eaten, and a bar that snaps reads as a glitch — and it glows
+   once full, the one moment the header has news: the round pays all it can. */
+.ar-perfect i {
+  transition: width 240ms var(--ease);
 }
 
-.cn-board[data-busy='true'] {
-  cursor: progress;
-}
-
-.cn-cell {
-  aspect-ratio: 1;
-  display: grid;
-  place-items: center;
-  border-radius: var(--r-sm);
-  color: var(--text);
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  font-size: clamp(0.95rem, 0.6rem + 1.6vw, 1.35rem);
-  transition: transform 120ms ease, background-color 120ms ease;
-}
-
-/* A block's number carried by the accent's strength, 2048's way. */
-.cn-cell[data-value] {
-  background: rgba(var(--accent-rgb), calc(0.14 + var(--cn-level) * 0.07));
-}
-
-/* Two rows from the bottom is the warning, said by weight and a ring. */
-.cn-cell[data-danger='true'] {
-  box-shadow: inset 0 0 0 2px var(--accent-lit);
-}
-
-.cn-cell[data-hit='true'] {
-  transform: scale(0.88);
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
-.cn-guns {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.3rem;
-  max-width: min(24rem, 52svh);
-  margin: 0.4rem auto 0;
-  padding: 0 0.4rem;
-}
-
-.cn-gun {
-  min-height: var(--tap);
-  border: 0;
-  border-radius: var(--r-sm);
-  background: var(--solid);
-  color: var(--on-solid);
-  font-size: 1rem;
-  cursor: pointer;
-}
-
-.cn-gun:hover:not(:disabled) {
-  background: var(--solid-lit);
-}
-
-.cn-gun:disabled {
-  opacity: 0.45;
-  cursor: default;
+.ar-perfect[data-full='true'] i {
+  box-shadow: 0 0 10px rgba(var(--glow-rgb), calc(0.55 * var(--glow-k)));
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cn-cell {
+  .ar-perfect i {
     transition: none;
   }
+}
 
-  .cn-cell[data-hit='true'] {
-    transform: none;
+/* Canon Numbers: the clock, the goal banner above the field, and the field
+   itself, which is a canvas like the other four. The banner is DOM rather than
+   canvas because it is the one thing a screen reader must hear (it is
+   `aria-live`), and because it changes a few times a minute, not per frame. */
+.cn-clock {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The last ten seconds: said by weight and the accent, not by a new hue. */
+.cn-clock[data-warn='true'] {
+  color: var(--accent-ink);
+  font-weight: 800;
+}
+
+.cn-goal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  /* As wide as the field under it, so the sum and the targets read as one board. */
+  width: 100%;
+  max-width: min(26rem, calc(66svh * 0.75));
+  margin: 0 auto 0.6rem;
+  padding: 0.55rem 1rem 0.6rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border-2);
+  background: rgba(var(--accent-rgb), 0.08);
+  text-align: center;
+}
+
+.cn-goal-label {
+  color: var(--text-mut);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cn-goal-sum {
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.5rem, 1.2rem + 1.6vw, 2.1rem);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Before the start the sum is a preview, not yet a question. */
+.cn-goal[data-idle='true'] {
+  opacity: 0.55;
+}
+
+/* A right answer floods the banner with the accent and fades back; a wrong one
+   shakes it. The element is re-keyed on every hit, so each plays from zero. */
+.cn-goal[data-pulse='hit'] {
+  animation: cn-yes 420ms ease-out;
+}
+
+.cn-goal[data-pulse='miss'] {
+  animation: cn-no 300ms ease-in-out;
+}
+
+@keyframes cn-yes {
+  from {
+    background: rgba(var(--accent-rgb), 0.38);
+    border-color: var(--accent-lit);
+  }
+}
+
+@keyframes cn-no {
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(2px); }
+}
+
+.cn-field .ar-canvas {
+  cursor: crosshair;
+}
+
+.cn-keys {
+  color: var(--text-mut);
+  font-size: 0.85rem;
+}
+
+/* A phone has no arrow keys to tell anybody about. */
+@media (pointer: coarse) {
+  .cn-keys {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cn-goal[data-pulse='hit'],
+  .cn-goal[data-pulse='miss'] {
+    animation: none;
   }
 }
 
@@ -21087,36 +21284,73 @@ p.lst-soft {
   background: var(--accent);
 }
 
+/* Canon Numbers in miniature: the sum, three discs with the answer struck, and
+   the cannon under it — the same three things, in the same places, as the round. */
 .pv-cannon {
-  position: relative;
-  grid-template-columns: repeat(3, 1fr);
-  max-width: 6.5rem;
-  padding-bottom: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 7.5rem;
 }
 
-.pv-cannon i {
+.pv-cannon em {
+  font-style: normal;
   font-family: var(--font-display);
   font-weight: 800;
+  font-size: 0.85rem;
   color: var(--text);
 }
 
-.pv-cannon i[data-on='true'] {
-  background: rgba(var(--accent-rgb), 0.3);
+.pv-cannon span {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
 }
 
-.pv-cannon i[data-hit='true'] {
+.pv-cannon i {
+  flex: none;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
   background: var(--accent);
   color: var(--on-accent);
+  font-family: var(--font-display);
+  font-weight: 800;
+}
+
+.pv-cannon i:nth-child(2) {
+  margin-top: 0.45rem;
+}
+
+/* The struck answer: emptied to a ring, the way the round's burst begins. */
+.pv-cannon i[data-hit='true'] {
+  background: transparent;
+  box-shadow: 0 0 0 2px var(--accent-lit);
+  color: var(--accent-ink);
 }
 
 .pv-cannon b {
+  width: 1.5rem;
+  height: 0.75rem;
+  margin-top: 1.1rem;
+  border-radius: 0.75rem 0.75rem 0 0;
+  background: var(--accent);
+  position: relative;
+}
+
+.pv-cannon b::before {
+  content: '';
   position: absolute;
   left: 50%;
-  bottom: 0;
+  bottom: 0.45rem;
+  width: 0.45rem;
+  height: 0.85rem;
+  border-radius: 2px;
+  background: var(--accent);
   transform: translateX(-50%);
-  color: var(--accent-lit);
-  font-size: 0.9rem;
-  line-height: 1;
 }
 
 .pv-brick {
@@ -21388,18 +21622,182 @@ p.lst-soft {
   color: var(--accent-ink);
 }
 
-.play-invite-acts {
+/*
+ * The link and its Copy press, as one row. The field is the field kit's well,
+ * read-only, filling the row so a tap anywhere selects the whole link — which
+ * is also the fallback where the clipboard API is refused. The press keeps its
+ * width and the link ellipsises: on a phone the link is checked, not read.
+ */
+.play-invite-field {
+  gap: 0.4rem;
+}
+
+.play-invite-linkrow {
   display: flex;
-  flex-wrap: wrap;
+  align-items: stretch;
   gap: 0.6rem;
 }
 
-.play-invite-progress {
+.play-invite-field .play-invite-link {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+  font-size: 0.88rem;
+  color: var(--text-mut);
+}
+
+.play-invite-copy {
+  flex: 0 0 auto;
+}
+
+.play-invite-share {
+  margin-left: auto;
+}
+
+/*
+ * Three figures as three tiles, in the same surface the code well uses, so the
+ * card reads as a ledger rather than a sentence with numbers in it.
+ */
+.play-invite-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0.2rem 0 0;
+}
+
+/* Figure first on screen, label first in the markup (a `dt` must precede its
+   `dd`). `flex-end` in a reversed column packs to the *top*, so the three
+   figures stay on one line when a label wraps to two in Uzbek. */
+.play-invite-stats > div {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 0.1rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.play-invite-stats dt {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-fnt);
+  overflow-wrap: anywhere;
+}
+
+.play-invite-stats dd {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.play-invite-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.play-invite-goal-line {
   margin: 0;
   font-size: 0.85rem;
-  font-weight: 700;
   color: var(--text-mut);
+}
+
+/* The milestone bar. Its width is a custom property (0–1) scaled on the
+   compositor, the same way the battery fills. */
+.play-invite-bar {
+  height: 6px;
+  border-radius: 6px;
+  background: rgba(var(--accent-rgb), 0.12);
+  overflow: hidden;
+}
+
+.play-invite-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-lit);
+  transform-origin: left center;
+  transform: scaleX(var(--fill, 0));
+  transition: transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play-invite-bar > span {
+    transition: none;
+  }
+}
+
+.play-invite-people {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.play-invite-people li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+
+.play-invite-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* A friend who visited is the accent; one who only signed up is weighted
+   down — the state that pays is the one that is marked. */
+.play-invite-state {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-fnt);
   font-variant-numeric: tabular-nums;
+}
+
+.play-invite-state[data-state='completed'] {
+  color: var(--accent-ink);
+}
+
+.play-invite-retry {
+  align-self: flex-start;
+}
+
+/* A phone: the link takes its own row and Copy goes under it at full width —
+   side by side, a long Copy label in Uzbek or Russian left the link three
+   characters wide. Share takes the row beside the code. */
+@media (max-width: 480px) {
+  .play-invite-linkrow {
+    flex-direction: column;
+  }
+
+  .play-invite-share {
+    margin-left: 0;
+    flex: 1 1 auto;
+  }
+
+  .play-invite-stats > div {
+    padding: 0.5rem 0.6rem;
+  }
+
+  .play-invite-stats dd {
+    font-size: 1.1rem;
+  }
 }
 
 /* ══════════════════════════════════════════════ confirm your email ══
@@ -21463,43 +21861,103 @@ p.lst-soft {
 }
 
 /*
- * The code and the two actions, on one row where there is room.
- *
- * `flex-end` rather than `center`, so the buttons sit on the field's baseline
- * rather than floating beside its label — the field is two rows tall (a label
- * and a well) and centring would put the press half a line above the well it
- * belongs to.
+ * The label over the row, then the well and its press side by side, then the
+ * resend line. The label used to live inside the well's own box, held to six
+ * digits' width, and wrapped to two lines in four of the five languages —
+ * which pushed the well down out of line with the buttons beside it.
  */
 .vfy-form {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.vfy-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.6rem;
 }
 
 /*
  * Six digits wide, and no wider.
  *
  * A full-width well for a six-character code reads as a field that wants a
- * sentence. `ch` is exact here for the same reason it is on the converter's
- * amount: the well is `tabular-nums`, so every digit is one `ch` by
- * definition.
+ * sentence. The well is `tabular-nums`, so every digit is one `ch`; the
+ * letter-spacing and the padding are what the rest of the width is for.
  */
-.vfy-code {
-  flex: 0 0 auto;
-  width: min(11rem, 100%);
-}
-
-.vfy-code input {
+.vfy-field .vfy-input {
+  flex: 0 1 12rem;
+  min-width: 0;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.3em;
+  font-weight: 700;
+  text-align: center;
 }
 
-.vfy-acts {
+.vfy-confirm {
+  flex: 0 0 auto;
+}
+
+.vfy-resend {
   display: flex;
-  align-items: center;
-  gap: 0.9rem;
   flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+/* A counting-down resend is a label, not a dead link: drawn as plain figures
+   so it does not look pressable while it is not. */
+.vfy-resend .link-btn:disabled {
+  text-decoration: none;
+  color: var(--text-fnt);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+.vfy [hidden] {
+  display: none;
+}
+
+/*
+ * Confirmed, here. The kicker's mark turns from a lock into a tick, and the
+ * panel's rim takes the accent for the moment it is on screen — the one
+ * colour there is, spent on the one piece of good news on the panel. It
+ * arrives with a short rise; under reduced motion it is simply there.
+ */
+.vfy[data-state='done'] {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  animation: vfy-done 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.vfy[data-state='done'] .vfy-kicker {
+  color: var(--accent-ink);
+}
+
+@keyframes vfy-done {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vfy[data-state='done'] {
+    animation: none;
+  }
+}
+
+/* A phone: the press takes the rest of the row rather than leaving a gap. */
+@media (max-width: 480px) {
+  .vfy-field .vfy-input {
+    flex: 1 1 auto;
+  }
 }
 
 

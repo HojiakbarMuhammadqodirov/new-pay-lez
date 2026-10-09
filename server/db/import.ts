@@ -36,6 +36,7 @@ import { readFileSync } from 'node:fs';
 import { bool, json, num, opt, readCsv, readCsvParts, str, ts, type CsvRow } from './csv.ts';
 import { CONFIG } from '../config.ts';
 import { assertComplete, codeFor, flagOf } from './countries.ts';
+import { kindOf } from '../domain/categories.ts';
 import { newId, referralCode } from '../domain/ids.ts';
 import { localMonth, now } from '../domain/time.ts';
 
@@ -140,6 +141,52 @@ export function readWordBank(dir: string): BankWord[] {
 export interface ImportSummary {
   counts: Record<string, number>;
   notes: string[];
+  /** Whether any `*_export.csv` in the legacy directory had a row in it. */
+  legacyRead: boolean;
+  /** Whether the venue catalogue was skipped because it is retired. */
+  catalogueRetired: boolean;
+}
+
+/*
+ * **Two markers in `schema_meta`, because "is this a fresh database" cannot be
+ * read off the venues table any more.**
+ *
+ * `boot` used to import whenever `venues` was empty, which read as "first
+ * boot" and was true exactly once — until an operator deleted every venue to
+ * start again with real partners, at which point the next restart would have
+ * written the eleven Base44 venues and their deals straight back. So:
+ *
+ * - `legacy_import` says the export has been imported into this database
+ *   once. `boot` sets it on a database that already holds imported rows, so a
+ *   box filled before the marker existed is covered without anybody
+ *   remembering to stamp it. Its absence is what a first boot now means.
+ * - `catalogue_retired` says the old catalogue is gone on purpose (`npm run
+ *   catalogue:purge`). While it is set, every import — `--reimport` and the
+ *   question-bank re-runs included — skips the venues and everything promoted
+ *   with them: the venue rows, their links and descriptions, the
+ *   `partner_owner` grants, budgets and their movements, voucher tiers,
+ *   campaigns, hot deals and their funnel events, and the venue stamped on a
+ *   directory listing or a listing event. The directory, the guidance content,
+ *   the people, the ledger and the game banks still import.
+ *
+ * `schema_meta` rather than `platform_config`: these describe the database's
+ * history, not a setting an operator tunes, and `platform_config` is the table
+ * `bootOrdering` watches for leftovers. Both survive `pg:backup` and
+ * `pg:migrate`, which copy every table.
+ */
+export const LEGACY_IMPORTED = 'legacy_import';
+export const CATALOGUE_RETIRED = 'catalogue_retired';
+
+export async function readMarker(db: Db, key: string): Promise<string | null> {
+  return (await db.get<{ value: string }>(`SELECT value FROM schema_meta WHERE key = $k`, { k: key }))?.value ?? null;
+}
+
+export async function setMarker(db: Db, key: string, value: string): Promise<void> {
+  await db.run(
+    `INSERT INTO schema_meta (key, value) VALUES ($k, $v)
+     ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+    { k: key, v: value },
+  );
 }
 
 export async function importLegacy(db: Db, dir: string, gamesDir?: string): Promise<ImportSummary> {
@@ -149,8 +196,14 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
   const bump = (key: string, by = 1) => {
     counts[key] = (counts[key] ?? 0) + by;
   };
+  const retired = (await readMarker(db, CATALOGUE_RETIRED)) !== null;
 
-  const file = (name: string) => readCsv(join(dir, `${name}_export.csv`));
+  let legacyRead = false;
+  const file = (name: string) => {
+    const rows = readCsv(join(dir, `${name}_export.csv`));
+    if (rows.length > 0) legacyRead = true;
+    return rows;
+  };
 
   /*
    * **A live row already holds this one's unique key.** Seven upsert targets
@@ -510,6 +563,16 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
     if (points > 0) opening.set(user, (opening.get(user) ?? 0) + points);
   };
 
+  /* **A live game state is newer than the export's, so it wins.** `userFor`
+     merges a legacy address into the live account that holds it, and this
+     insert is `OR REPLACE` — so every re-import used to put a September 2026
+     streak back over whatever that person had played since (three accounts in
+     production, 2026-09). Rows that existed before this import began are left
+     alone; within one import the export's own last row still wins, as before. */
+  const livePlayers = new Set(
+    (await db.all<{ user_id: string }>(`SELECT user_id FROM player_states`)).map((row) => row.user_id),
+  );
+
   for (const row of file('GameProgress')) {
     const user = await userFor(
       str(row, 'created_by_id'),
@@ -519,7 +582,7 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
     );
     if (!user) continue;
 
-    await db.run(
+    if (!livePlayers.has(user)) await db.run(
       `INSERT OR REPLACE INTO player_states
          (user_id, streak, longest_streak, freezes, lives, answered, correct,
           last_played, difficulty, updated_at)
@@ -603,10 +666,15 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
    * budget, a scan configuration, a stamp campaign or a deal. Everything else
    * stays a guidebook entry, which is what it is.
    */
-  const voucherCampaigns = file('DiscountVoucherCampaign');
-  const loyaltyConfigs = file('LoyaltyConfig');
-  const stampCampaigns = file('LoyaltyVoucherCampaign');
-  const deals = file('HotDeal');
+  /* A retired catalogue reads as an export with no partners in it: no venue is
+     promoted, so sections 4–6 write nothing and section 7 stamps no venue on
+     a listing event. Emptied at the source rather than guarded loop by loop,
+     so a section added below cannot forget the rule. See `CATALOGUE_RETIRED`. */
+  const voucherCampaigns = retired ? [] : file('DiscountVoucherCampaign');
+  const loyaltyConfigs = retired ? [] : file('LoyaltyConfig');
+  const stampCampaigns = retired ? [] : file('LoyaltyVoucherCampaign');
+  const deals = retired ? [] : file('HotDeal');
+  if (retired) notes.push('catalogue retired: legacy venues, deals, budgets, tiers and campaigns were not imported');
 
   const partnerServiceIds = new Set<string>();
   for (const rows of [voucherCampaigns, loyaltyConfigs, stampCampaigns, deals]) {
@@ -615,7 +683,7 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
       if (id && services.has(id)) partnerServiceIds.add(id);
     }
   }
-  for (const [id, row] of services) if (bool(row, 'accepts_vouchers')) partnerServiceIds.add(id);
+  if (!retired) for (const [id, row] of services) if (bool(row, 'accepts_vouchers')) partnerServiceIds.add(id);
 
   /** Whoever configured the venue's economics owns it, in the absence of a
    *  partner account table in the export. The role is granted on the way past. */
@@ -642,6 +710,11 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
     }
 
     const loyalty = loyaltyConfigs.find((r) => str(r, 'service_id') === serviceId);
+    const legacyKind = kindOf(
+      str(service, 'category_key') || 'places',
+      json<string[]>(service, 'subcategories', [])[0] ?? null,
+      str(service, 'service_name'),
+    );
     const city = str(service, 'city') || 'Krakow';
 
     await db.run(
@@ -658,8 +731,10 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
         i: serviceId,
         o: owner,
         n: str(service, 'service_name'),
-        ca: str(service, 'category_key') || 'places',
-        sc: (json<string[]>(service, 'subcategories', [])[0] ?? null),
+        /* Filed on the taxonomy (`domain/categories.ts`) where the old words
+           place it; an unplaceable word is kept rather than guessed at. */
+        ca: legacyKind?.category ?? (str(service, 'category_key') || 'places'),
+        sc: legacyKind ? legacyKind.subcategory : (json<string[]>(service, 'subcategories', [])[0] ?? null),
         ci: city,
         cc: str(service, 'country_code') || 'PL',
         ad: opt(service, 'address'),
@@ -1456,7 +1531,14 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
     bump('quiz_items_dropped');
   }
 
-  return { counts, notes };
+  /* Stamped only when the export was actually there: a checkout with no
+     `new-data/` imported nothing, and its next boot should try again exactly
+     as it always has. See `LEGACY_IMPORTED`. */
+  if (legacyRead && (await readMarker(db, LEGACY_IMPORTED)) === null) {
+    await setMarker(db, LEGACY_IMPORTED, at);
+  }
+
+  return { counts, notes, legacyRead, catalogueRetired: retired };
 }
 
 /* ─────────────────────────────────────────────────────────────── helpers ── */

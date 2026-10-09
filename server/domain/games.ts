@@ -1935,7 +1935,7 @@ export interface Finish {
    * It meant a daily ceiling once, then nothing for a while (always 0), and now
    * it means the one ceiling the rulebook does have: points from game rounds in
    * a Monday–Sunday UTC week may not pass `CONFIG.games.weeklyGameCap` for the
-   * player's plan (450 / 600 / 1000). `score` is what was banked *after* the
+   * player's plan (200 / 280 / 450 since 2026-10-08). `score` is what was banked *after* the
    * trim, so `score + capped` is what the formula priced. Decay is still not
    * reported here — it is part of pricing a round, not a trim of one; `decay`
    * and `roundToday` below are where a shrunken round explains itself.
@@ -2211,7 +2211,7 @@ export async function finish(
                   : secret.kind === 'snake'
                     ? scoreSnake(secret, input.clientReport ?? {}, elapsed)
                     : secret.kind === 'cannon'
-                      ? scoreCannon(secret as unknown as arcade.CannonState)
+                      ? scoreCannon(secret as unknown as arcade.CannonState, input.clientReport ?? {}, elapsed)
                       : secret.kind === 'breakout'
                         ? scoreBreakout(secret, input.clientReport ?? {}, elapsed)
                         : secret.kind === 'doodle'
@@ -2408,7 +2408,7 @@ export async function finish(
           multiplier,
           /* The welcome round's flat figure is multiplied by `earn`, which is why
              a capped welcome round is still passed as the pre-multiplier figure:
-             the trim can only have reached it on a week that already held 450
+             the trim can only have reached it on a week that already held the cap's
              points of games, which a first-ever round never has. */
           multiplierApplied: !firstEver,
           at,
@@ -2638,8 +2638,17 @@ export function roundPoints(input: {
 
   const decay = decayFor(input.roundToday);
 
+  /* The perfect-round bonus rides the decay curve (2026-10-08). It used to be
+     a flat +10 on every round of the day, so the twelfth perfect round still
+     took the whole of it and the decay curve bounded everything but the one
+     part a strong player collects on every round. Rounded half-up to a whole
+     point here, so the itemised figure is exactly what the score contains:
+     10 · 7 · 5 · 3 · 2 · 1 down the six rungs. */
+  const decayHundredthsForBonus = Math.round(decay * 100);
   const bonusPerfect =
-    input.perfect && performance >= 100 ? CONFIG.games.perfectRoundBonus : 0;
+    input.perfect && performance >= 100
+      ? Math.floor((CONFIG.games.perfectRoundBonus * decayHundredthsForBonus + 50) / 100)
+      : 0;
   const bonusNewGame = input.newGame ? CONFIG.games.newGameBonus : 0;
   const bonusPersonalBest = input.personalBest ? CONFIG.games.personalBestBonus : 0;
   const bonuses = bonusPerfect + bonusNewGame + bonusPersonalBest;
@@ -3169,10 +3178,32 @@ function scoreSnake(secret: Record<string, unknown>, report: Record<string, unkn
   return perUnit(played.eaten, CONFIG.games.snakePerformancePerFood);
 }
 
-/** Canon Numbers: the blocks this server's board destroyed. */
-function scoreCannon(state: arcade.CannonState): Scored {
-  if (state.turn === 0) return { performance: 0, correct: 0, answered: 5, won: false };
-  return perUnit(state.destroyed, CONFIG.games.cannonPerformancePerBlock);
+/**
+ * Canon Numbers, two ways, told apart by whether the held board was played.
+ *
+ * - **The website plays a maths shooter** (`src/site/games/CannonNumbers.tsx`):
+ *   a sum, falling numbers, shoot the answer. It never fires on the held
+ *   board, so `turn` stays 0, and it reports `{hits, wrong}` at finish. Whether
+ *   a ball touched a disc is a fact about that screen, so — Breakout's
+ *   arrangement — the claim is **bounded** by the round's own duration; a wrong
+ *   hit takes one off, so firing at everything scores nothing.
+ * - **The app still plays the held board** (`fire` events): scored on the blocks
+ *   this server destroyed, as before.
+ *
+ * Both land on the same 0..100 scale at the same rate, so neither pays better.
+ */
+function scoreCannon(state: arcade.CannonState, report: Record<string, unknown>, elapsed: number): Scored {
+  if (state.turn > 0) return perUnit(state.destroyed, CONFIG.games.cannonPerformancePerBlock);
+  if (report.hits === undefined) return { performance: 0, correct: 0, answered: 5, won: false };
+  const hits = arcade.bounded(
+    report.hits,
+    CONFIG.games.cannonMaxHits,
+    elapsed,
+    CONFIG.games.cannonHitsPerSecond,
+    CONFIG.games.cannonHitAllowance,
+  );
+  const wrong = Math.max(0, Math.floor(Number(report.wrong) || 0));
+  return perUnit(Math.max(0, hits - wrong), CONFIG.games.cannonPerformancePerHit);
 }
 
 /**
@@ -3413,11 +3444,16 @@ async function applyStreak(
     { s: streak, f: freezes, a: scored.answered, c: scored.correct, d: today, t: at, u: userId },
   );
 
-  /* This is the round that restarts the habit, so it is the round §2b pays for.
-     Paid on the lapse whether or not a freeze absorbed it: a freeze protects the
-     *streak*, not the fact that somebody was away and came back, and the two are
-     different things to be pleased about. */
-  if (lapsed) await payComeback(db, userId, at);
+  /* This is the round that restarts the habit, so it is the round §2b pays for
+     — but only after a real absence (2026-10-08). It used to pay on any lapse,
+     a single missed day included and whether or not a freeze absorbed it,
+     which made "skip a day" a way to earn 100. Now the days missed must reach
+     `comebackMinAbsenceDays`, and the day a freeze covered is not one of them:
+     a freeze says the player is treated as having been here. */
+  if (lapsed && state.last_played !== null) {
+    const missed = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${state.last_played}T00:00:00Z`)) / 86_400_000) - 1 - (frozen ? 1 : 0);
+    if (missed >= CONFIG.earn.comebackMinAbsenceDays) await payComeback(db, userId, at);
+  }
 
   return { streak, freezes };
 }
@@ -3449,8 +3485,20 @@ async function applyStreak(
  * multiplier to 1, so this is expressed by not passing one.
  */
 async function payComeback(db: Db, userId: string, at: Iso): Promise<void> {
-  const days = Math.floor(Date.parse(at) / 86_400_000);
-  const ref = `comeback:${Math.floor(days / Math.max(1, CONFIG.earn.comebackEveryDays))}`;
+  /* **A rolling window** (2026-10-08). The fixed grid described above let two
+     payments land either side of a boundary days apart, and with the old
+     one-day trigger that was a farm rather than an occasional extra. The guard
+     is now "no comeback entry in the last `comebackEveryDays`", read off the
+     ledger itself, and the ref is the day it was paid — distinct from the old
+     `comeback:<window>` refs, which are a few hundred rather than ~20 000. */
+  const since = new Date(Date.parse(at) - Math.max(1, CONFIG.earn.comebackEveryDays) * 86_400_000).toISOString();
+  const recent = await db.get<{ id: string }>(
+    `SELECT id FROM points_ledger
+      WHERE user_id = $u AND source_kind = 'comeback' AND created_at > $s LIMIT 1`,
+    { u: userId, s: since },
+  );
+  if (recent !== undefined) return;
+  const ref = `comeback:${Math.floor(Date.parse(at) / 86_400_000)}`;
   if (await ledger.alreadyPaid(db, userId, 'comeback', ref)) return;
 
   await ledger.earn(db, {

@@ -3,6 +3,7 @@ import { Icon } from './icons';
 import { useCopy, useGroupSeparator, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
 import { categoryLabel, initialOf } from './adminMetrics';
+import { BUSINESS_CATEGORIES } from './content';
 import type { Me } from './api/consumer';
 import { dealOpen, useImpressionRef, venueClick } from './api/reach';
 import { useApi, type ApiResult, type ApiState } from './api/useApi';
@@ -786,8 +787,8 @@ function DealCard({
  *
  * **Built from the rows, not from a list.** The strip used to be five customer
  * categories written in `content.ts` — Coffee, Food, Bakery, Services, Beauty —
- * and a deal's category on the server is the *venue's* taxonomy: `cafe`,
- * `restaurant`, `hotels`. The two never matched, so every chip would have been
+ * and a deal's category on the server is the *venue's* taxonomy key:
+ * `coffee`, `restaurant`, `housing`. The two never matched, so every chip would have been
  * empty. It is now the set of categories the fetched deals actually carry,
  * which has the property the old strip only claimed: **a chip that can never
  * match is not drawn.**
@@ -942,9 +943,15 @@ export function WalletApp() {
   if (!player) return null;
 
   /* The chips, and the counts under them, from one predicate over one list. */
+  /* In the taxonomy's own order (`BUSINESS_CATEGORIES`, the server's eight),
+     then anything else a row carries — an offer kind — alphabetically after. */
+  const rank = (id: string) => {
+    const at = BUSINESS_CATEGORIES.findIndex((row) => row.id === id);
+    return at < 0 ? BUSINESS_CATEGORIES.length : at;
+  };
   const categoryIds = [
     ...new Set(dealRows.map((deal) => deal.category).filter((id): id is string => Boolean(id))),
-  ].sort();
+  ].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
   const deals = category === null ? dealRows : dealRows.filter((d) => d.category === category);
   const counts = new Map<string | null, number>([
     [null, dealRows.length],
