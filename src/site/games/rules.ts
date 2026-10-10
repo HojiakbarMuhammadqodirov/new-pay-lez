@@ -42,7 +42,14 @@ import {
   QUIZ_SPEED_BONUS,
 } from '../auth/player';
 import type { LocalCountry, WordList } from './banks';
-import { DOODLE_PERFECT, SNAKE_PERFECT } from './arcade';
+import {
+  BREAKOUT_ROUND_SECONDS,
+  DOODLE_PERFECT,
+  DOODLE_ROUND_SECONDS,
+  SNAKE_PERFECT,
+  SNAKE_ROUND_MS,
+  ZUMA_ROUND_SECONDS,
+} from './arcade';
 import { CANNON_PERFECT, ROUND_SECONDS as CANNON_SECONDS } from './cannon/config';
 import type { Dictionary } from '../i18n/en';
 import { fill } from '../i18n/currency';
@@ -82,15 +89,29 @@ export function rulesFor(entry: Game, games: Dictionary['games']): [rule: string
       games.wordGame.reward,
     ];
   }
-  /* The arcade games state their own rule and what a perfect round is, from
-     the same constants the screens and the server's scale use. */
-  if (entry.kind === 'snake') return [games.snake.rule, fill(games.snake.reward, { n: String(SNAKE_PERFECT) })];
+  /* The arcade games state their own rule, how long a round can last and what
+     a perfect round is, from the same constants the screens count down from
+     and the server's scale uses. Every one of them ends now, and the card says
+     by when before the round starts, not only the header once it has. */
+  if (entry.kind === 'snake') {
+    return [
+      fill(games.snake.rule, { seconds: String(SNAKE_ROUND_MS / 1000) }),
+      fill(games.snake.reward, { n: String(SNAKE_PERFECT) }),
+    ];
+  }
   if (entry.kind === 'cannon') {
     return [fill(games.cannon.rule, { seconds: String(CANNON_SECONDS) }), fill(games.cannon.reward, { n: String(CANNON_PERFECT) })];
   }
-  if (entry.kind === 'breakout') return [games.breakout.rule, games.breakout.reward];
-  if (entry.kind === 'doodle') return [games.doodle.rule, fill(games.doodle.reward, { n: String(DOODLE_PERFECT) })];
-  if (entry.kind === 'zuma') return [games.zuma.rule, games.zuma.reward];
+  if (entry.kind === 'breakout') {
+    return [fill(games.breakout.rule, { seconds: String(BREAKOUT_ROUND_SECONDS) }), games.breakout.reward];
+  }
+  if (entry.kind === 'doodle') {
+    return [
+      fill(games.doodle.rule, { seconds: String(DOODLE_ROUND_SECONDS) }),
+      fill(games.doodle.reward, { n: String(DOODLE_PERFECT) }),
+    ];
+  }
+  if (entry.kind === 'zuma') return [fill(games.zuma.rule, { seconds: String(ZUMA_ROUND_SECONDS) }), games.zuma.reward];
   if (entry.kind === 'ninja') {
     return [
       fill(games.ninja.rule, { seconds: String(entry.seconds) }),

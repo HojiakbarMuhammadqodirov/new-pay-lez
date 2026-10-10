@@ -116,7 +116,8 @@ const PATHS = {
   people: <><circle cx="6.8" cy="8.2" r="2.9" /><path d="M2 20.5v-1.1a3.9 3.9 0 0 1 3.9-3.9h1.8a3.9 3.9 0 0 1 3.9 3.9v1.1" /><circle cx="17.2" cy="8.2" r="2.9" /><path d="M12.4 20.5v-1.1a3.9 3.9 0 0 1 3.9-3.9h1.8a3.9 3.9 0 0 1 3.9 3.9v1.1" /></>,
   plus: <><path d="M12 5v14M5 12h14" /></>,
   /* The five arcade cards. Same 24-unit grid and stroke as everything here. */
-  snake: <><path d="M4 18h9a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h9" /><circle cx="19" cy="6" r="1" /></>,
+  /* `snake` is Pico's Flock: a bird with its beak out, three chicks in a line behind. */
+  snake: <><circle cx="16.4" cy="7" r="3.2" /><path d="M19.5 6.3l2.5 1-2.4.9" /><circle cx="17.2" cy="6.3" r="0.8" fill="currentColor" stroke="none" /><circle cx="10.4" cy="10.6" r="2.2" /><circle cx="6.4" cy="14.6" r="2" /><circle cx="9.2" cy="19.4" r="1.7" /></>,
   cannon: <><path d="M12 3v10" /><path d="M8 7l4-4 4 4" /><rect x="7" y="13" width="10" height="6" rx="2" /></>,
   bricks: <><rect x="3" y="4" width="8" height="4" rx="1" /><rect x="13" y="4" width="8" height="4" rx="1" /><rect x="8" y="10" width="8" height="4" rx="1" /><path d="M8 20h8" /><circle cx="12" cy="17" r="1" /></>,
   jump: <><path d="M5 20h6M13 14h6M6 9h6" /><path d="M16 11V5M13 8l3-3 3 3" /></>,

@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { useCopy } from '../i18n/context';
-import { fill } from '../i18n/currency';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCopy, useLanguage } from '../i18n/context';
+import { useTheme } from '../theme/context';
+import { useReducedMotion } from '../../components/GlobeHero/hooks/useReducedMotion';
+import { fill, plural } from '../i18n/currency';
 import { MERGE_BANDS, mergeMilestones, mergePoints } from '../auth/player';
 import { PerfectBar } from './hud';
 import { sendMove } from '../api/consumer';
@@ -16,6 +18,8 @@ import {
   type Board,
   type Direction,
 } from './board2048';
+import { BakeryScene } from './bakery/scene';
+import { useSceneCanvas, type SceneHost } from './sceneStage';
 
 /**
  * 2048.
@@ -42,13 +46,17 @@ import {
  * mirror through `mergePoints` and are not ranked — the same arrangement Memory
  * Match has.
  *
- * ## One accent, sixteen values
+ * ## The picture is a scene, and the scene decides nothing
  *
- * The original game gives every value its own colour, which this palette cannot
- * (see the two-colour rule in the root `CLAUDE.md`). A tile's value is carried
- * by the accent's **strength** instead — `--mg-level` is log2 of the value and
- * the sheet turns it into an alpha, going solid from 256 up — so a bigger tile
- * reads as a heavier one, in both themes, and the number on it says the rest.
+ * The board is drawn by `bakery/scene.ts` — Pico's counter, a wooden tray, and
+ * glazed tiles whose glaze climbs with their value (see `bakery/config.ts` for
+ * the ladder and why it is allowed colours). This component tells the scene
+ * what happened — tiles slid, a tile arrived, the server answered, a swipe went
+ * nowhere — at the same lines where it updates its own state, and the scene
+ * animates it. The rules are untouched by it: the board, the score, the moves
+ * and every request are exactly what they were when the board was sixteen
+ * `<span>`s. Those spans are still here, visually hidden, so a screen reader
+ * reads the same sixteen cells it always did.
  */
 
 interface ServerView {
@@ -92,6 +100,7 @@ export function Merge2048({
   onQuit: () => void;
 }) {
   const copy = useCopy().games;
+  const [language] = useLanguage();
   const remote = session && serverBoard?.board?.length === SIZE * SIZE ? session : null;
 
   const [board, setBoard] = useState<Board>(() => (remote ? serverBoard!.board.slice() : newLocalBoard()));
@@ -101,9 +110,32 @@ export function Merge2048({
   const [over, setOver] = useState(() => !canMove(board));
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
-  /* The cell the last spawn landed in, keyed by move so the same cell twice
-     still replays the arrival. */
-  const [arrived, setArrived] = useState<{ index: number; move: number } | null>(null);
+
+  /* ── the scene ── */
+  const { theme } = useTheme();
+  const reduced = useReducedMotion();
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const boardEl = useRef<HTMLDivElement>(null);
+  const scene = useRef<BakeryScene | null>(null);
+  const host = useRef<SceneHost | null>(null);
+  if (scene.current === null) {
+    /* Made on the first render, before there is an element: it reads the
+       board's box through this getter when the stage first measures, and
+       nothing paints before that. */
+    scene.current = new BakeryScene(() => boardEl.current);
+    host.current = scene.current;
+  }
+  scene.current.setTheme(theme);
+  scene.current.setReduced(reduced);
+  const stage = useSceneCanvas(canvas, host, reduced);
+  /* The opening board grows into its sockets — once, on mount. The board read
+     here is the first render's, which is the dealt one. */
+  const opening = useRef(board);
+  useEffect(() => {
+    scene.current?.intro(opening.current);
+    stage.invalidate();
+  }, [stage]);
+  useEffect(() => stage.invalidate(), [theme, stage]);
 
   /* The server's last word, for putting the board back when a move fails. */
   const confirmed = useRef<ServerView>({ board, spawned: null, score: 0, moves: 0, best, over });
@@ -121,8 +153,14 @@ export function Merge2048({
       if (pending || over || finished.current) return;
       const slid = slide(board, direction);
       /* Not a move in 2048 — and not sent, since the server would refuse it. */
-      if (!slid.moved) return;
+      if (!slid.moved) {
+        scene.current?.refuse(direction);
+        stage.invalidate();
+        return;
+      }
       setFailed(false);
+      scene.current?.slide(board, direction);
+      stage.invalidate();
 
       if (!remote) {
         const placed = spawnLocal(slid.board);
@@ -131,7 +169,7 @@ export function Merge2048({
         setScore((value) => value + slid.gained);
         setMoves(nextMoves);
         setBest((value) => Math.max(value, maxTile(placed.board)));
-        setArrived({ index: placed.index, move: nextMoves });
+        scene.current?.spawn(placed.index, placed.board[placed.index] ?? 0);
         setOver(!canMove(placed.board));
         return;
       }
@@ -150,7 +188,8 @@ export function Merge2048({
           setMoves(view.moves);
           setBest(view.best);
           setOver(view.over);
-          if (view.spawned && view.spawned.index >= 0) setArrived({ index: view.spawned.index, move: view.moves });
+          scene.current?.settle(view.board, view.spawned);
+          stage.invalidate();
         })
         .catch(() => {
           /* Back to the last board the server confirmed. The swipe can simply
@@ -161,10 +200,12 @@ export function Merge2048({
           setScore(last.score);
           setMoves(last.moves);
           setFailed(true);
+          scene.current?.snap(last.board);
+          stage.invalidate();
         })
         .finally(() => setPending(false));
     },
-    [board, moves, over, pending, remote],
+    [board, moves, over, pending, remote, stage],
   );
 
   /* The arrow keys and WASD, while the round is on screen. Default prevented so
@@ -182,6 +223,12 @@ export function Merge2048({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [move]);
+
+  /* Pico's face follows the board: downcast once no swipe can move it. */
+  useEffect(() => {
+    scene.current?.setOver(over);
+    stage.invalidate();
+  }, [over, stage]);
 
   /* A finished board stays up for a beat, so the last merge is seen. */
   useEffect(() => {
@@ -202,7 +249,7 @@ export function Merge2048({
           <span aria-hidden> · </span>
           {fill(copy.merge.best, { tile: String(best) })}
         </span>
-        <span className="round-clock mg-moves">{fill(copy.merge.moves, { n: String(moves) })}</span>
+        <span className="round-clock mg-moves">{fill(plural(language, moves, copy.merge.moves), { n: String(moves) })}</span>
       </div>
       {/* 2048 is priced on its largest tile through the rulebook's bands, so
           the bar steps band to band rather than creeping — the honest picture
@@ -212,10 +259,10 @@ export function Merge2048({
         label={copy.perfectProgress}
       />
 
+      {/* The stage takes the swipes, not only the tray: on a phone the scene
+          round the board is where a thumb lands as often as not. */}
       <div
-        className="mg-board"
-        role="group"
-        aria-label={copy.merge.boardLabel}
+        className="mg-stage"
         data-pending={pending ? 'true' : undefined}
         onPointerDown={(event) => {
           origin.current = { x: event.clientX, y: event.clientY };
@@ -231,23 +278,14 @@ export function Merge2048({
           origin.current = null;
         }}
       >
-        {board.map((value, index) => {
-          const level = value > 0 ? Math.log2(value) : 0;
-          const fresh = arrived?.index === index;
-          return (
-            <span
-              /* Re-keyed on arrival so the same cell twice replays the pop. */
-              key={fresh ? `${index}-${arrived.move}` : index}
-              className="mg-cell"
-              data-value={value || undefined}
-              data-fresh={fresh ? 'true' : undefined}
-              data-big={value >= 256 ? 'true' : undefined}
-              style={{ '--mg-level': level } as CSSProperties}
-            >
+        <canvas ref={canvas} className="mg-canvas" aria-hidden />
+        <div ref={boardEl} className="mg-board" role="group" aria-label={copy.merge.boardLabel}>
+          {board.map((value, index) => (
+            <span key={index} className="visually-hidden">
               {value > 0 ? value : ''}
             </span>
-          );
-        })}
+          ))}
+        </div>
       </div>
 
       {/* The score, for a screen reader, without reading out sixteen cells a move. */}

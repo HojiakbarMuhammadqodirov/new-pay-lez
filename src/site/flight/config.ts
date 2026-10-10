@@ -1,5 +1,12 @@
 /**
- * Tunables for Squawk's Flight, the arcade round in the L-Earn app.
+ * Tunables for Pico's Flight, the arcade round in the L-Earn app.
+ *
+ * This file is the *game* — what the engine reads. What the round looks like
+ * (the sky, the stone, the turf, Pico's hover and tumble) is `scene.ts`, and
+ * nothing there can change a run. A few blocks below — `bird.size`, `wingHz`,
+ * `tone`, `shade` — describe the old Squawk sprite (`parrot.ts`), which the
+ * round no longer draws; they stay because the cold-open (`SquawkIntro`) and
+ * the verify pass still read them.
  *
  * Everything here is in **world units and seconds**, and that is the one place
  * this file departs from its neighbour `network/config.ts`, which works in CSS
@@ -42,7 +49,11 @@ export const FLIGHT = {
   bird: {
     /** Fixed distance from the left rail. The world moves; the parrot does not. */
     x: 16,
-    /** Sprite box. The parrot is drawn in a unit square scaled to this. */
+    /**
+     * Squawk's sprite box (`parrot.ts`, the cold-open). The round draws Pico
+     * instead, sized from `radius` so his body *is* the hit circle — about
+     * 9.6 units of box, most of it beak, crest and tail.
+     */
     size: 5,
     /**
      * Collision radius, deliberately well under half the sprite. The beak, the

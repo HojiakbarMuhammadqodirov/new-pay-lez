@@ -21,15 +21,29 @@
  * the same conversation as the first, which is what makes it a conversation
  * rather than five unrelated ones.
  *
- * ## What comes back is not prose
+ * ## What comes back is not only prose
  *
- * `Answer` is the shape `domain/assistant.ts` composes: a sentence, the `facts`
- * every figure in that sentence came from, structured `results` (venue and deal
- * cards, §10.1), one `action`, and the record ids it was `grounding` on. The
- * sentence may have been through a model — `llm.compose` — but every number in
- * it was checked against `facts` before it was returned (`onlyKnownNumbers`), so
- * **the facts are not decoration and not a debug view**: they are the receipt.
- * The panel draws them under the answer for that reason.
+ * `Answer` is the shape `domain/assistant.ts` returns, and it is the same shape
+ * whichever of its two paths answered: a sentence, the `facts` it used,
+ * structured `results` (venue, deal and directory rows, §10.1), one `action`,
+ * and the record ids it was `grounding` on. With a model configured the
+ * sentence is Claude's own answer to the question — written from tools that
+ * read this account's points, wallet, games, missions, the places on Paylez and
+ * the newcomer's guide — and every figure in it was checked against what those
+ * tools returned before the server sent it (`groundedNumbers`). Without one, or
+ * when the model fails, the server's keyword router answers instead. Either
+ * way **the facts are not decoration and not a debug view**: they are the
+ * receipt, the figures the sentence actually used. The panel draws them under
+ * the answer for that reason.
+ *
+ * ## It can take a while, and nothing here times it out
+ *
+ * A model answer is a short loop of calls with lookups between them — a few
+ * seconds usually, up to the server's fifteen-second deadline, after which the
+ * server answers from its router rather than erroring. So `ask` sets no client
+ * timeout of its own: a timer here shorter than the server's would throw away
+ * an answer that was about to arrive, and one longer would never fire. The
+ * panel's thinking turn is what covers the wait.
  *
  * `results` is deliberately typed loose. The server returns three different row
  * shapes through one field — venues, guidance services and deals — and the
@@ -49,6 +63,7 @@
  * `useApi` makes one file over.
  */
 import { ApiError, call } from './client';
+import type { NavKey } from '../content';
 
 /**
  * One figure the answer was built from.
@@ -161,6 +176,45 @@ export function isUnreachable(error: unknown): boolean {
  */
 export function resultLabel(row: AssistantResult): string | null {
   return row.name ?? row.title ?? null;
+}
+
+/**
+ * Where an answer's `action` goes on this site — or nowhere.
+ *
+ * The server writes its hrefs for two clients at once: the phone app's
+ * vocabulary (`#/learn`, `#/wallet`, `#/deals`, `#/venue/:id`) and the router's
+ * older `#/vouchers`. Most of them are not routes here — this site has no venue
+ * page and its games are `#/l-earn` — and an `<a>` pointed at one lands on the
+ * landing page, which is a link that lies about where it goes. So each is read
+ * as the page on this site that does the job, and an href that maps to none is
+ * not drawn at all: the picture-of-a-control rule, for a link.
+ *
+ * The panel labels the link with the page's own name in the reader's language
+ * rather than the server's English label, because the server's label names a
+ * place ("Get 10% off at …") this site cannot open.
+ */
+export function actionDestination(href: string): Extract<NavKey, 'learn' | 'wallet' | 'relocate'> | null {
+  const section = /^#\/([a-z-]+)/.exec(href.trim())?.[1];
+  switch (section) {
+    case 'learn':
+    case 'l-earn':
+    case 'play':
+    case 'missions':
+      return 'learn';
+    case 'wallet':
+    case 'vouchers':
+    case 'deals':
+    case 'deal':
+    case 'venue':
+    case 'stamps':
+    case 'shop':
+      return 'wallet';
+    case 'relocate':
+    case 'guide':
+      return 'relocate';
+    default:
+      return null;
+  }
 }
 
 /** The quiet second line on a result card: what it is, and where. */

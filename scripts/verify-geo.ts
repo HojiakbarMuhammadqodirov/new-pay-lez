@@ -127,6 +127,8 @@ import { RETIRED_IDS, toAccount } from '../src/site/auth/directory';
 import { FLIGHT } from '../src/site/flight/config';
 import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, speedAt, stepBird } from '../src/site/flight/engine';
 import { PARROT_PARTS, PART_STYLES } from '../src/site/flight/parrot';
+import { SCENE } from '../src/site/flight/scene';
+import { picoBodyRadiusAt, picoSizeForBodyRadius } from '../src/site/pico';
 import {
   ADMIN_TABS,
   BUSINESS_CATEGORIES,
@@ -155,7 +157,7 @@ import {
    dashboard's arrays are index-aligned with the seeds below, and a stale index
    renders `undefined` instead of throwing. */
 import { en } from '../src/site/i18n/en';
-import { CURRENCIES, fill, money } from '../src/site/i18n/currency';
+import { CURRENCIES, fill, money, plural, type Counted } from '../src/site/i18n/currency';
 import {
   HEAT_HOURS,
   PD_ALLOCATION,
@@ -2927,6 +2929,33 @@ console.log('\nflying — the sprite');
   check('every part has a positive size', PARROT_PARTS.every((p) => p.w > 0 && p.h > 0));
 }
 
+console.log('\nflying — the picture');
+{
+  /*
+   * The round is drawn by `flight/painter.ts` and the hit test is the
+   * engine's, and nothing makes the two agree except these. A picture that
+   * drifts from its hitbox is the unfairness the engine's comments spend
+   * paragraphs avoiding: a bird that dies before it touches, or a floor drawn
+   * well above the line the run actually ends on.
+   */
+  const size = picoSizeForBodyRadius(FLIGHT.bird.radius);
+  check('Pico is drawn with his body on the hit circle',
+    Math.abs(picoBodyRadiusAt(size) - FLIGHT.bird.radius) < 1e-9,
+    `box ${size.toFixed(2)} units, body ${picoBodyRadiusAt(size).toFixed(2)} vs ${FLIGHT.bird.radius}`);
+  /* Soil within two units of the floor, so he sinks into the turf by less
+     than his own radius before the crash is called. */
+  const soil = FLIGHT.worldHeight - SCENE.ground.soil;
+  check('the turf is drawn within two units of the floor', soil > 0 && soil <= 2, `${soil.toFixed(1)} units`);
+  check('…and only soft grass rises above it', SCENE.ground.turf < SCENE.ground.soil && SCENE.ground.blades < SCENE.ground.turf);
+  /* Stone may only overhang a column leniently — a sliver the bird can
+     brush and live — never by enough to read as a wider gate. */
+  check('a capital overhangs its column by half a unit at most', SCENE.column.overhang <= 0.5,
+    `${SCENE.column.overhang}`);
+  check('…and nothing soft hangs into a gap by more than a tenth of it',
+    SCENE.column.moss <= FLIGHT.pipe.gap / 10 && SCENE.column.drip <= FLIGHT.pipe.gap / 10,
+    `moss ${SCENE.column.moss}, drip ${SCENE.column.drip} of ${FLIGHT.pipe.gap}`);
+}
+
 console.log('\nthe local quiz follows the profile, not the language');
 {
   /*
@@ -3625,6 +3654,82 @@ console.log('\nthe arcade games, as the server plays them');
     Array.from({ length: arcade.DOODLE_PLATFORMS }, (_, n) => arcade.doodleGap(n)).every((gap) => gap < 0.32));
   check('the arcade scale: nothing pays nothing, anything pays at least two, perfect pays eighteen',
     arcade.arcadePoints(0) === 0 && arcade.arcadePoints(1) === 2 && arcade.arcadePoints(100) === 18);
+
+  /*
+   * ── every round ends ──
+   *
+   * Each game's clock is the `roundSeconds` column of the server's table, read
+   * as text like the rates above, so the card, the header's countdown and the
+   * server's arithmetic cannot name three different rounds.
+   */
+  {
+    const table = readFileSync(new URL('../server/config.ts', import.meta.url), 'utf8')
+      .match(/export const ARCADE_ECONOMY[^=]*=\s*\{([\s\S]*?)\n\};/)?.[1] ?? '';
+    const clock = (game: string) => Number(table.match(new RegExp(`\\n  ${game}: \\{[^}]*roundSeconds: (\\d+)`))?.[1]);
+    check('Snake’s clock is the server’s', arcade.SNAKE_ROUND_MS === clock('snake') * 1000, String(clock('snake')));
+    check('…Bounce Ball’s', arcade.BREAKOUT_ROUND_SECONDS === clock('breakout'), String(clock('breakout')));
+    check('…Doodle Jump’s', arcade.DOODLE_ROUND_SECONDS === clock('doodle_jump'), String(clock('doodle_jump')));
+    check('…Zuma’s', arcade.ZUMA_ROUND_SECONDS === clock('zuma'), String(clock('zuma')));
+    check('…Canon Numbers’', cannonConfig.ROUND_SECONDS === clock('cannon_numbers'), String(clock('cannon_numbers')));
+    check('…and Food Ninja’s', ninjaField.DURATION_MS === clock('food_ninja') * 1000, String(clock('food_ninja')));
+
+    /* Snake: the same case `verify:api` pins on the server's replay — a snake
+       circling an eight-cell loop with its food parked in the far corner never
+       eats and never crashes, so only the clock ends it, on the same tick. */
+    const corner = Array.from({ length: arcade.SNAKE_FOOD_LIST }, () => arcade.SNAKE_COLS * arcade.SNAKE_ROWS - 1);
+    const loop: Record<number, arcade.Dir> = { 0: 2, 2: 3, 4: 0, 6: 1 };
+    let circling = arcade.snakeStart(corner);
+    while (!circling.dead && !arcade.snakeOutOfTime(circling, arcade.SNAKE_ROUND_MS)) {
+      circling = arcade.snakeStep(circling, corner, loop[circling.tick % 8]);
+    }
+    check('Snake’s clock ends a round that would otherwise never end, on tick 642 (89.88 s) — the server’s tick',
+      !circling.dead && circling.eaten === 0 && circling.tick === 642 && circling.ms === 89_880,
+      `${circling.tick} ticks, ${circling.ms} ms`);
+
+    /*
+     * Doodle Jump: fixed steps, so the climb is the same at any frame rate,
+     * the summit ends it won, and a jumper nobody steers ends on the clock
+     * instead of bouncing for ever. The autopilot steers for the next platform
+     * up, as the app's own test does, and is held to the server's rate bound.
+     */
+    const xs = arcade.doodlePlatforms(rng).slice(0, arcade.DOODLE_PERFECT);
+    const centres = xs.map(arcade.doodleCentre);
+    const heights = arcade.doodleHeights(xs.length);
+    const limits = { summit: centres.length, seconds: arcade.DOODLE_ROUND_SECONDS };
+    const doodleRow = table.match(/\n  doodle_jump: \{([^}]*)\}/)?.[1] ?? '';
+    const perSecond = Number(doodleRow.match(/unitsPerSecond: ([\d.]+)/)?.[1]);
+    const allowance = Number(doodleRow.match(/allowance: (\d+)/)?.[1]);
+    const climbs = [25, 60, 144].map((hz) => {
+      const state = arcade.doodleStart();
+      let withinBound = true;
+      let peak = 0;
+      while (!state.end) {
+        const next = centres[Math.min(state.reached, centres.length - 1)];
+        arcade.doodleAdvance(state, 1 / hz, arcade.doodleSteerToward(state.x, next), centres, heights, limits);
+        if (state.reached > Math.floor(arcade.doodleTime(state) * perSecond) + allowance) withinBound = false;
+        if (state.reached === 0) peak = Math.max(peak, state.y);
+      }
+      return { hz, end: state.end, reached: state.reached, seconds: arcade.doodleTime(state), withinBound, peak };
+    });
+    check('Doodle Jump: an autopilot reaches the summit, which ends the round won',
+      climbs.every((c) => c.end === 'summit' && c.reached === arcade.DOODLE_PERFECT),
+      climbs.map((c) => `${c.hz}Hz ${c.end} ${c.reached}`).join(', '));
+    check('…at the same moment at 25, 60 and 144 frames a second (fixed steps)',
+      Math.max(...climbs.map((c) => c.seconds)) - Math.min(...climbs.map((c) => c.seconds)) < 0.05,
+      climbs.map((c) => `${c.hz}Hz ${c.seconds.toFixed(2)}s`).join(', '));
+    check('…well inside the clock', climbs.every((c) => c.seconds < arcade.DOODLE_ROUND_SECONDS / 1.5));
+    check('…never faster than the server believes a climb can be', climbs.every((c) => c.withinBound));
+    check('…and a bounce clears the widest gap at every frame rate', climbs.every((c) => c.peak > 0.3 && c.peak <= arcade.DOODLE.peak));
+    const idle = arcade.doodleStart();
+    while (!idle.end) arcade.doodleAdvance(idle, 1 / 60, 0, centres, heights, limits);
+    check('…while a jumper nobody steers is ended by the clock, not left bouncing',
+      idle.end === 'time' && Math.abs(arcade.doodleTime(idle) - arcade.DOODLE_ROUND_SECONDS) < 1e-6,
+      `${idle.end} at ${arcade.doodleTime(idle)}`);
+    const hidden = arcade.doodleStart();
+    arcade.doodleAdvance(hidden, 30, 0, centres, heights, limits);
+    check('…and a frame thirty seconds long (a tab back from the background) is not thirty seconds of climb',
+      arcade.doodleTime(hidden) <= arcade.DOODLE.maxFrame + 1e-9);
+  }
 }
 
 console.log('\nthe live rate table, over the built-in one');
@@ -5843,6 +5948,53 @@ console.log('\nWord Builder clues, in the reader\'s language');
       check(`…and no ${code} clue spells its answer`, leaks.length === 0, leaks.map((r) => r[0]).join(', '));
     }
   }
+}
+
+console.log('\nCounted phrases agree with their number');
+{
+  /*
+   * `plural()` picks a wording by `Intl.PluralRules`, so what can go wrong is
+   * the dictionary: a form missing its hole prints "Streak: day", and a
+   * three-form language left with one form is "1 dni" again. The day counts are
+   * the hand-checked cases — 1, 2, 5, 12, 21 and 22 between them reach every
+   * category all five languages use, and 21 is where Polish and Russian part.
+   */
+  const streak = (code: LanguageCode, n: number) =>
+    fill(plural(code, n, LANGUAGES[code].games.resultStreak), { streak: String(n) });
+  for (const code of LANGUAGE_ORDER) {
+    const g = LANGUAGES[code].games;
+    const counted: Array<[Counted, string]> = [
+      [g.resultStreak, '{streak}'],
+      [g.flight.resultScore, '{cleared}'],
+      [g.memory.resultScore, '{pairs}'],
+      ...[g.memory.moves, g.merge.moves, g.food.movesLeft, g.cannon.timeLabel, g.snake.resultScore,
+        g.breakout.resultScore, g.doodle.resultScore, g.zuma.resultScore, g.ninja.resultScore]
+        .map((f): [Counted, string] => [f, '{n}']),
+    ];
+    const lost = counted.flatMap(([f, hole]) =>
+      (typeof f === 'string' ? [f] : Object.values(f)).filter((t) => !t?.includes(hole)));
+    check(`${code}: every counted form keeps its number`, lost.length === 0, lost.join(' | '));
+  }
+  check('en: 1 move, 1 brick, 1 second left',
+    fill(plural('en', 1, en.games.memory.moves), { n: '1' }) === '1 move' &&
+      fill(plural('en', 1, en.games.breakout.resultScore), { n: '1' }) === '1 brick broken' &&
+      fill(plural('en', 1, en.games.cannon.timeLabel), { n: '1' }) === '1 second left');
+  check('en: 1 day, 2 days', streak('en', 1).endsWith(' 1 day') && streak('en', 2).endsWith(' 2 days'));
+  check('…and 1 gap flown',
+    fill(plural('en', 1, en.games.flight.resultScore), { cleared: '1' }) === '1 gap flown');
+  check('pl: 1 dzień, 2/22 dni, 5/12/21 dni',
+    streak('pl', 1).endsWith(' 1 dzień') && [2, 5, 12, 21, 22].every((n) => streak('pl', n).endsWith(` ${n} dni`)),
+    streak('pl', 1));
+  check('ru: 1/21 день, 2/22 дня, 5/12 дней',
+    [1, 21].every((n) => streak('ru', n).endsWith(` ${n} день`)) &&
+      [2, 22].every((n) => streak('ru', n).endsWith(` ${n} дня`)) &&
+      [5, 12].every((n) => streak('ru', n).endsWith(` ${n} дней`)),
+    [1, 2, 5, 12, 21, 22].map((n) => streak('ru', n)).join(' / '));
+  check('uk: 1/21 день, 2/22 дні, 5/12 днів',
+    [1, 21].every((n) => streak('uk', n).endsWith(` ${n} день`)) &&
+      [2, 22].every((n) => streak('uk', n).endsWith(` ${n} дні`)) &&
+      [5, 12].every((n) => streak('uk', n).endsWith(` ${n} днів`)),
+    [1, 2, 5, 12, 21, 22].map((n) => streak('uk', n)).join(' / '));
 }
 
 console.log('\nThe "Get the app" QR codes');

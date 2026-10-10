@@ -34,6 +34,7 @@ import { createApi } from './http/server.ts';
 import { allRoutes } from './http/routes/index.ts';
 import { startScheduler } from './jobs.ts';
 import * as email from './ports/email.ts';
+import * as llm from './ports/llm.ts';
 import { reconcileStock as reconcileGiftStock } from './domain/giftCards.ts';
 import * as push from './ports/push.ts';
 import { gateOn } from './domain/verification.ts';
@@ -378,6 +379,11 @@ export async function main(): Promise<void> {
       : 'push: local — notifications go to the inbox; no browser is pushed (PAYLEZ_PUSH)',
   );
   console.log(`email confirmation gate on spending: ${gateOn() ? 'on' : 'off'} (PAYLEZ_VERIFY_TO_SPEND)`);
+  /* Which assistant this server runs — the model, named, or the keyword
+     router — because the model call used to be invisible from the outside.
+     Never the key. Failures are logged one line each as they happen. */
+  console.log(llm.bootLine());
+  for (const warning of llm.bootWarnings()) console.warn(warning);
 
   /* Part C's console is unreachable without this — see `provisionAdmin`. It is
      reported either way, because "the operations console has no way in" is not

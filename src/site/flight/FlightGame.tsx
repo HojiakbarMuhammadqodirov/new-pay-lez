@@ -1,7 +1,8 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useReducedMotion } from '../../components/GlobeHero/hooks/useReducedMotion';
-import { useCopy } from '../i18n/context';
-import { fill } from '../i18n/currency';
+import { useCopy, useLanguage } from '../i18n/context';
+import { fill, plural } from '../i18n/currency';
+import { AnimatedPico, picoBlinkAt } from '../pico';
 import { usePalette } from '../theme/context';
 import { FLIGHT } from './config';
 import {
@@ -16,10 +17,11 @@ import {
   type Bird,
   type Pipe,
 } from './engine';
-import { drawParrot, roundRect, wingFrame, type ParrotSkin } from './parrot';
+import { FlightPainter, type FlightFrame } from './painter';
+import { SCENE, type SceneTone } from './scene';
 
 /**
- * Squawk's Flight — the one round in L-Earn that is played rather than answered.
+ * Pico's Flight — the one round in L-Earn that is played rather than answered.
  *
  * Canvas 2D, and structured like `site/network/NetworkWeb.tsx`: the world lives
  * in plain `let`s inside a single effect, never in React state, because a
@@ -27,6 +29,16 @@ import { drawParrot, roundRect, wingFrame, type ParrotSkin } from './parrot';
  * page down with it. Only three things cross back into React — the score, which
  * changes about once every one and a half seconds, and the two overlays. None of
  * those is per-frame work.
+ *
+ * **Two halves, and only one of them is the game.** The simulation — `step`,
+ * `end`, the input handler and everything they touch — is exactly the engine's,
+ * and nothing about the picture feeds back into it. The picture is
+ * `painter.ts` (the art) and `scene.ts` (its palette and tunables), fed a
+ * snapshot each frame by `dress` and `draw` below. Pico's body is drawn *on* the
+ * hit circle (`anchor: 'body'`, sized from `FLIGHT.bird.radius`), so what
+ * collides is what you see; everything else he does — the hover before the
+ * first tap, the wing answering each press, the lean, the tumble after a crash —
+ * is cosmetic state the engine never reads.
  *
  * Four places where this deliberately departs from the backdrop next door, each
  * of which is a bug if it gets tidied away:
@@ -37,85 +49,19 @@ import { drawParrot, roundRect, wingFrame, type ParrotSkin } from './parrot';
  *  2. Positions are world units, not CSS pixels (see `config.ts`). A backdrop
  *     may store pixels; a bird that stored pixels would be teleported into a
  *     column by a phone rotation.
- *  3. Nothing composites with `lighter`, even on the dark theme where the house
- *     pattern does. The parrot's beak, feet and eye are near-black in both
- *     themes and additive blending would erase them. `tone` picks the alpha
- *     budget in `FLIGHT.tone` and nothing else.
+ *  3. The scene is drawn opaque, source-over, on both themes. The house pattern
+ *     composites with `lighter` on the dark theme; here only the runes do, and
+ *     only on night stone — Pico's eye and bill are dark and additive blending
+ *     would erase them.
  *  4. A backgrounded tab pauses rather than continuing. The `dt` clamp already
  *     stops a five-second gap being integrated in one step, but flying on
  *     unwatched would cost a real life for something the player did not do.
  */
 
-/** `#rgb` / `#rrggbb` to the `r,g,b` triplet canvas colour strings want. */
-function toRgb(hex: string): string {
-  const raw = hex.replace('#', '');
-  const full =
-    raw.length === 3
-      ? raw
-          .split('')
-          .map((c) => c + c)
-          .join('')
-      : raw;
-  const value = Number.parseInt(full, 16);
-  return `${(value >> 16) & 255},${(value >> 8) & 255},${value & 255}`;
-}
-
-/** One tone's alpha budget. Structural, so both entries in `FLIGHT.tone` fit. */
-interface ToneAlpha {
-  stage: number;
-  pipe: number;
-  edge: number;
-  cap: number;
-}
-
-interface Skin extends ParrotSkin {
-  rgb: string;
-  alpha: ToneAlpha;
-}
-
-/** `#rrggbb` to its three channels. */
-function channels(hex: string): [number, number, number] {
-  const raw = hex.replace('#', '');
-  const full =
-    raw.length === 3
-      ? raw
-          .split('')
-          .map((c) => c + c)
-          .join('')
-      : raw;
-  const value = Number.parseInt(full, 16);
-  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-}
-
-/** `t` of the way from `from` to `to`, as an opaque colour string. */
-function mix(from: string, to: string, t: number): string {
-  const a = channels(from);
-  const b = channels(to);
-  const at = (i: number) => Math.round(a[i] + (b[i] - a[i]) * t);
-  return `rgb(${at(0)},${at(1)},${at(2)})`;
-}
-
-function makeSkin(primary: string, background: string, onPrimary: string, tone: 'glow' | 'ink'): Skin {
-  const shade = FLIGHT.shade[tone];
-  return {
-    rgb: toRgb(primary),
-    alpha: FLIGHT.tone[tone],
-    body: primary,
-    /*
-     * Mixed toward the page rather than alpha'd over the body. These shapes sit
-     * on top of a solid accent, and the accent at 30% over the accent is the
-     * accent — the belly and the wing would composite to nothing at all. See the
-     * note on `shade` in `config.ts`.
-     */
-    soft: mix(primary, background, shade.belly),
-    wing: mix(primary, background, shade.wing),
-    ink: onPrimary,
-    eye: background,
-  };
-}
-
 /** How long the crash or the finish is held on screen before the result card. */
 const BEAT_MS = 1100;
+
+const TAU = Math.PI * 2;
 
 interface FlightGameProps {
   /** The row from `GAMES`; `questions` is the gap target. */
@@ -127,6 +73,7 @@ interface FlightGameProps {
 
 export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: FlightGameProps) {
   const copy = useCopy().games;
+  const [language] = useLanguage();
   const palette = usePalette();
   const reduced = useReducedMotion();
 
@@ -147,11 +94,12 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
   const [outcome, setOutcome] = useState<{ won: boolean; cleared: number } | null>(null);
 
   /* Read inside `draw()` rather than closed over, so a theme switch mid-flight
-     repaints the next frame instead of restarting the round. */
-  const skin = useRef(makeSkin(palette.primary, palette.background, palette.onPrimary, palette.tone));
+     repaints the next frame — the painter rebuilds its art once — instead of
+     restarting the round. */
+  const look = useRef<{ tone: SceneTone; accent: string }>({ tone: palette.tone, accent: palette.primary });
   useEffect(() => {
-    skin.current = makeSkin(palette.primary, palette.background, palette.onPrimary, palette.tone);
-  }, [palette.primary, palette.background, palette.onPrimary, palette.tone]);
+    look.current = { tone: palette.tone, accent: palette.primary };
+  }, [palette.tone, palette.primary]);
 
   /* See note 1 in the header. */
   const onDoneRef = useRef(onDone);
@@ -177,7 +125,8 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
 
     /* Motion that is not the game itself is switched off when the player got
        here through the reduced-motion gate. The columns still move; they are
-       the game. Everything decorative holds still. */
+       the game. Everything decorative holds still — the sky, the turf, the
+       weather, the feathers and Pico's wing and lean. */
     const calm = gated.current;
     const animateWing = !calm || FLIGHT.calm.wing;
     const animateTilt = !calm || FLIGHT.calm.tilt;
@@ -201,6 +150,7 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
 
     let width = 0;
     let height = 0;
+    let dpr = 1;
     /** CSS pixels per world unit; the only thing a resize recomputes. */
     let ppu = 1;
     /* Right edge of the stage in world units — where columns enter. Annotated
@@ -214,7 +164,7 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
 
       // Capped at 2, as everywhere else: past that the extra pixels are
       // invisible and the fill rate is not.
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
       host.width = Math.round(width * dpr);
       host.height = Math.round(height * dpr);
       // Resizing the backing store resets the context, so the scale is
@@ -290,59 +240,115 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
       }
     };
 
-    /* ── drawing ────────────────────────────────────────────────────────── */
+    /* ── the picture ────────────────────────────────────────────────────────
+       Cosmetic state only. Nothing below is read by `step` or `end`; it reads
+       them. If a line here ever writes to `bird`, `pipes`, `cleared` or `mode`,
+       it has stopped being decoration. */
 
-    const draw = () => {
-      const s = skin.current;
-      ctx.clearRect(0, 0, width, height);
+    const painter = new FlightPainter();
+    const frame: FlightFrame = {
+      clock: 0,
+      plane: 0,
+      ambient: !calm,
+      pipes,
+      bird: { x: FLIGHT.bird.x, y: bird.y, tilt: 0, pose: 'flap', flap: 0.5, blink: 0 },
+    };
+    /** Ambient seconds — frozen under the gate. */
+    let clock = 0;
+    /** How far the turf has rolled, world units. Locked to the columns once flying. */
+    let plane = 0;
+    /** Wing beats, and how fast they are coming; see `SCENE.pico`. */
+    let wing = 0.5;
+    let wingRate: number = SCENE.pico.ready.beats;
+    /** Pico's lean, eased toward `tiltFor` at `FLIGHT.bird.tilt.rate`. */
+    let tilt = 0;
+    /** The waiting hover's offset; it settles to nothing once the run starts. */
+    let hover = 0;
+    /** The tumble after a crash: where Pico is, how fast he falls, his spin. */
+    let seen: 'ready' | 'flying' | 'over' = 'ready';
+    let fallX = 0;
+    let fallY = 0;
+    let fallVy = 0;
+    let spin = 0;
+    let resting = false;
 
-      // The stage: a wash of the accent, so the canvas reads as a lit panel
-      // rather than a hole cut in the page.
-      ctx.fillStyle = `rgba(${s.rgb}, ${s.alpha.stage})`;
-      ctx.fillRect(0, 0, width, height);
+    const dress = (dt: number) => {
+      if (!calm) clock += dt;
 
-      const px = (u: number) => u * ppu;
-
-      for (const pipe of pipes) {
-        const x = px(pipe.x);
-        const w = px(FLIGHT.pipe.width);
-        const gapTop = px(pipe.gapY - FLIGHT.pipe.gap / 2);
-        const gapBottom = px(pipe.gapY + FLIGHT.pipe.gap / 2);
-        const r = px(FLIGHT.pipe.radius);
-        const cap = px(FLIGHT.pipe.cap);
-
-        ctx.fillStyle = `rgba(${s.rgb}, ${s.alpha.pipe})`;
-        ctx.strokeStyle = `rgba(${s.rgb}, ${s.alpha.edge})`;
-        ctx.lineWidth = 1;
-
-        /* Both columns run past the rail so only the mouth shows a rounded end —
-           a column with four rounded corners floats, and these are meant to be
-           cut out of the frame. */
-        for (const [top, bottom] of [
-          [-r * 2, gapTop],
-          [gapBottom, height + r * 2],
-        ]) {
-          roundRect(ctx, x, top, w, bottom - top, r);
-          ctx.fill();
-          ctx.stroke();
+      if (seen !== mode) {
+        if (mode === 'over') {
+          fallX = FLIGHT.bird.x;
+          fallY = bird.y;
+          fallVy = SCENE.crash.knock;
+          spin = tilt;
+          resting = false;
+          if (!calm) painter.crash(FLIGHT.bird.x, bird.y);
         }
-
-        // The accent band across each mouth: the one solid mark on the stage,
-        // and what makes the gap read as a gate rather than as absence.
-        ctx.fillStyle = `rgba(${s.rgb}, ${s.alpha.cap})`;
-        roundRect(ctx, x, gapTop - cap, w, cap, r * 0.6);
-        ctx.fill();
-        roundRect(ctx, x, gapBottom, w, cap, r * 0.6);
-        ctx.fill();
+        seen = mode;
       }
 
-      drawParrot(ctx, s, {
-        x: px(FLIGHT.bird.x),
-        y: px(bird.y),
-        size: px(FLIGHT.bird.size),
-        tilt: animateTilt && mode === 'flying' ? tiltFor(bird.vy) : 0,
-        frame: wingFrame(elapsed, !animateWing),
-      });
+      if (mode === 'ready') {
+        if (!calm) {
+          // The world rolls past at the opening speed while Pico holds his
+          // place, so the stage reads as flight before the first tap.
+          plane += FLIGHT.pipe.speed * dt;
+          hover = Math.sin(clock * TAU * SCENE.pico.ready.hz) * SCENE.pico.ready.bob;
+        }
+        if (animateWing) wing += dt * SCENE.pico.ready.beats;
+        return;
+      }
+
+      if (mode === 'flying') {
+        if (!calm) plane += speedAt(elapsed) * dt;
+        hover *= Math.exp(-dt * 12);
+        if (animateWing) {
+          wingRate += (SCENE.pico.beats - wingRate) * Math.min(1, dt / SCENE.pico.settle);
+          wing += dt * wingRate;
+        }
+        if (animateTilt) tilt += (tiltFor(bird.vy) - tilt) * Math.min(1, dt * FLIGHT.bird.tilt.rate);
+        return;
+      }
+
+      // Over: the knocked-out tumble, under the game's own gravity, onto the turf.
+      if (calm || resting) return;
+      const floor = SCENE.ground.soil - FLIGHT.bird.radius * 0.55;
+      fallVy = Math.min(fallVy + FLIGHT.gravity * dt, FLIGHT.maxFall);
+      fallY += fallVy * dt;
+      fallX += SCENE.crash.drift * dt;
+      spin += SCENE.crash.spin * dt;
+      if (fallY >= floor) {
+        fallY = floor;
+        if (fallVy > 30) {
+          fallVy *= -0.32;
+        } else {
+          resting = true;
+          // Settle on his back at whatever quarter-turn is nearest, not mid-roll.
+          spin = Math.round(spin / (Math.PI / 2)) * (Math.PI / 2);
+        }
+      }
+    };
+
+    const draw = (dt = 0) => {
+      const l = look.current;
+      painter.configure(width, height, dpr, l.tone, l.accent);
+      frame.clock = clock;
+      frame.plane = plane;
+      frame.pipes = pipes;
+      const b = frame.bird;
+      if (mode === 'over') {
+        b.x = calm ? FLIGHT.bird.x : fallX;
+        b.y = calm ? bird.y : fallY;
+        b.tilt = calm ? 0 : spin;
+        b.pose = 'hit';
+      } else {
+        b.x = FLIGHT.bird.x;
+        b.y = bird.y + hover;
+        b.tilt = animateTilt && mode === 'flying' ? tilt : 0;
+        b.pose = 'flap';
+      }
+      b.flap = animateWing ? wing : 0.5;
+      b.blink = calm ? 0 : picoBlinkAt(clock);
+      painter.draw(ctx, frame, dt);
     };
 
     /* ── input ──────────────────────────────────────────────────────────── */
@@ -375,6 +381,12 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
         spawnClock = FLIGHT.pipe.interval;
       }
       bird = flap(bird);
+
+      /* The picture's answer to the press: the wing snaps to the top of its
+         stroke and drives down, and a couple of feathers come loose. */
+      wing = Math.floor(wing) + 0.75;
+      wingRate = SCENE.pico.burst;
+      if (!calm) painter.flap(FLIGHT.bird.x, bird.y);
     };
 
     const onHide = () => {
@@ -394,7 +406,7 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
     });
     observer.observe(host);
 
-    let frame = 0;
+    let raf = 0;
     last = performance.now();
 
     const tick = (now: number) => {
@@ -405,15 +417,16 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
 
       if (!paused) {
         step(dt);
-        draw();
+        dress(dt);
+        draw(dt);
       }
 
-      frame = requestAnimationFrame(tick);
+      raf = requestAnimationFrame(tick);
     };
-    frame = requestAnimationFrame(tick);
+    raf = requestAnimationFrame(tick);
 
     return () => {
-      cancelAnimationFrame(frame);
+      cancelAnimationFrame(raf);
       window.clearTimeout(beat);
       observer.disconnect();
       document.removeEventListener('visibilitychange', onHide);
@@ -426,6 +439,7 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
   if (!armed) {
     return (
       <div className="round fly-ready">
+        <AnimatedPico size={96} pose="idle" className="fly-ready-pico" />
         <h2>{copy.flight.motionTitle}</h2>
         <p>{copy.flight.motionBody}</p>
         <div className="fly-ready-actions">
@@ -441,22 +455,31 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
   }
 
   const flapNow = () => input.current?.();
+  const banked = score >= target;
 
   return (
     <div className="round fly">
       {/*
         The original shows a bare number and nothing else, and it is right to:
         mid-flight there is no attention spare for a fraction. The target lives
-        under it as a goal line that disappears the moment it is met, and the
-        pill fills to say the round is banked — from there on every gap is
-        profit and a crash costs no life.
+        under it as a goal line — one pip a gap — that disappears the moment it
+        is met, and the pill fills to say the round is banked: from there on
+        every gap is profit and a crash costs no life.
+
+        Keyed on the score so each gap re-mounts the pill and its pop plays
+        once; the score is React state already, so this costs nothing per frame.
       */}
       <div className="fly-top">
-        <span className="fly-hud" data-banked={score >= target ? 'true' : undefined}>
+        <span className="fly-hud" key={score} data-banked={banked ? 'true' : undefined}>
           {score}
         </span>
-        {score < target && (
+        {!banked && (
           <span className="fly-goal">
+            <span className="fly-pips" aria-hidden>
+              {Array.from({ length: target }, (_, i) => (
+                <i key={i} data-on={i < score ? 'true' : undefined} />
+              ))}
+            </span>
             {fill(copy.flight.goal, { target: String(target) })}
           </span>
         )}
@@ -499,18 +522,36 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
       >
         <canvas ref={canvasRef} />
 
-        {!started && !outcome && <span className="fly-hint">{copy.flight.hint}</span>}
+        {!started && !outcome && (
+          <span className="fly-hint">
+            <i className="fly-tap" aria-hidden />
+            {copy.flight.hint}
+          </span>
+        )}
         {held && !outcome && <span className="fly-hint">{copy.flight.resume}</span>}
 
         {/*
           Every run ends in a column — that is what endless means — so the veil
           states the one fact and lets `data-won` carry whether the round was
-          banked on the way. The result card behind it does the verdict.
+          banked on the way. It waits a beat (`.fly-over` in the sheet) so the
+          crash itself — the burst, the tumble — is seen before it is covered.
+          Pico on the veil takes the verdict the text leaves to the result card:
+          cheering for a banked round, downcast for one that fell short.
         */}
         {outcome && (
           <span className="fly-over" data-won={outcome.won ? 'true' : undefined}>
+            <span className="fly-over-pico">
+              {outcome.won && (
+                <span className="fly-burst" aria-hidden>
+                  {Array.from({ length: 10 }, (_, i) => (
+                    <i key={i} style={{ '--i': i } as CSSProperties} />
+                  ))}
+                </span>
+              )}
+              <AnimatedPico size={88} pose={outcome.won ? 'happy' : 'sad'} />
+            </span>
             <b>{copy.flight.crashed}</b>
-            <span>{fill(copy.flight.resultScore, { cleared: String(outcome.cleared) })}</span>
+            <span>{fill(plural(language, outcome.cleared, copy.flight.resultScore), { cleared: String(outcome.cleared) })}</span>
           </span>
         )}
       </button>

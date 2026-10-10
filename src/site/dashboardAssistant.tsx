@@ -88,20 +88,25 @@ import { DEMO_MODE } from './demoMode';
  *   `openDrawer` with the draft as its prefill, and the owner publishes there.
  *   v3's "✎ Edit" is the same press and is not drawn twice.
  *
- * ## The sentences are written here, from the server's figures
+ * ## The router's sentences are written here; the model's are drawn as sent
  *
- * The partner composer answers in English, writes money into its prose as raw
- * minor units and prints a withheld metric as `null`. So for every shape it
- * recognises, this screen says the same thing from the same structured result,
- * in the reader's language and currency; a shape it does not recognise is
- * quoted verbatim and marked as English. **Every figure arrives through a
+ * The server's keyword router answers in English, writes money into its prose
+ * as raw minor units and prints a withheld metric as `null`. So for every report
+ * shape it sends, this screen says the same thing from the same structured
+ * result, in the reader's language and currency; a shape it does not recognise
+ * is quoted verbatim and marked as English. **Every figure arrives through a
  * `fill()` hole, and every hole is filled from a response.** Nothing here
  * computes a number the server did not send, beyond dividing two that it did.
  *
+ * With a model on the server, an answer can instead be `prose` (`readAnswer`):
+ * the model's own reply in the reader's language, from tools that read this
+ * venue, every figure checked on the server against what they returned. That is
+ * drawn as written, with its facts as the receipt under it.
+ *
  * v3's footnote ("I read Polish, Russian, Ukrainian, Uzbek, Turkish and
- * English") is not carried over: the endpoint routes on English keywords, so a
- * question typed in Polish is answered with the month's overview. The
- * footnote says what is true instead.
+ * English") is not carried over: without a model the endpoint routes on
+ * English keywords, so a question typed in Polish is answered with the month's
+ * overview. The footnote says what is true instead.
  */
 
 /* ────────────────────────────────────────────────────────────────── voice ── */
@@ -637,6 +642,11 @@ function AnswerBody({
       action = pointAt();
       break;
     }
+    case 'prose':
+      /* The model's own answer, already in the reader's language and checked
+         figure by figure on the server — drawn as written, not as English. */
+      action = pointAt();
+      break;
     default:
       quoted = true;
       action = pointAt();
@@ -1101,6 +1111,7 @@ function Conversation({
 }) {
   const copy = useCopy().dashboard.assistant;
   const chat = copy.chat;
+  const [language] = useLanguage();
   const { goTo } = useDashboard();
   const voice = useVoice(venue.currency);
   const destinations = useDestinations();
@@ -1202,6 +1213,7 @@ function Conversation({
           const answer = await askAssistant({
             venueId: venue.id,
             text: request.text,
+            language,
             signal: controller.signal,
           });
           settle({ id: it, at: Date.now(), from: 'it', state: 'answer', answer });
@@ -1236,7 +1248,7 @@ function Conversation({
         if (!controller.signal.aborted) setBusy(false);
       }
     },
-    [live, venue.id],
+    [live, venue.id, language],
   );
 
   /* Focus goes to the thread rather than the field after a press that removes

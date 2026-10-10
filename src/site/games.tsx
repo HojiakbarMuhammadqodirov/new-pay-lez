@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -14,7 +13,7 @@ import { SCOPES, type Scope, type Board as ServerBoard } from './api/board';
 import { cheapestCost, GIFT_CARDS_PATH, nextRung, type GiftCardStock } from './api/wallet';
 import { Icon } from './icons';
 import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
-import { fill } from './i18n/currency';
+import { fill, plural } from './i18n/currency';
 import { useAuth } from './auth/context';
 import {
   awardPoints,
@@ -62,8 +61,10 @@ import {
   type Question,
 } from './games/rounds';
 import { WordBuilder, type ServerWord } from './games/WordBuilder';
+import { QuizRound } from './games/QuizRound';
+import { Result } from './games/ResultCard';
 import { VerifyEmail } from './VerifyEmail';
-import { InviteCard } from './InviteCard';
+import { InviteFriends } from './InvitePanel';
 import { PATHS } from './router';
 import { useReveal } from './useReveal';
 import '../components/GlobeHero/ui/flagFont.css';
@@ -694,414 +695,13 @@ function StreakRow({ player }: { player: PlayerState }) {
   );
 }
 
-/* ──────────────────────────────────────────────────────────────── the round ── */
+/* ──────────────────────────────────────────────────── the round, the result ── */
 
-interface RoundState {
-  index: number;
-  correct: number;
-  /** The option the player just chose, held for the moment of feedback. */
-  picked: number | null;
-}
-
-function Round({
-  game,
-  questions,
-  resolve,
-  onDone,
-  onQuit,
-}: {
-  game: Game;
-  questions: Question[];
-  /**
-   * Ask the **server** whether a choice was right, when the round is a server
-   * round.
-   *
-   * Present for the four quizzes, absent for the rounds the client still builds
-   * itself. The difference it makes is a round trip per question — the server
-   * holds the answers (`game_sessions.secret`) and hands over only prompts and
-   * options, which is what makes a score it computes worth anything. A client
-   * that knew the answer could report any score it liked.
-   *
-   * `Question.answer` is `-1` on a server round for that reason: there is no
-   * answer here to compare against, and the resolver's reply is what fills the
-   * right-and-wrong marking in.
-   */
-  resolve?: (index: number, choice: number) => Promise<{ correct: boolean; answer: number }>;
-  /** Right answers, and how long the whole round took in whole seconds. */
-  onDone: (correct: number, seconds: number) => void;
-  onQuit: () => void;
-}) {
-  const copy = useCopy().games;
-  const [language] = useLanguage();
-  /* The seconds unit in the reader's language — `Intl` knows all five, the
-     same side `untilNextEnergy` takes. A bare `s` after the figure was the one
-     English letter on a translated screen. */
-  const seconds = useMemo(
-    () => new Intl.NumberFormat(language, { style: 'unit', unit: 'second', unitDisplay: 'narrow' }),
-    [language],
-  );
-  const [state, setState] = useState<RoundState>({
-    index: 0,
-    correct: 0,
-    picked: null,
-  });
-  const [left, setLeft] = useState(game.seconds);
-  const question = questions[state.index];
-
-  /*
-   * When the round started, for the speed bands in `quizSpeedBonus`.
-   *
-   * A ref, and set on the first render rather than in an effect: nothing on
-   * screen reads it — there is no round stopwatch, only the per-question one —
-   * so it must not cause a render, and an effect would start it a frame after
-   * the first question was already on screen. `useState`'s initialiser runs
-   * once, which is exactly the guarantee wanted.
-   *
-   * It measures **question one appearing to answer five landing**, which is what
-   * the bands are written against. The 900ms feedback beats between questions
-   * are inside that, deliberately: they are part of the round, they are the same
-   * for everybody, and the alternative is a clock that stops and starts four
-   * times and cannot be checked against a stopwatch.
-   */
-  const [startedAt] = useState(() => Date.now());
-
-  /*
-   * One `answer` for every way a question can end, including running out of
-   * time (`choice === -1`). Wrapped in a ref-stable callback because the timer
-   * effect below depends on it and must not restart on every render.
-   */
-  /*
-   * The right answer for the question on screen, once it is known.
-   *
-   * On a local round it is known up front and this is never written. On a
-   * server round the answer arrives with the verdict, and the buttons need it
-   * to mark which one *was* right — showing only "you were wrong" without
-   * showing what was right is the one thing a quiz must not do.
-   */
-  const [revealed, setRevealed] = useState<number | null>(null);
-
-  const answer = useCallback(
-    (choice: number) => {
-      /* The optimistic half: the press has to register now, whatever the
-         network is doing. Locking on `picked` is what stops a second press
-         landing while the first is in flight — and the timer's own `-1` cannot
-         race it either, for the same reason. */
-      let already = false;
-      setState((current) => {
-        if (current.picked !== null) {
-          already = true;
-          return current;
-        }
-        return { ...current, picked: choice };
-      });
-      if (already) return;
-
-      const index = state.index;
-
-      if (!resolve) {
-        const right = choice === questions[index].answer;
-        setRevealed(questions[index].answer);
-        if (right) setState((current) => ({ ...current, correct: current.correct + 1 }));
-        return;
-      }
-
-      void resolve(index, choice)
-        .then(({ correct, answer: right }) => {
-          setRevealed(right);
-          if (correct) setState((current) => ({ ...current, correct: current.correct + 1 }));
-        })
-        .catch(() => {
-          /* The move did not land. The question stays answered — un-answering it
-             under the player would be worse — and the server's own tally is the
-             one that pays, so a lost move is a question that scored nothing
-             rather than a round that broke. */
-          setRevealed(-1);
-        });
-    },
-    [questions, resolve, state.index],
-  );
-
-  // The clock. Restarts with each question; `answer` freezes it by setting `picked`.
-  useEffect(() => {
-    if (state.picked !== null) return;
-    setLeft(game.seconds);
-    const started = Date.now();
-    const tick = window.setInterval(() => {
-      const remaining = game.seconds - Math.floor((Date.now() - started) / 1000);
-      setLeft(Math.max(0, remaining));
-      if (remaining <= 0) {
-        window.clearInterval(tick);
-        answer(-1); // out of time counts as wrong, and moves on
-      }
-    }, 100);
-    return () => window.clearInterval(tick);
-  }, [state.index, state.picked, game.seconds, answer]);
-
-  /*
-   * Latched, for the same reason `answer` above is a `useCallback`: the beat
-   * effect below depends on it and must not restart on every render.
-   *
-   * `onDone` is `finish` in `GamesApp`, a plain arrow declared in the render
-   * body — so it is a *new function on every parent render*, and with it in the
-   * dep array each of those renders cleared the 900ms timeout and started it
-   * again. A parent re-rendering faster than the beat would postpone the next
-   * question indefinitely; one re-rendering slower just makes the beat longer
-   * than it reads. A ref is enough because nothing here needs the effect to
-   * re-run when the callback changes — it only needs to call the current one.
-   */
-  const done = useRef(onDone);
-  done.current = onDone;
-
-  /*
-   * A beat on the answer so the right one can be seen, then the next question —
-   * and now there is always a next question until the fifth.
-   *
-   * **A quiz can no longer be lost.** It used to end the moment the mistake
-   * allowance was spent, which meant two wrong answers on question two closed a
-   * round the player had paid energy for and left three questions they never
-   * saw. What that bought was a fail state on a game whose whole promise is
-   * "answer five things"; what it cost was the other three, and the chance to
-   * learn anything from them. A wrong answer is now worth nothing and nothing
-   * more than nothing.
-   */
-  useEffect(() => {
-    if (state.picked === null) return;
-    const next = window.setTimeout(() => {
-      setState((current) => {
-        if (current.index + 1 >= questions.length) {
-          done.current(current.correct, Math.round((Date.now() - startedAt) / 1000));
-          return current;
-        }
-        return { ...current, index: current.index + 1, picked: null };
-      });
-      /* Cleared with the question it belonged to. Leaving it set would mark an
-         option on the *next* question before it had been answered. */
-      setRevealed(null);
-    }, 900);
-    return () => window.clearTimeout(next);
-  }, [state.picked, state.index, questions.length, startedAt]);
-
-  const pct = (left / game.seconds) * 100;
-
-  return (
-    <div className="round">
-      <div className="round-top">
-        <span className="round-count">
-          {fill(copy.question, {
-            n: String(state.index + 1),
-            total: String(questions.length),
-          })}
-        </span>
-        <span className="round-clock" data-low={left <= 3 ? 'true' : undefined}>
-          {copy.timeUp} {seconds.format(left)}
-        </span>
-      </div>
-
-      <div className="round-bar">
-        <i style={{ width: `${pct}%` }} />
-      </div>
-
-      {question.glyph && (
-        <span className="round-glyph" aria-hidden>
-          {question.glyph}
-        </span>
-      )}
-      <h2 className="round-q">{question.prompt}</h2>
-
-      <div className="round-options">
-        {question.options.map((option, index) => {
-          /* After a pick the right answer is always marked, not just the one
-             chosen — getting it wrong is the moment you most want to be told
-             what it was. */
-          /* `revealed` is the answer once it is known — immediately on a local
-             round, and when the server replies on a server one. Until then only
-             the pressed button is marked, and it is marked as *chosen* rather
-             than as wrong: calling it wrong before the verdict arrives would be
-             a guess, and it would be wrong about a fifth of the time. */
-          const right = resolve ? revealed : question.answer;
-          const state_ =
-            state.picked === null
-              ? undefined
-              : right === null
-                ? index === state.picked
-                  ? 'picked'
-                  : undefined
-                : index === right
-                  ? 'right'
-                  : index === state.picked
-                    ? 'wrong'
-                    : undefined;
-          return (
-            <button
-              key={option}
-              type="button"
-              className="round-option"
-              data-state={state_}
-              disabled={state.picked !== null}
-              onClick={() => answer(index)}
-            >
-              {option}
-            </button>
-          );
-        })}
-      </div>
-
-      <button type="button" className="link-btn round-quit" onClick={onQuit}>
-        {copy.quit}
-      </button>
-    </div>
-  );
-}
-
-/* ───────────────────────────────────────────────────────────────── results ── */
-
-function Result({
-  won,
-  correct,
-  total,
-  points,
-  paid,
-  balance,
-  cheapest,
-  nearest,
-  streak,
-  scoreLine,
-  nextPays,
-  onAgain,
-  onBack,
-}: {
-  won: boolean;
-  correct: number;
-  total: number;
-  /** What the round paid. The headline figure. */
-  points: number;
-  /**
-   * Whether the round was ever going to pay.
-   *
-   * A practice round — one played on an empty tank — and a round where every
-   * answer went wrong both show a `0`, and only one of them is worth
-   * explaining. This is which.
-   */
-  paid: boolean;
-  /** The balance *after* the round, for the line about what it is worth. */
-  balance: number;
-  /**
-   * What the cheapest gift card on the shelf costs, or `null` for a shelf that
-   * is empty or has not answered. The card says nothing about vouchers in that
-   * case rather than quoting a price nobody set.
-   */
-  cheapest: number | null;
-  /**
-   * The nearest **venue voucher** the server found above the new balance, or
-   * null/absent. Preferred over `cheapest` when present: a named discount at a
-   * named place is the reward connection the rulebook asks every game to end
-   * on, and it is a partner-funded voucher every plan can buy — the gift-card
-   * shelf behind `cheapest` is Pro and Premium only.
-   */
-  nearest?: Finish['nearest'];
-  streak: number;
-  /** Replaces the "n / m correct" line for a round that does not ask questions. */
-  scoreLine?: string;
-  /**
-   * Whether the round behind "Again" will pay — the tank *now*, not the round
-   * that just ended. The two differ in the commonest case there is: a paid
-   * round that spent the last energy in the tank.
-   */
-  nextPays: boolean;
-  onAgain: () => void;
-  onBack: () => void;
-}) {
-  const copy = useCopy().games;
-
-  /*
-   * How far off the cheapest voucher is.
-   *
-   * The supplied games spec is emphatic about this and it is right: a bare score
-   * is a dead end, and "+40 points" means nothing until it is "+40 points, 60
-   * from a discount". This is the line that makes a second round worth playing,
-   * so it is on every result card rather than only on the good ones — **when
-   * there is a shelf to be short of.** With none, the line is dropped rather
-   * than quoting the 100 points this file used to carry.
-   */
-  const short = cheapest === null ? null : Math.max(0, cheapest - balance);
-
-  return (
-    <div className="round round-result">
-      {/*
-        The gain, at the size the mock gives it.
-
-        A round's whole feedback is one number, and it used to arrive as a line
-        of body copy between two other lines of body copy. The kicker above it
-        carries what the old `<h2>` said — won or lost — because at this size
-        the figure is the headline and a heading over it would be a second one.
-      */}
-      <span className="result-kicker" data-won={won ? 'true' : undefined}>
-        <Icon name={won ? 'trophy' : 'check'} size={14} strokeWidth={2} />
-        {won ? copy.wonTitle : copy.lostTitle}
-      </span>
-      {/* A round that paid nothing still states its figure — leaving it out
-          would make the card jump between outcomes — but not in the accent.
-          A celebratory 0 is the wrong face for the wrong news. */}
-      <b className="result-gain" data-zero={points === 0 ? 'true' : undefined}>
-        {points > 0 ? `+${points}` : '0'}
-      </b>
-      <p className="result-score">
-        {scoreLine ?? fill(copy.resultScore, { correct: String(correct), total: String(total) })}
-      </p>
-      {/* Only a round that needs explaining says anything in words, and with the
-          repeat-play taper gone there are exactly two such rounds left: the one
-          that scored nothing, and the one that was never going to pay. They
-          print the same `0` and they are not the same news — one is "you got
-          none right", the other "the tank was empty and this was practice" —
-          so the second says so rather than letting the player read it as the
-          first. `resultPoints` used to restate the figure directly above it,
-          which was fine as a line of body copy and is noise under a 4.5rem
-          one. */}
-      {!paid ? (
-        <p className="result-points">{copy.practiceResult}</p>
-      ) : (
-        points === 0 && <p className="result-points">{copy.resultNone}</p>
-      )}
-      {paid && nearest ? (
-        <p className="result-toward">
-          {fill(copy.resultTowardVenue, {
-            points: String(nearest.pointsNeeded),
-            pct: String(nearest.discountPct),
-            venue: nearest.venueName,
-          })}
-        </p>
-      ) : short !== null && (
-        <p className="result-toward">
-          {short > 0 ? fill(copy.resultToward, { points: String(short) }) : copy.resultAfford}
-        </p>
-      )}
-      <p className="result-streak">{fill(copy.resultStreak, { streak: String(streak) })}</p>
-
-      <div className="result-actions">
-        {/* Always live now. This was the press most likely to find an empty
-            tank — the round that just finished spent the last one — and it used
-            to switch itself off and say so. There is a round behind it either
-            way; what changes is whether it pays.
-
-            Labelled off `nextPays` and not off `paid`: those are two different
-            rounds. The commonest case on this card is a *paid* round that took
-            the last energy with it, where the press underneath is practice. */}
-        <button type="button" className="btn btn-solid" onClick={onAgain}>
-          {nextPays ? copy.again : copy.practice}
-        </button>
-        <a className="btn btn-ghost" href={PATHS.vouchers}>
-          {copy.resultSpend}
-        </a>
-      </div>
-      {/* Three filled-and-outlined buttons in a row is three offers of equal
-          weight, and they are not: one is what you came to do, one is what the
-          points are for, and one is a way back. The way back is a link. */}
-      <button type="button" className="link-btn result-back" onClick={onBack}>
-        {copy.backToGames}
-      </button>
-    </div>
-  );
-}
+/*
+ * The quiz round and the result card live in `games/QuizRound.tsx` and
+ * `games/ResultCard.tsx` — the shell every game is played and ends in, with
+ * its set (`games/stage/`). Their props are the ones this file always passed.
+ */
 
 /**
  * The site's game ids against the server's.
@@ -1990,8 +1590,8 @@ export function GamesApp() {
    * why the streak, the lapse and the freeze are not restated in either game.
    */
   /**
-   * The arcade games the server judges from a **report** — Snake's turns,
-   * Breakout's bricks, Doodle Jump's height, Zuma's chain — rather than from
+   * The arcade games the server judges from a **report** — Pico's Flock's
+   * turns, Pico's Ball's bricks, Pico Jump's height, Picuma's chain — rather than from
    * moves it applied. On a server round the report goes to `/finish` and the
    * local reckoning is dropped; offline it is the local reckoning that banks.
    */
@@ -2022,9 +1622,16 @@ export function GamesApp() {
     <main>
       <section className="section play" id="games-top">
         <div className="wrap wrap-narrow">
-          <div className="app-head" data-reveal>
-            <h1>{games.title}</h1>
-            <p>{games.lede}</p>
+          {/* The invite is a button here and a panel down the right edge, not a
+              section of the page — see `InvitePanel.tsx`. Beside the title
+              because that is the first place a player looks, where the card it
+              replaced stood three screens down on a phone. */}
+          <div className="app-head play-head" data-reveal>
+            <div>
+              <h1>{games.title}</h1>
+              <p>{games.lede}</p>
+            </div>
+            <InviteFriends />
           </div>
 
           {/*
@@ -2257,15 +1864,6 @@ export function GamesApp() {
           <StreakRow player={player} />
 
           {/*
-            ── invite friends ──
-
-            Under the week, above the history: something a player can *do*
-            today, where the rotating "invite a friend" line in the points card
-            above only says it pays. See `InviteCard.tsx`.
-          */}
-          <InviteCard />
-
-          {/*
             ── the stats strip ──
 
             What is left after the streak and the freezes moved out: the history,
@@ -2370,25 +1968,25 @@ export function GamesApp() {
               streak={player.streak}
               scoreLine={
                 game.kind === 'flight'
-                  ? fill(games.flight.resultScore, { cleared: String(result.correct) })
+                  ? fill(plural(language, result.correct, games.flight.resultScore), { cleared: String(result.correct) })
                   : game.kind === 'memory'
-                    ? fill(games.memory.resultScore, { pairs: String(result.correct) })
+                    ? fill(plural(language, result.correct, games.memory.resultScore), { pairs: String(result.correct) })
                     : game.kind === 'merge'
                       ? fill(games.merge.resultScore, { tile: String(mergeBest) })
                       : game.kind === 'food'
                         ? fill(games.food.resultScore, { n: String(foodScore) })
                         : game.kind === 'ninja'
-                          ? fill(games.ninja.resultScore, { n: String(ninjaSliced) })
+                          ? fill(plural(language, ninjaSliced, games.ninja.resultScore), { n: String(ninjaSliced) })
                           : game.kind === 'snake'
-                            ? fill(games.snake.resultScore, { n: String(arcadeCount) })
+                            ? fill(plural(language, arcadeCount, games.snake.resultScore), { n: String(arcadeCount) })
                             : game.kind === 'cannon'
                               ? fill(games.cannon.resultScore, { n: String(arcadeCount) })
                               : game.kind === 'breakout'
-                                ? fill(games.breakout.resultScore, { n: String(arcadeCount) })
+                                ? fill(plural(language, arcadeCount, games.breakout.resultScore), { n: String(arcadeCount) })
                                 : game.kind === 'doodle'
-                                  ? fill(games.doodle.resultScore, { n: String(arcadeCount) })
+                                  ? fill(plural(language, arcadeCount, games.doodle.resultScore), { n: String(arcadeCount) })
                                   : game.kind === 'zuma'
-                                    ? fill(games.zuma.resultScore, { n: String(arcadeCount) })
+                                    ? fill(plural(language, arcadeCount, games.zuma.resultScore), { n: String(arcadeCount) })
                     : game.kind === 'word'
                       ? fill(games.wordGame.resultScore, {
                           solved: String(result.correct),
@@ -2419,7 +2017,7 @@ export function GamesApp() {
           ) : playing && game && game.kind === 'snake' ? (
             <Snake
               session={session ?? undefined}
-              serverRound={(content as { foods: number[] } | null) ?? undefined}
+              serverRound={(content as { foods: number[]; roundMs?: number } | null) ?? undefined}
               onDone={(points, correct, won, eaten, report) => {
                 setArcadeCount(eaten);
                 finishReported(points, correct, won, report);
@@ -2513,9 +2111,10 @@ export function GamesApp() {
               onQuit={quitRound}
             />
           ) : playing && game ? (
-            <Round
+            <QuizRound
               game={game}
               questions={questions}
+              country={localCountry}
               /*
                * The verdict, from the server, one question at a time.
                *

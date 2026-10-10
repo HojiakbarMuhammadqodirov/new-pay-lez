@@ -1,16 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useReducedMotion } from '../../components/GlobeHero/hooks/useReducedMotion';
 import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
-import { usePalette } from '../theme/context';
-import { ZUMA_CHAIN, ZUMA_COLORS, arcadeMilestones, arcadePoints, localRng, zumaChain, zumaShots } from './arcade';
-import { PerfectBar, RoundClock } from './hud';
+import { useTheme } from '../theme/context';
+import {
+  ZUMA_CHAIN,
+  ZUMA_COLORS,
+  ZUMA_ROUND_SECONDS,
+  ZUMA_STEP,
+  arcadeMilestones,
+  arcadePoints,
+  localRng,
+  zumaChain,
+  zumaShots,
+} from './arcade';
+import { EndVeil, PerfectBar, ReadyVeil, RoundClock } from './hud';
+import { PicumaScene, type PicumaView } from './picuma/scene';
 
 /**
- * Zuma — a chain of balls rolls along a winding track towards a hole; shoot a
- * ball into it, and three or more of one kind touching are gone. When a gap
- * closes and the two sides match, they go too. The round ends when the chain is
- * cleared or its front reaches the hole, and it is scored on the share of the
- * chain cleared.
+ * Zuma — called **Picuma** on screen, the app's name for it — a chain of balls
+ * rolls along a winding track towards a hole; Pico shoots a ball into it, and
+ * three or more of one kind touching are gone. When a gap closes and the two
+ * sides match, they go too. The round ends when the chain is cleared or its
+ * front reaches the hole, and it is scored on the share of the chain cleared.
+ * The id stays `zuma` everywhere a machine reads it (the server's game type,
+ * `GAMES`, the economics row); only the name a player reads changed.
  *
  * ## What the server can and cannot know
  *
@@ -21,18 +35,37 @@ import { PerfectBar, RoundClock } from './hud';
  * the chain holds and what the round's duration allows. Without one both come
  * from `localRng`.
  *
- * ## Four kinds on one accent
+ * ## Four kinds, told apart by their marks
  *
- * The original paints each kind its own colour, which this palette cannot. A
- * kind here is a **mark** inside the ball — a dot, a ring, a bar, a cross —
- * drawn in the page's ground on the accent, the texture-not-hue rule the root
- * `CLAUDE.md` gives for exactly this case. The marks differ in shape, not
- * shade, so they stay apart in both themes.
+ * A kind is a **mark** cut into the ball — a dot, a ring, a bar, a cross — and
+ * the mark is what tells kinds apart. The balls are drawn as four polished
+ * temple stones (jade, gold, coral, deep teal — the app's four), so the stone
+ * is a second cue, never the only one; `picuma/config.ts` says how the marks
+ * stay first.
+ *
+ * ## The picture is `picuma/scene.ts`
+ *
+ * Everything drawn — the temple courtyard, the causeway, the idol, Pico on his
+ * branch with the next shot in his beak, the bursts — is the scene's. It reads
+ * the refs below and never writes them; the rules tell it two things as they
+ * happen (`popRun`, `joined`) so a pop bursts where the orbs were and the
+ * chain slides where the rules made it jump.
+ *
+ * ## The round ends: the chain cleared, the hole, or the clock
+ *
+ * The first two are the game's, and the hole is the one a round normally meets
+ * (~73 s for a chain left alone). They are not enough on their own: clearing
+ * the front of the chain pulls it back from the hole, and nothing stopped a
+ * player doing that for as long as they liked — an autopilot that played for it
+ * kept one chain alive for six and a half minutes. `ZUMA_ROUND_SECONDS` of play
+ * is the backstop, counted down in the header like every arcade clock.
  *
  * ## Per frame, nothing goes through React
  *
- * The chain, the shot in flight and the track live in refs; React hears about
- * the count when it moves.
+ * The chain, the shot in flight and the track live in refs and move in fixed
+ * `ZUMA_STEP`s (the app's 1/60 s), so a shot cannot step past a ball on a slow
+ * frame and the chain rolls the same distance at any frame rate; React hears
+ * about the count when it moves and the clock when its second changes.
  */
 
 const END_MS = 900;
@@ -94,7 +127,8 @@ export function Zuma({
   onQuit: () => void;
 }) {
   const copy = useCopy().games;
-  const palette = usePalette();
+  const { theme } = useTheme();
+  const reduced = useReducedMotion();
   const remote = Boolean(session && serverRound?.chain?.length);
   const path = useMemo(track, []);
   const length = path.at[path.at.length - 1];
@@ -109,13 +143,25 @@ export function Zuma({
   const aimAt = useRef<{ x: number; y: number }>({ x: 0.5, y: 0.4 });
   const clearedRef = useRef(0);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const colors = useRef(palette);
-  colors.current = palette;
+  /* The picture. Built once; it reads the refs above and writes none of them. */
+  const scene = useRef<PicumaScene | null>(null);
+  if (!scene.current) scene.current = new PicumaScene({ track: path, ball: D, shooter: SHOOTER, aspect: ASPECT });
+  const view = useRef<PicumaView>({ chain: [], head: 0, shot: null, loaded: loaded.current, aim: aimAt.current, phase: 'ready', end: null });
 
   const [phase, setPhase] = useState<'ready' | 'playing' | 'over'>('ready');
   const [cleared, setCleared] = useState(0);
   const [next, setNext] = useState<[number, number]>(loaded.current);
+  const [secondsLeft, setSecondsLeft] = useState(ZUMA_ROUND_SECONDS);
+  const [end, setEnd] = useState<'cleared' | 'hole' | 'time'>('hole');
+  /* Fixed steps played: the round's clock is `steps × ZUMA_STEP`. */
+  const steps = useRef(0);
   const finished = useRef(false);
+  const done = useRef(onDone);
+  done.current = onDone;
+  /* The phase and the ending as the picture should show them, without making
+     `paint` change identity (the loop's effect depends on it). */
+  const shown = useRef({ phase, end });
+  shown.current = { phase, end };
 
   /** A point `s` along the track, or null before its start. */
   const pointAt = useCallback(
@@ -132,95 +178,51 @@ export function Zuma({
     [length, path],
   );
 
-  const drawBall = (context: CanvasRenderingContext2D, x: number, y: number, r: number, kind: number) => {
-    context.fillStyle = colors.current.primary;
-    context.beginPath();
-    context.arc(x, y, r, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = colors.current.background;
-    context.strokeStyle = colors.current.background;
-    context.lineWidth = Math.max(1.5, r * 0.22);
-    context.beginPath();
-    if (kind === 0) {
-      context.arc(x, y, r * 0.28, 0, Math.PI * 2);
-      context.fill();
-    } else if (kind === 1) {
-      context.arc(x, y, r * 0.45, 0, Math.PI * 2);
-      context.stroke();
-    } else if (kind === 2) {
-      context.moveTo(x - r * 0.5, y);
-      context.lineTo(x + r * 0.5, y);
-      context.stroke();
-    } else {
-      context.moveTo(x - r * 0.4, y - r * 0.4);
-      context.lineTo(x + r * 0.4, y + r * 0.4);
-      context.moveTo(x + r * 0.4, y - r * 0.4);
-      context.lineTo(x - r * 0.4, y + r * 0.4);
-      context.stroke();
-    }
-  };
-
+  /** One frame of the picture, from the refs as they stand. */
   const paint = useCallback(() => {
     const element = canvas.current;
-    const context = element?.getContext('2d');
-    if (!element || !context) return;
-    const ratio = window.devicePixelRatio || 1;
-    const width = element.clientWidth;
-    const height = element.clientHeight;
-    if (element.width !== Math.round(width * ratio)) {
-      element.width = Math.round(width * ratio);
-      element.height = Math.round(height * ratio);
-    }
-    const k = width;
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.clearRect(0, 0, width, height);
+    const picture = scene.current;
+    if (!element || !picture) return;
+    const v = view.current;
+    v.chain = chain.current;
+    v.head = head.current;
+    v.shot = flying.current;
+    v.loaded = loaded.current;
+    v.aim = aimAt.current;
+    v.phase = shown.current.phase;
+    v.end = shown.current.phase === 'over' ? shown.current.end : null;
+    picture.paint(element, v, performance.now());
+  }, []);
 
-    /* The track, faint, and the hole at its end. */
-    context.strokeStyle = colors.current.primary;
-    context.globalAlpha = 0.18;
-    context.lineWidth = D * k * 1.1;
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-    context.beginPath();
-    path.pts.forEach(([x, y], i) => (i === 0 ? context.moveTo(x * k, y * k) : context.lineTo(x * k, y * k)));
-    context.stroke();
-    context.globalAlpha = 0.6;
-    const end = path.pts[path.pts.length - 1];
-    context.beginPath();
-    context.arc(end[0] * k, end[1] * k, D * k * 0.75, 0, Math.PI * 2);
-    context.lineWidth = 3;
-    context.stroke();
-    context.globalAlpha = 1;
-
-    const r = (D * k) / 2 - 1;
-    chain.current.forEach((ball, i) => {
-      const at = pointAt(head.current - i * D);
-      if (at) drawBall(context, at[0] * k, at[1] * k, r, ball.kind);
-    });
-
-    /* The aim line, the shooter and what it holds. */
-    context.strokeStyle = colors.current.primary;
-    context.globalAlpha = 0.25;
-    context.lineWidth = 2;
-    context.setLineDash([4, 6]);
-    context.beginPath();
-    context.moveTo(SHOOTER.x * k, SHOOTER.y * k);
-    context.lineTo(aimAt.current.x * k, aimAt.current.y * k);
-    context.stroke();
-    context.setLineDash([]);
-    context.globalAlpha = 1;
-    drawBall(context, SHOOTER.x * k, SHOOTER.y * k, r * 1.15, loaded.current[0]);
-    context.globalAlpha = 0.6;
-    drawBall(context, (SHOOTER.x + 0.1) * k, (SHOOTER.y + 0.03) * k, r * 0.7, loaded.current[1]);
-    context.globalAlpha = 1;
-
-    const shot = flying.current;
-    if (shot) drawBall(context, shot.x * k, shot.y * k, r, shot.kind);
-  }, [path, pointAt]);
-
+  /* The theme, motion preference and the words the picture draws. */
   useEffect(() => {
+    const picture = scene.current;
+    if (!picture) return;
+    picture.setTheme(theme);
+    picture.setReduced(reduced);
+    const face = getComputedStyle(document.documentElement).getPropertyValue('--font-display').trim();
+    picture.setText(face, copy.zuma.combo);
     paint();
-  }, [paint, palette]);
+  }, [theme, reduced, copy.zuma.combo, paint]);
+
+  /* Outside a round the courtyard still lives — torches, fireflies, Pico
+     blinking, the last bursts settling — on a loop of its own that moves
+     nothing the rules own. The round's loop below paints while playing. Under
+     reduced motion there is nothing to animate, so it paints once. */
+  useEffect(() => {
+    if (phase === 'playing') return;
+    if (reduced) {
+      paint();
+      return;
+    }
+    let frame = 0;
+    const loop = () => {
+      paint();
+      frame = requestAnimationFrame(loop);
+    };
+    frame = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frame);
+  }, [phase, reduced, paint]);
 
   /** Pop a run of three or more around `index`, then keep closing gaps that match. */
   const settle = useCallback((index: number) => {
@@ -235,6 +237,8 @@ export function Zuma({
       while (b < list.length - 1 && list[b + 1].kind === kind) b += 1;
       if (b - a + 1 < 3) return;
       const gone = list.slice(a, b + 1).filter((ball) => ball.chain).length;
+      /* The picture bursts them where they are drawn; it changes nothing here. */
+      scene.current?.popRun(list, a, b, head.current, gone);
       chain.current = [...list.slice(0, a), ...list.slice(b + 1)];
       /* The front of the chain stays put; a run removed at the front pulls it back. */
       if (a === 0) head.current -= (b + 1) * D;
@@ -250,9 +254,14 @@ export function Zuma({
     if (phase !== 'playing') return;
     let frame = 0;
     let last = performance.now();
-    const loop = (now: number) => {
-      const dt = Math.min(0.04, (now - last) / 1000);
-      last = now;
+    let carry = 0;
+    let shown = -1;
+    const lastStep = Math.round(ZUMA_ROUND_SECONDS / ZUMA_STEP);
+
+    /* One fixed step: the chain rolls, the shot flies, and a shot that meets
+       the chain joins it. */
+    const step = (dt: number) => {
+      steps.current += 1;
       head.current += (head.current < ENTRY_UNTIL ? ENTRY : CRAWL) * dt;
 
       const shot = flying.current;
@@ -280,16 +289,39 @@ export function Zuma({
           const index = toAhead < toBehind ? hit : hit + 1;
           chain.current = [...chain.current.slice(0, index), { kind: shot.kind, chain: false }, ...chain.current.slice(index)];
           if (index === 0) head.current += D;
+          /* The picture slides the shot into its slot; it changes nothing here. */
+          scene.current?.joined(chain.current, index, shot.x, shot.y);
           flying.current = null;
           settle(index);
         } else if (shot.x < -0.1 || shot.x > 1.1 || shot.y < -0.1 || shot.y > ASPECT + 0.1) {
           flying.current = null;
         }
       }
+    };
+
+    const loop = (now: number) => {
+      /* A long frame is not integrated in one go — a tab back from the
+         background resumes where it was rather than rolling the chain home. */
+      carry += Math.min(0.04, Math.max(0, (now - last) / 1000));
+      last = now;
+      let ended: 'cleared' | 'hole' | 'time' | null = null;
+      while (carry >= ZUMA_STEP && !ended) {
+        carry -= ZUMA_STEP;
+        step(ZUMA_STEP);
+        if (clearedRef.current >= ZUMA_CHAIN || chain.current.length === 0) ended = 'cleared';
+        else if (head.current >= length) ended = 'hole';
+        else if (steps.current >= lastStep) ended = 'time';
+      }
+      const remaining = Math.max(0, Math.ceil(ZUMA_ROUND_SECONDS - steps.current * ZUMA_STEP));
+      if (remaining !== shown) {
+        shown = remaining;
+        setSecondsLeft(remaining);
+      }
 
       paint();
-      const done = clearedRef.current >= ZUMA_CHAIN || chain.current.length === 0 || head.current >= length;
-      if (done) {
+      if (ended) {
+        flying.current = null;
+        setEnd(ended);
         setPhase('over');
         return;
       }
@@ -306,10 +338,10 @@ export function Zuma({
       finished.current = true;
       const n = Math.min(ZUMA_CHAIN, clearedRef.current);
       const performance = Math.round((n / ZUMA_CHAIN) * 100);
-      onDone(arcadePoints(performance), arcadeMilestones(performance), n >= ZUMA_CHAIN, n, { cleared: n });
+      done.current(arcadePoints(performance), arcadeMilestones(performance), n >= ZUMA_CHAIN, n, { cleared: n });
     }, END_MS);
     return () => window.clearTimeout(timer);
-  }, [phase, onDone]);
+  }, [phase]);
 
   const field = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
@@ -338,7 +370,7 @@ export function Zuma({
     <div className="round ar-round">
       <div className="round-top">
         <span className="round-count">{fill(copy.zuma.cleared, { n: String(cleared), total: String(ZUMA_CHAIN) })}</span>
-        <RoundClock running={phase === 'playing'} />
+        <RoundClock left={secondsLeft} />
       </div>
       <PerfectBar performance={(cleared / ZUMA_CHAIN) * 100} label={copy.perfectProgress} />
 
@@ -357,18 +389,13 @@ export function Zuma({
             shoot(aimAt.current);
           }}
         />
-        {phase === 'ready' && (
-          <div className="ar-overlay">
-            <p>{copy.zuma.intro}</p>
-            <button type="button" className="btn btn-solid" onClick={() => setPhase('playing')}>
-              {copy.zuma.start}
-            </button>
-          </div>
-        )}
+        {phase === 'ready' && <ReadyVeil intro={copy.zuma.intro} start={copy.zuma.start} onStart={() => setPhase('playing')} />}
         {phase === 'over' && (
-          <div className="ar-overlay" role="status">
-            <p>{cleared >= ZUMA_CHAIN ? copy.zuma.won : copy.zuma.over}</p>
-          </div>
+          <EndVeil
+            title={end === 'cleared' ? copy.zuma.won : end === 'time' ? copy.roundTime : copy.zuma.over}
+            detail={fill(copy.zuma.cleared, { n: String(cleared), total: String(ZUMA_CHAIN) })}
+            pose={end === 'cleared' ? 'happy' : end === 'hole' ? 'sad' : cleared * 2 >= ZUMA_CHAIN ? 'happy' : 'idle'}
+          />
         )}
       </div>
 
@@ -379,7 +406,8 @@ export function Zuma({
         <button type="button" className="btn btn-ghost" onClick={swap} disabled={phase !== 'playing'}>
           {fill(copy.zuma.swap, { now: copy.zuma.kinds[next[0] % ZUMA_COLORS], next: copy.zuma.kinds[next[1] % ZUMA_COLORS] })}
         </button>
-        <button type="button" className="link-btn round-quit" onClick={onQuit}>
+        {/* Off once the round is over: it is being banked (see Snake). */}
+        <button type="button" className="link-btn round-quit" onClick={onQuit} disabled={phase === 'over'}>
           {copy.quit}
         </button>
       </div>

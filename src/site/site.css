@@ -36,6 +36,10 @@
 @import '@fontsource/onest/latin-900.css';
 @import '@fontsource/poppins/latin-500.css';
 @import '@fontsource/poppins/latin-600.css';
+/* Ł, Ą, Ż… — Word Builder's Polish tiles are set in Poppins 600, and without
+   this the diacritics in a word fell back to the system face mid-tile. Fetched
+   only when such a glyph is on the page (`unicode-range`). */
+@import '@fontsource/poppins/latin-ext-600.css';
 @import '@fontsource/manrope/latin-400.css';
 @import '@fontsource/manrope/latin-500.css';
 @import '@fontsource/manrope/latin-700.css';
@@ -7356,6 +7360,15 @@ button {
   animation-delay: 0.28s;
 }
 
+/* "Still looking that up" — beside the dots once a model answer has taken a
+   few seconds (`SLOW_AFTER_MS` in `AssistantDock.tsx`). Quiet, because it is
+   reassurance rather than news. */
+.ai-typing-note {
+  margin-left: 0.35rem;
+  font-size: 0.76rem;
+  color: var(--text-mut);
+}
+
 @keyframes ai-think {
   0%,
   60%,
@@ -9397,8 +9410,8 @@ button {
  * Eight games, seven miniatures — the two Word Builders share one, because they
  * are one game dealing two lists. The markup is `games/preview.tsx`, which
  * renders **real content**: cards off the Kraków deck, a real flag over real
- * country names, a real word over its own shuffled letters, and Squawk himself
- * out of the `PARROT_PARTS` table the game's canvas draws from.
+ * country names, a real word over its own shuffled letters, and Pico himself
+ * — the same drawing the round's canvas makes — in front of a still of his world.
  *
  * These replaced a set of abstract shapes — bars for answers, a striped
  * rectangle for a flag — which replaced a set of repeating textures. Each did
@@ -9496,10 +9509,14 @@ button {
 
 /* ── Memory Match ──
  *
- * Six cards, three pairs, in `.mm-card`'s own three faces. The pairs turn one
- * after another and stay up, which is the real board's rule — a matched pair
- * stays, because the game is remembering where things were and a board that
- * empties removes the evidence.
+ * Six cards, three pairs, dealt on the real table: the same baize, the same
+ * printed backs with Pico's badge, the same card stock — read from the same
+ * `--mm-*` properties, which `tableSceneStyle` puts on `.pv-board`. The pairs
+ * turn one after another and stay up, which is the real board's rule — a
+ * matched pair stays, because the game is remembering where things were and a
+ * board that empties removes the evidence. And like the real board they **do
+ * not flip**: the back fades off the face, the face ringed in the accent, the
+ * word arriving under it in the accent's fill.
  *
  * Three keyframe sets rather than one with a per-pair delay: every card has to
  * restart on the same beat or the board would never be empty again, and a
@@ -9509,13 +9526,22 @@ button {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: 0.3rem;
+  gap: 0.32rem;
   /* Capped, and centred in whatever it is given. Three cards across the whole
      width of the poster made each one four times wider than it was tall, which
      is the opposite of the 3:4 a playing card is. */
   width: 100%;
   max-width: 15rem;
   margin-inline: auto;
+  padding: 0.45rem;
+  border-radius: 11px;
+  background:
+    var(--mm-nap-img),
+    radial-gradient(ellipse at 50% 35%, var(--mm-felt), var(--mm-felt-edge));
+  box-shadow:
+    0 0 0 4px var(--mm-rim),
+    0 0 0 5px var(--mm-rim-lo),
+    0 12px 18px -10px var(--mm-shadow);
 }
 
 /* The three faces occupy one cell and cross-fade in it. Stacked with an
@@ -9526,9 +9552,9 @@ button {
   display: grid;
   grid-template-columns: 1fr;
   place-items: center;
-  border-radius: 7px;
-  border: 1px solid var(--border-2);
-  background: var(--surface);
+  border-radius: 5px;
+  background: linear-gradient(var(--mm-face-hi), var(--mm-face) 70%);
+  box-shadow: 0 1px 0 var(--mm-face-edge);
   overflow: hidden;
 }
 
@@ -9537,12 +9563,20 @@ button {
   grid-column: 1;
 }
 
-/* The face-down mark: `.mm-back`, at the size this board can carry. */
+/* The back: `.mm-back` at the size this board can carry — the badge in its
+   ringed medallion on the lattice, inside a margin of card stock. Sized by the
+   card's height, because these cells are wider than tall and a badge sized by
+   width would overrun its medallion. */
 .pv-card .pv-back {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 3px;
-  border: 1px solid var(--border-2);
+  place-self: stretch;
+  margin: 2px;
+  border-radius: 3.5px;
+  background:
+    var(--mm-badge-img) center / auto 58% no-repeat,
+    radial-gradient(circle closest-side, var(--mm-medal) 0 58%, var(--mm-medal-ring) 59% 66%, transparent 67%),
+    repeating-linear-gradient(45deg, var(--mm-back-line) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(-45deg, var(--mm-back-line) 0 1px, transparent 1px 4px),
+    linear-gradient(155deg, var(--mm-back), var(--mm-back-deep));
 }
 
 .pv-card b,
@@ -9551,18 +9585,23 @@ button {
 }
 
 .pv-card b {
-  font-size: 1.05rem;
+  font-size: 1.3rem;
   line-height: 1;
-  transform: translateY(-0.32rem);
+  transform: translateY(-0.3rem);
 }
 
+/* `.mm-label`, small: the word in the accent's fill along the card's foot. */
 .pv-card em {
+  align-self: end;
+  margin: 0 0.15rem 0.22rem;
+  padding: 0.08rem 0.22rem;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--on-accent);
   font-style: normal;
-  font-size: 0.46rem;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--accent-ink);
-  transform: translateY(0.5rem);
+  font-size: 0.42rem;
+  font-weight: 800;
+  line-height: 1.1;
 }
 
 .pv-card {
@@ -9611,54 +9650,51 @@ button {
   animation-name: pv-label-3;
 }
 
-/* `up` is the accent border and the lifted tint; `matched` is the accent's own
-   fill at 14%, which is `.mm-card[data-face='matched']` exactly. */
+/* A turned pair is ringed in the accent, which is `.mm-card[data-face='matched']`
+   exactly; the card stock under the back was there all along. */
 @keyframes pv-card-1 {
   0%,
   8% {
-    border-color: var(--border-2);
-    background: var(--surface);
+    box-shadow: 0 1px 0 var(--mm-face-edge);
   }
   14%,
   92% {
-    border-color: var(--accent);
-    background: rgba(var(--accent-rgb), 0.14);
+    box-shadow:
+      0 0 0 1.5px var(--accent),
+      0 1px 0 var(--mm-face-edge);
   }
   100% {
-    border-color: var(--border-2);
-    background: var(--surface);
+    box-shadow: 0 1px 0 var(--mm-face-edge);
   }
 }
 @keyframes pv-card-2 {
   0%,
   33% {
-    border-color: var(--border-2);
-    background: var(--surface);
+    box-shadow: 0 1px 0 var(--mm-face-edge);
   }
   39%,
   92% {
-    border-color: var(--accent);
-    background: rgba(var(--accent-rgb), 0.14);
+    box-shadow:
+      0 0 0 1.5px var(--accent),
+      0 1px 0 var(--mm-face-edge);
   }
   100% {
-    border-color: var(--border-2);
-    background: var(--surface);
+    box-shadow: 0 1px 0 var(--mm-face-edge);
   }
 }
 @keyframes pv-card-3 {
   0%,
   58% {
-    border-color: var(--border-2);
-    background: var(--surface);
+    box-shadow: 0 1px 0 var(--mm-face-edge);
   }
   64%,
   92% {
-    border-color: var(--accent);
-    background: rgba(var(--accent-rgb), 0.14);
+    box-shadow:
+      0 0 0 1.5px var(--accent),
+      0 1px 0 var(--mm-face-edge);
   }
   100% {
-    border-color: var(--border-2);
-    background: var(--surface);
+    box-shadow: 0 1px 0 var(--mm-face-edge);
   }
 }
 
@@ -9784,19 +9820,35 @@ button {
   }
 }
 
-/* ── Squawk's Flight ──
+/* ── Pico's Flight ──
  *
  * The stage's own geometry, as percentages of the box: a column is
- * `FLIGHT.pipe.width / worldWidth` across (9 of 71), the gap is
- * `FLIGHT.pipe.gap` of the world's height (24 of 100), and the cap band is
- * `FLIGHT.pipe.cap` (2.4). Both pieces run past the frame so only the mouth
- * shows a rounded end, exactly as the canvas draws them. */
+ * `FLIGHT.pipe.width / worldWidth` across (9 of 71) and the capital is
+ * `FLIGHT.pipe.cap` (2.4) — the hole is wider than the round's, so a bird a
+ * quarter of the card tall still threads it. Both pieces run past the frame so
+ * only the mouth shows its capital, exactly as the canvas draws them.
+ *
+ * The world behind them is a still the game's own painter made (`.pv-scene`),
+ * and the columns are dressed in that world's stone through `--fs-*`, set
+ * inline from `flight/scene.ts` by `previewVars` — the scene's colours travel
+ * in as custom properties and are never named here. */
 
 .pv-sky {
   position: relative;
   overflow: hidden;
   border-radius: 10px;
   background: rgba(var(--accent-rgb), 0.05);
+}
+
+/* Painted once at a fixed size and fitted here, bottom-anchored so the turf
+   stays on the floor whatever shape the card's band is. */
+.pv-scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 100%;
 }
 
 .pv-col {
@@ -9811,30 +9863,46 @@ button {
   animation-delay: calc(var(--p) * -1.8s);
 }
 
+/* Dressed stone: a shaded side, the face, a lit band toward the light, laid
+   in courses — the round's column at card size. */
 .pv-col i {
   position: absolute;
   left: 0;
   right: 0;
-  border-radius: 4px;
-  background: rgba(var(--accent-rgb), 0.16);
-  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  background:
+    linear-gradient(90deg, var(--fs-shade) 0 15%, transparent 15% 72%, var(--fs-lit) 72% 100%),
+    repeating-linear-gradient(180deg, transparent 0 0.42rem, var(--fs-seam) 0.42rem calc(0.42rem + 1px)),
+    var(--fs-face);
 }
 
-/* The solid band across each mouth — the one opaque mark on the stage, and
-   what makes the gap read as a gate rather than as absence. */
+/* The capital: a slab a little proud of the shaft. The standing column's slab
+   carries a line of moss on top, as the round's does. */
 .pv-col i::after {
   content: '';
   position: absolute;
-  left: -1px;
-  right: -1px;
+  left: -2px;
+  right: -2px;
   height: 3px;
-  border-radius: 2px;
-  background: var(--accent);
+  border-radius: 1.5px;
+  background: var(--fs-face);
 }
 
-/* Both pieces run well past the frame so only the **mouth** shows a rounded
-   end. A column with four rounded corners floats, and these are meant to be cut
-   out of the stage — which is why the canvas starts them two radii above the
+/* The runes along the capital's neck, in the page's accent — the gate is the
+   one thing on the stage that means points, in the colour that means points. */
+.pv-col i::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background:
+    radial-gradient(circle, var(--accent) 0 1px, transparent 1.4px) 50% 50% / 5px 100% repeat-x,
+    var(--fs-deep);
+}
+
+/* Both pieces run well past the frame so only the **mouth** shows its
+   capital. A column that ends in the air floats, and these are meant to be
+   cut out of the stage — which is why the canvas starts them above the
    ceiling and ends them below the floor. */
 .pv-col-top {
   top: -40%;
@@ -9845,6 +9913,10 @@ button {
   bottom: 0;
 }
 
+.pv-col-top::before {
+  bottom: 3px;
+}
+
 .pv-col-low {
   top: calc(var(--gap) + 26%);
   bottom: -40%;
@@ -9852,6 +9924,11 @@ button {
 
 .pv-col-low::after {
   top: 0;
+  box-shadow: 0 -2px 0 var(--fs-moss);
+}
+
+.pv-col-low::before {
+  top: 3px;
 }
 
 @keyframes pv-fly {
@@ -9878,20 +9955,21 @@ button {
  * fraction of the opening on every card the grid can produce — fine at one
  * breakpoint and clipping through a column at the next.
  *
- * `top: 35%` is half his own height above the middle, `50% - 30%/2`. Written as
- * a `top` rather than a negative `margin-top`, because a percentage margin
- * resolves against the containing block's **width** — it put him at the top of
- * the stage on a box three times wider than it is tall, and he flew straight
+ * Pico's box is square and his body sits at 56% of it (`PICO_BODY_CENTRE`), so
+ * `top: 36%` puts the body on the stage's middle line. Written as a `top`
+ * rather than a negative `margin-top`, because a percentage margin resolves
+ * against the containing block's **width** — it put the bird at the top of the
+ * stage on a box three times wider than it is tall, and he flew straight
  * through the first column.
  */
 .pv-bird-path {
   position: absolute;
-  /* `FLIGHT.bird.x` is 16 of the world's 71 units across — the same place on the
-     stage the real one flies. */
-  left: 16%;
-  top: 37%;
-  height: 26%;
-  aspect-ratio: 1.44 / 1.24;
+  /* `FLIGHT.bird.x` is 16 of the world's 71 units across; the box starts a
+     little left of it because Pico's body is the middle of a square box. */
+  left: 11%;
+  top: 36%;
+  height: 28%;
+  aspect-ratio: 1;
   animation-name: pv-course;
   animation-duration: 3.6s;
   animation-timing-function: ease-in-out;
@@ -9905,7 +9983,7 @@ button {
   }
   /* Forty-five percent of his own height, which is about twelve of the stage —
      enough to actually carry him from one gap to the other. It was eleven, and
-     eleven of a sprite a quarter of the stage tall is three percent of the
+     eleven of a bird a quarter of the stage tall is three percent of the
      stage: he was not threading the gates, he was sitting between them and
      they happened to be wide. */
   25% {
@@ -9925,7 +10003,8 @@ button {
  * other four fifths and eases *in*, because that is what gravity does and it is
  * the difference between a bird flying and a bird bobbing. The nose follows: up
  * hard on the impulse, tipping further down the longer the fall goes on, which
- * is `tiltFor` in the real engine drawn by hand.
+ * is `tiltFor` in the real engine drawn by hand. He turns on his body, not his
+ * box — `PICO_BODY_CENTRE` — as `drawPico` turns him in the round.
  *
  * The amplitude is deliberately small — under a third of his own height, about
  * nine percent of the stage. It has to be: the course drift already spends five
@@ -9934,13 +10013,9 @@ button {
  * *shape* of the motion and the tilt, not the distance.
  */
 .pv-bird {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  /* `pv-swoop`, not `pv-flap` — the wing already owns that name two hundred
-     lines down, and a duplicate @keyframes silently hands the later definition
-     to both. The bird would have flapped its whole body and held its wing. */
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 56%;
   animation-name: pv-swoop;
   animation-duration: 0.72s;
   animation-timing-function: linear;
@@ -9948,15 +10023,42 @@ button {
 
 @keyframes pv-swoop {
   0% {
-    transform: translateY(0) rotate(26deg);
+    transform: translateY(0) rotate(22deg);
     animation-timing-function: cubic-bezier(0.15, 0.85, 0.35, 1);
   }
   18% {
-    transform: translateY(-22%) rotate(-20deg);
+    transform: translateY(-22%) rotate(-18deg);
     animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5);
   }
   100% {
-    transform: translateY(0) rotate(26deg);
+    transform: translateY(0) rotate(22deg);
+  }
+}
+
+/*
+ * The wing: two still frames of the real drawing, top and bottom of the
+ * stroke, one laid over the other and the lower one switched on and off on a
+ * `steps()` beat — twice a flap, so each impulse is a full stroke.
+ */
+.pv-pico {
+  position: absolute;
+  inset: 0;
+}
+
+.pv-pico-down {
+  animation-name: pv-beat;
+  animation-duration: 0.36s;
+  animation-timing-function: steps(1, end);
+}
+
+@keyframes pv-beat {
+  0%,
+  49% {
+    opacity: 0;
+  }
+  50%,
+  100% {
+    opacity: 1;
   }
 }
 
@@ -9976,7 +10078,7 @@ button {
   height: 1.6rem;
   margin: -0.8rem 0 0 -0.8rem;
   border-radius: 50%;
-  border: 1.5px solid rgba(var(--accent-rgb), 0.55);
+  border: 1.5px solid rgba(var(--accent-rgb), 0.75);
   opacity: 0;
   pointer-events: none;
   animation-name: pv-press;
@@ -9993,58 +10095,6 @@ button {
   100% {
     opacity: 0;
     transform: scale(1.15);
-  }
-}
-
-/* The four sanctioned part styles, and the fifth the wing has to itself.
-   `soft` and `wing` are the accent mixed toward the page — `FLIGHT.shade` does
-   the same on the canvas — and the eye is the page's own ground, so it reads as
-   a hole rather than as a dot. */
-.pv-p-body {
-  fill: var(--accent);
-}
-
-.pv-p-soft {
-  fill: rgba(var(--accent-rgb), 0.62);
-}
-
-.pv-p-ink {
-  fill: var(--on-accent);
-}
-
-.pv-p-eye {
-  fill: var(--bg);
-}
-
-/*
- * The wing: one rect swung about the shoulder, between `WING.frames`.
- *
- * `transform-box: fill-box` is what makes the pivot expressible at all — the
- * origin then lives inside the wing's own box, and the shoulder happens to fall
- * inside it. Both percentages and both angles are computed from `WING` in
- * `preview.tsx`, so a tuning change to the sprite moves this with it.
- */
-.pv-wing {
-  /* The wing has to separate from the body it lies on. In the game it is the
-     accent mixed toward the page (`FLIGHT.shade`), which lightens on paper and
-     darkens on black; an alpha does the same over a card, but 0.72 was close
-     enough to solid that the two merged into one blob. */
-  fill: rgba(var(--accent-rgb), 0.5);
-  transform-box: fill-box;
-  transform-origin: var(--wing-x) var(--wing-y);
-  animation-name: pv-flap;
-  animation-duration: 0.36s;
-  animation-timing-function: steps(1, end);
-}
-
-@keyframes pv-flap {
-  0%,
-  49% {
-    transform: rotate(var(--wing-up));
-  }
-  50%,
-  100% {
-    transform: rotate(var(--wing-down));
   }
 }
 
@@ -10183,97 +10233,192 @@ button {
 
 /* ── Word Builder ──
  *
- * The hint, the slots, and the tray. A letter lands in its slot and its tile
- * goes to 20% and holds its place — `.wb-key[data-used]` does the same, and for
- * the reason its own note gives: the tray is a layout the player is reading,
- * and reflowing it on every tap loses them. */
+ * Pico with the clue on its note, the rack, and the tray — the study's own
+ * materials, from the `--wb-*` properties `wordSceneStyle` puts on `.pv-word`.
+ * Letters drop into the grooves one by one as ivory tiles and their tray tiles
+ * leave sockets behind (`.wb-key[data-used]` does the same, and for the reason
+ * its own note gives: the tray is a layout the player is reading); then the
+ * whole row turns the accent at once, because that is when the real board
+ * says *right* — when the word is complete, not letter by letter. */
 
 .pv-word {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.42rem;
+}
+
+.pv-say {
+  display: flex;
+  align-items: flex-end;
   gap: 0.3rem;
 }
 
+/* The clue on a scrap of the note's paper, its tail toward Pico. */
 .pv-hint {
+  position: relative;
+  max-width: 10.5rem;
+  margin-bottom: 0.3rem;
+  padding: 0.26rem 0.45rem;
+  border-radius: 4px;
+  background: var(--wb-paper);
+  box-shadow:
+    0 0 0 1px var(--wb-socket),
+    0 5px 9px -5px var(--wb-shadow);
   font-family: var(--font-display);
-  font-size: 0.6rem;
+  font-size: 0.62rem;
   font-weight: 600;
   line-height: 1.2;
   text-align: center;
-  color: var(--text-mut);
+  color: var(--wb-paper-ink);
+  transform: rotate(-1.5deg);
 }
 
-.pv-slots,
+.pv-hint::before {
+  content: '';
+  position: absolute;
+  left: -0.18rem;
+  bottom: 0.3rem;
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 1px;
+  background: var(--wb-paper);
+  transform: rotate(45deg);
+}
+
+/* The rack: grooves in stained wood. */
+.pv-slots {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.22rem 0.28rem 0.3rem;
+  border-radius: 6px;
+  background: linear-gradient(var(--wb-rack-hi), var(--wb-rack) 42%, var(--wb-rack-lo));
+  box-shadow:
+    0 2px 0 var(--wb-rack-lo),
+    0 7px 10px -6px var(--wb-shadow);
+}
+
 .pv-keys {
   display: flex;
-  gap: 0.22rem;
+  gap: 0.26rem;
 }
 
 .pv-slots i,
 .pv-keys i {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 1.15rem;
-  height: 1.35rem;
-  border-radius: 5px;
-  border: 1px solid var(--border-2);
-  background: var(--surface);
+  width: 1.35rem;
+  height: 1.5rem;
+  border-radius: 4px;
   font-family: var(--font-display);
   font-style: normal;
-  font-size: 0.62rem;
+  font-size: 0.74rem;
   font-weight: 600;
-  color: var(--text);
 }
 
-/* A slot is empty until its letter arrives; the box is drawn from the start,
-   because an empty slot is the whole shape of the puzzle. */
+/* A slot is an empty groove until its tile lands in it. */
 .pv-slots i {
   color: transparent;
+  background: var(--wb-groove);
+  box-shadow: inset 0 1px 2px var(--wb-groove-shade);
   animation-name: pv-fillslot;
-  animation-duration: 4.4s;
-  animation-delay: calc(var(--p) * 0.42s);
+  animation-duration: 6s;
+  animation-delay: calc(var(--p) * 0.32s);
+}
+
+/* The verdict: the same letter in the accent's fill over each tile, on one
+   beat for the whole row — no delay, unlike the tile under it. */
+.pv-slots i::after {
+  content: attr(data-l);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 1.5px 0 var(--wb-right-side);
+  opacity: 0;
+  animation: inherit;
+  animation-name: pv-right-row;
+  animation-delay: 0s;
 }
 
 .pv-keys i {
-  border-color: var(--accent-soft);
+  background: linear-gradient(var(--wb-tile-hi), var(--wb-tile) 60%);
+  color: var(--wb-tile-ink);
+  box-shadow:
+    0 2px 0 var(--wb-tile-side),
+    0 4px 5px -3px var(--wb-shadow);
   animation-name: pv-spend;
-  animation-duration: 4.4s;
-  animation-delay: calc(var(--of) * 0.42s);
+  animation-duration: 6s;
+  animation-delay: calc(var(--of) * 0.32s);
 }
 
 @keyframes pv-fillslot {
   0%,
-  6% {
+  8% {
     color: transparent;
-    border-color: var(--border-2);
-    background: var(--surface);
+    background: var(--wb-groove);
+    box-shadow: inset 0 1px 2px var(--wb-groove-shade);
+    transform: translateY(0);
   }
-  12%,
+  11%,
   86% {
-    color: var(--on-accent);
-    border-color: transparent;
-    background: var(--accent);
+    color: var(--wb-tile-ink);
+    background: var(--wb-tile);
+    box-shadow: 0 1.5px 0 var(--wb-tile-side);
+    transform: translateY(-1px);
   }
+  89%,
   100% {
     color: transparent;
-    border-color: var(--border-2);
-    background: var(--surface);
+    background: var(--wb-groove);
+    box-shadow: inset 0 1px 2px var(--wb-groove-shade);
+    transform: translateY(0);
   }
 }
 
+@keyframes pv-right-row {
+  0%,
+  52% {
+    opacity: 0;
+  }
+  55%,
+  86% {
+    opacity: 1;
+  }
+  89%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* A spent tile leaves its socket: the tile goes, a ghost of the letter stays. */
 @keyframes pv-spend {
   0%,
-  6% {
-    opacity: 1;
+  8% {
+    color: var(--wb-tile-ink);
+    background: var(--wb-tile);
+    box-shadow:
+      0 2px 0 var(--wb-tile-side),
+      0 4px 5px -3px var(--wb-shadow);
   }
-  12%,
+  11%,
   86% {
-    opacity: 0.2;
+    color: var(--wb-socket-ink);
+    background: var(--wb-socket);
+    box-shadow: inset 0 1px 2px var(--wb-groove-shade);
   }
+  89%,
   100% {
-    opacity: 1;
+    color: var(--wb-tile-ink);
+    background: var(--wb-tile);
+    box-shadow:
+      0 2px 0 var(--wb-tile-side),
+      0 4px 5px -3px var(--wb-shadow);
   }
 }
 
@@ -10371,25 +10516,74 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.6rem;
   font-size: 0.78rem;
   font-weight: 700;
   color: var(--text-mut);
 }
 
+/*
+ * The header's two readings as instruments: progress on the left, the clock on
+ * the right, each in a pill. Every game's header is these two classes
+ * (`games/hud.tsx` and the originals), so every game gets them at once — a
+ * surface tint inside a glass round, the glass itself over a painted set
+ * (`[data-stage]`, in `══ the round stage ══`).
+ */
+.round-count,
 .round-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.95rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  line-height: 1.25;
+}
+
+.round-count {
+  color: var(--text);
+}
+
+.round-clock {
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
   color: var(--accent-ink);
 }
 
+/*
+ * A clock that is a clock gets a dial, drawn from the text colour so it follows
+ * the low state below. Keyed on `role='timer'` because the same slot also holds
+ * readings that are not time — Food Cross's and 2048's moves — and a dial on
+ * "12 moves left" would be a picture of the wrong thing. The quiz draws its own
+ * draining ring instead (`.qz-ring`).
+ */
+.round-clock[role='timer']:not(.qz-clock)::before {
+  content: '';
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  border: 1.6px solid currentColor;
+  background:
+    linear-gradient(currentColor, currentColor) 50% 16% / 1.6px 40% no-repeat,
+    linear-gradient(currentColor, currentColor) 74% 50% / 34% 1.6px no-repeat;
+}
+
 /* The clock runs out of colour as well as time; there is no red to reach for. */
 .round-clock[data-low='true'] {
+  border-color: var(--border-2);
+  background: var(--surface-2);
   color: var(--text);
 }
 
 .round-bar {
-  height: 4px;
+  height: 6px;
   border-radius: 999px;
   background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
   overflow: hidden;
 }
 
@@ -10397,7 +10591,7 @@ button {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--accent);
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.55), var(--accent));
   /* Linear, and matched to the tick: an eased countdown lies about how long is
      left. */
   transition: width 120ms linear;
@@ -10442,7 +10636,12 @@ button {
 }
 
 .round-option {
-  padding: 0.9rem 1rem;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  padding: 0.55rem 0.85rem 0.55rem 0.55rem;
   border-radius: var(--r-sm);
   border: 1px solid var(--border-2);
   background: var(--surface);
@@ -10450,19 +10649,77 @@ button {
   font-family: var(--font-body);
   font-size: 0.9375rem;
   font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
   cursor: pointer;
-  transition: background 160ms var(--ease), border-color 160ms var(--ease);
+  transition:
+    background 160ms var(--ease),
+    border-color 160ms var(--ease),
+    box-shadow 200ms var(--ease);
 }
 
 .round-option:not(:disabled):hover {
   background: var(--surface-2);
   border-color: var(--accent-ink);
+  box-shadow: 0 10px 26px -16px rgba(var(--glow-rgb), calc(0.8 * var(--glow-k)));
 }
 
 /* A press that is also a wager should feel like one going down. Transform is
    not in the transition above, so it lands on the frame it is asked for. */
 .round-option:not(:disabled):active {
-  transform: translateY(1px);
+  transform: translateY(1px) scale(0.99);
+}
+
+/*
+ * The quiz-show key beside each answer — A, B, C, D. It is what makes four
+ * answers read as a choice to be made rather than four sentences, and it is the
+ * part of the button that answers the pointer: it fills on hover, so the hand
+ * can see which one it is about to commit to.
+ */
+.qz-key {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+  transition: background 160ms var(--ease), color 160ms var(--ease), border-color 160ms var(--ease);
+}
+
+.round-option:not(:disabled):hover .qz-key {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.qz-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The verdict's mark, at the far end: a tick on the right answer, a cross on the
+   wrong one chosen. Empty — and taking no room — until there is one. */
+.qz-mark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+.qz-mark:empty {
+  display: none;
+}
+
+.round-option[data-state] .qz-mark {
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  border: 2px solid currentColor;
 }
 
 /*
@@ -10481,6 +10738,100 @@ button {
   background: transparent;
   color: var(--text-fnt);
   text-decoration: line-through;
+}
+
+/* The key follows the button it is on: ink on the lit answer, gone quiet on the
+   struck one. */
+.round-option[data-state='right'] .qz-key {
+  border-color: currentColor;
+  background: transparent;
+  color: inherit;
+}
+
+.round-option[data-state='wrong'] .qz-key {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-fnt);
+}
+
+.round-option[data-state='right'] {
+  box-shadow: 0 12px 30px -14px rgba(var(--glow-rgb), calc(0.9 * var(--glow-k)));
+}
+
+/*
+ * The moment of the verdict, as motion: the right answer swells once and throws
+ * a ring of its own light; the wrong one chosen gives a short shake, the way a
+ * head does. Both once, both under 0.6s, both gone under reduced motion — the
+ * fill and the strike-through above already carry the verdict on their own.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .round-option[data-state='right'] {
+    animation: qz-right 520ms var(--ease) both;
+  }
+
+  .round-option[data-state='right']::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    animation: qz-ring 700ms var(--ease) both;
+  }
+
+  .round-option[data-state='wrong'] {
+    animation: qz-shake 420ms var(--ease) both;
+  }
+
+  .round-option[data-state] .qz-mark {
+    animation: qz-mark 360ms var(--ease) both;
+  }
+}
+
+@keyframes qz-right {
+  35% {
+    transform: scale(1.035);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes qz-ring {
+  from {
+    box-shadow: 0 0 0 0 rgba(var(--glow-rgb), calc(0.6 * var(--glow-k)));
+  }
+  to {
+    box-shadow: 0 0 0 16px rgba(var(--glow-rgb), 0);
+  }
+}
+
+@keyframes qz-shake {
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(5px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes qz-mark {
+  from {
+    transform: scale(0.3) rotate(-30deg);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
 }
 
 .round-option:disabled {
@@ -10583,6 +10934,623 @@ button {
   margin-top: 0.2rem;
 }
 
+/* ══════════════════════════════════════════════════════ the round stage ══
+   A round played *in* something rather than on a sheet of glass: the four
+   quizzes (`games/QuizRound.tsx`) and the result card every game ends on
+   (`games/ResultCard.tsx`). The set is a canvas (`games/stage/`, painted through
+   the board games' `Diorama`), and it is the one part of these screens that
+   carries hues — named in `stage/config.ts`, never here. Everything below is
+   the page's two colours: the frame, the HUD pills, the question card, the
+   options, the figures. Text sits on `--glass` wherever the set shows behind
+   it, and the set itself is shaded at the edges so it reads as *inside* the
+   card.
+
+   `qz-` is the quiz, `rs-` the result card, `stage-` the canvases; all three
+   were grepped and free.
+   ════════════════════════════════════════════════════════════════════════ */
+
+.round[data-stage] {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  /* What shows for the frame before the set's first paint. */
+  background: var(--bg-2);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow:
+    0 30px 70px -40px var(--shadow),
+    inset 0 1px 0 rgba(var(--accent-rgb), 0.14);
+}
+
+.round[data-stage] > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* The set arrives rather than appearing: a short rise as the cards give way
+   to the round, and again as the round gives way to its result. A translate
+   only — the set measures where Pico stands, and a scale would skew it. */
+@media (prefers-reduced-motion: no-preference) {
+  .round[data-stage] {
+    animation: stage-in 460ms var(--ease) both;
+  }
+}
+
+@keyframes stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.round[data-stage] > .stage-set,
+.round[data-stage] > .stage-burst {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Confetti falls in front of the set and behind the words. */
+.round[data-stage] > .stage-burst {
+  z-index: 1;
+}
+
+.round[data-stage] .round-count,
+.round[data-stage] .round-clock {
+  border-color: var(--border-2);
+  background: var(--glass);
+  box-shadow: 0 6px 16px -12px var(--shadow);
+}
+
+.round[data-stage] .round-bar {
+  background: var(--glass);
+}
+
+.round[data-stage] .round-quit {
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  background: var(--glass);
+}
+
+/* ── the quiz ── */
+
+.qz {
+  gap: 0.95rem;
+}
+
+.qz-top {
+  position: relative;
+}
+
+/* Five pips, one a question: hollow ahead, ringed now, filled for a right
+   answer, dashed and struck for a wrong one. The same two states as the
+   options — fill for right, the accent removed for wrong. */
+.qz-track {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.3rem 0.55rem;
+  list-style: none;
+  border-radius: 999px;
+  background: var(--glass);
+  border: 1px solid var(--border);
+}
+
+.qz-track li {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-2);
+  transition: background 240ms var(--ease), border-color 240ms var(--ease), box-shadow 240ms var(--ease);
+}
+
+.qz-track li[data-mark='now'] {
+  border-color: var(--accent-lit);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.2);
+}
+
+.qz-track li[data-mark='right'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.qz-track li[data-mark='wrong'] {
+  border-style: dashed;
+  border-color: var(--text-fnt);
+}
+
+.qz-track li[data-mark='wrong']::after {
+  content: '';
+  width: 0.5rem;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--text-fnt);
+  transform: rotate(-45deg);
+}
+
+/* The clock's ring drains with the question. A CSS animation the length of the
+   question, restarted per question by React's `key` and paused on a pick —
+   the compositor's work, not a render per frame. */
+.qz-ring {
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  transform: rotate(-90deg);
+}
+
+.qz-ring-track,
+.qz-ring-fill {
+  fill: none;
+  stroke-width: 3;
+}
+
+.qz-ring-track {
+  stroke: var(--border-2);
+}
+
+.qz-ring-fill {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  animation: qz-ring-drain linear forwards;
+}
+
+.qz-bar i {
+  width: 100%;
+  transform-origin: left center;
+  animation: qz-drain linear forwards;
+}
+
+.qz-ring-fill[data-paused='true'],
+.qz-bar i[data-paused='true'] {
+  animation-play-state: paused;
+}
+
+/* The bar runs out of colour with the clock: the last seconds in the text's
+   ink, beating. */
+.qz-bar[data-low='true'] i {
+  background: var(--text);
+}
+
+.qz-clock[data-low='true'] {
+  animation: qz-tick 1s steps(1) infinite;
+}
+
+@keyframes qz-ring-drain {
+  to {
+    stroke-dashoffset: 100;
+  }
+}
+
+@keyframes qz-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes qz-tick {
+  0% {
+    transform: scale(1.08);
+  }
+  30% {
+    transform: scale(1);
+  }
+}
+
+/* Pico at the lectern, the question in a speech card beside him. */
+.qz-stage {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1.25rem;
+  width: min(100%, 40rem);
+  margin: 0.35rem auto 0.25rem;
+}
+
+.qz-host {
+  position: relative;
+  width: 118px;
+  height: 118px;
+}
+
+/* His shadow on the floor of the set. */
+.qz-host::after {
+  content: '';
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  bottom: 1%;
+  height: 11%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--shadow), transparent);
+  z-index: -1;
+}
+
+.qz-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 7rem;
+  justify-content: center;
+  padding: 1.15rem 1.5rem 1.25rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border-2);
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 20px 44px -26px var(--shadow);
+}
+
+/* The card's tail, pointing at the host: the outer half of a turned square,
+   borders on the two sides that face him. */
+.qz-card::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 15px;
+  height: 15px;
+  border-left: 1px solid var(--border-2);
+  border-bottom: 1px solid var(--border-2);
+  background: var(--glass);
+  clip-path: polygon(0 0, 0 100%, 100% 100%);
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.qz .round-glyph {
+  font-size: clamp(3.4rem, 2.6rem + 3.5vw, 5rem);
+  line-height: 1;
+  filter: drop-shadow(0 8px 14px var(--shadow));
+}
+
+.qz .round-q {
+  margin: 0;
+  font-size: clamp(1.12rem, 0.95rem + 0.9vw, 1.5rem);
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.qz-options {
+  width: min(100%, 40rem);
+  margin: 0.15rem auto 0;
+  gap: 0.65rem;
+}
+
+.qz .round-option {
+  background: var(--glass);
+  box-shadow: 0 10px 26px -20px var(--shadow);
+}
+
+.qz .round-option:not(:disabled):hover {
+  background: var(--glass);
+}
+
+.qz .round-option[data-state='right'] {
+  background: var(--accent);
+}
+
+.qz .round-option[data-state='wrong'] {
+  background: rgba(var(--panel-rgb), 0.5);
+  /* Struck on the words only: a decoration set on the button propagates into
+     every block inside it, and through the key it turned a "C" into a "€". */
+  text-decoration: none;
+}
+
+.qz .round-option[data-state='wrong'] .qz-text {
+  text-decoration: line-through;
+}
+
+/* Waiting on the server's verdict: the chosen key breathes. */
+.round-option[data-state='picked'] .qz-key {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .round-option[data-state='picked'] .qz-key {
+    animation: qz-wait 0.9s var(--ease) infinite;
+  }
+
+  /* Each question arrives: the card rises, the answers follow one by one. */
+  .qz-card {
+    animation: qz-card-in 420ms var(--ease) both;
+  }
+
+  .qz .round-option:not([data-state]) {
+    animation: qz-option-in 380ms var(--ease) both;
+    animation-delay: calc(var(--i, 0) * 55ms + 110ms);
+  }
+}
+
+@keyframes qz-wait {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes qz-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
+@keyframes qz-option-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The drain stops moving and steps with the second instead. */
+  .qz-bar i {
+    animation: none;
+    transform: scaleX(var(--qz-left, 1));
+  }
+
+  .qz-ring-fill {
+    animation: none;
+    stroke-dashoffset: calc((1 - var(--qz-left, 1)) * 100);
+  }
+
+  .qz-clock[data-low='true'] {
+    animation: none;
+  }
+}
+
+/*
+ * A phone, where every row the round spends is a row the fourth answer is
+ * pushed below the fold. Two rows come back:
+ *
+ * - **The pips take the count's place.** Three readings and five pips do not
+ *   fit across 300 pixels in Ukrainian, and the pips *are* the count drawn —
+ *   so "Question 1 of 5" leaves the screen and stays for a screen reader.
+ * - **The host perches on the card** instead of standing above it, his feet on
+ *   its top edge, which is also why the tail goes: he is not beside the
+ *   question any more, he is on it.
+ */
+@media (max-width: 560px) {
+  .qz-top .round-count {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .qz-stage {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 0;
+    margin-top: -0.2rem;
+  }
+
+  .qz-host {
+    z-index: 1;
+    width: 72px;
+    height: 72px;
+    margin-bottom: -7px;
+  }
+
+  .qz-host::after {
+    bottom: 3%;
+  }
+
+  .qz-card {
+    width: 100%;
+    min-height: 0;
+    padding: 1rem 1.1rem 1.1rem;
+  }
+
+  .qz-card::before {
+    display: none;
+  }
+}
+
+/* ── the result ── */
+
+.rs {
+  gap: 0.6rem;
+  padding-block: clamp(1.4rem, 4vw, 2.2rem);
+}
+
+.rs-podium {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  /* Room for the drum the set paints under his feet. */
+  padding-bottom: 2.1rem;
+}
+
+.rs-host {
+  width: 124px;
+  height: 124px;
+}
+
+.rs-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.rs-body > * {
+  margin: 0;
+}
+
+.rs-gain {
+  line-height: 1;
+}
+
+.rs .result-gain {
+  display: inline-block;
+  font-size: clamp(3.6rem, 2.8rem + 3.4vw, 5.6rem);
+  text-shadow: 0 0 34px rgba(var(--glow-rgb), calc(0.4 * var(--glow-k)));
+}
+
+.rs .result-gain[data-zero='true'] {
+  text-shadow: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rs .result-gain[data-landed='true']:not([data-zero='true']) {
+    animation: rs-land 460ms var(--ease);
+  }
+
+  .rs-host {
+    animation: rs-host-in 560ms var(--ease) both;
+  }
+}
+
+@keyframes rs-land {
+  35% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes rs-host-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.85);
+  }
+}
+
+.rs .result-score {
+  font-weight: 600;
+}
+
+.rs-note,
+.rs-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+/* The practice line as a note in the ticket's material — read, not shouted —
+   with its clock beside the first line rather than floating mid-paragraph. */
+.rs-note {
+  align-items: flex-start;
+  max-width: 25rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--r-sm);
+  background: var(--glass);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.rs-note svg {
+  margin-top: 0.15rem;
+}
+
+.rs-note svg,
+.rs-streak svg {
+  flex: 0 0 auto;
+  color: var(--accent-ink);
+}
+
+/* The reward line as what it is: a ticket — the stub filled, the rest glass. */
+.rs-ticket {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+  max-width: 27rem;
+  padding: 0.55rem 1rem 0.55rem 0.55rem;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--border-2);
+  background: var(--glass);
+  font-size: 0.92rem;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.rs-ticket-ico {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 0.65rem;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.rs .rs-streak {
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  background: var(--glass);
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+.rs .result-actions {
+  margin-top: 0.35rem;
+}
+
+.rs .result-back {
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  background: var(--glass);
+}
+
+/* Wide: the bird on his podium to the left, the reading beside him. */
+@media (min-width: 761px) {
+  .rs {
+    display: grid;
+    grid-template-columns: minmax(12rem, 0.8fr) minmax(0, 1.2fr);
+    align-items: center;
+    column-gap: 1.5rem;
+    min-height: 23rem;
+    text-align: left;
+  }
+
+  .rs-podium {
+    align-self: stretch;
+    align-items: center;
+    padding-bottom: 2.4rem;
+  }
+
+  .rs-host {
+    width: 172px;
+    height: 172px;
+  }
+
+  .rs-body {
+    align-items: flex-start;
+  }
+
+  .rs .result-actions {
+    justify-content: flex-start;
+  }
+
+  .rs .result-back {
+    align-self: flex-start;
+  }
+}
+
 /* ── memory match, word builder ───────────────────────────────────────────
  *
  * Prefixed `mm-` and `wb-`, like every other app screen here: `site.css` has no
@@ -10598,158 +11566,1019 @@ button {
   color: var(--text-mut);
 }
 
+/* ── memory match: Pico's card table ──────────────────────────────────────
+ *
+ * The round is a card room. The wall and the lamplight are painted
+ * (`.mm-room`, the canvas in `games/memory/table.ts`); the table, its baize,
+ * the twelve cards and Pico's corner are markup in front of it.
+ *
+ * **Every material colour is a `--mm-*` property**, set on the round from
+ * `MEMORY_SCENE` in `games/memory/config.ts` — a scene palette, the same kind
+ * of exception as the platformer's and the study's. The baize is the accent's
+ * hue taken deep, the faces are card stock, the backs carry Pico's badge on
+ * the deck's lattice (`--mm-badge-img`, drawn by `drawPico` once). Nothing in
+ * this block names a colour, and the states are still the accent's: up is
+ * ringed in `--accent-lit` and lifted, matched is ringed and labelled in the
+ * accent's fill.
+ *
+ * **Cards do not flip**, here or in the catalogue's preview. A face arrives
+ * by fading in where the back was (`mm-show`), and that is the whole of the
+ * turn: a rotating card is a card that can be caught edge-on, and a game about
+ * remembering what you saw should never show you half of it. What the board
+ * does have is a *deal* — the cards slide in from Pico's side, staggered, once,
+ * when the round opens — a wobble on a missed pair, and a sheen across a
+ * matched one.
+ */
+
+.mm-round {
+  --mm-pad: clamp(1.4rem, 4vw, 2rem);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: var(--mm-pad);
+  background: var(--mm-wall-bottom);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.mm-room {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.mm-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 27rem) 11rem;
+  justify-content: center;
+  align-items: end;
+  gap: 1.4rem;
+  margin-top: 0.4rem;
+}
+
+/* The table: a stained rim, lit along its top edge, standing on its shadow. */
+.mm-table {
+  position: relative;
+  padding: 0.8rem;
+  border-radius: 22px;
+  background: linear-gradient(var(--mm-rim-hi), var(--mm-rim) 18%, var(--mm-rim) 70%, var(--mm-rim-lo));
+  box-shadow:
+    0 6px 0 var(--mm-rim-lo),
+    0 30px 40px -20px var(--mm-shadow);
+}
+
+/*
+ * The pendant over the table, billiard-room style: a cord out of the top of
+ * the panel, a wide dome lit along its rim, and the cone it throws onto the
+ * baize — under the cards, since they are positioned and it comes first.
+ */
+.mm-lamp {
+  position: absolute;
+  z-index: 0;
+  bottom: calc(100% + 0.95rem);
+  left: 50%;
+  width: 6.2rem;
+  height: 1.75rem;
+  margin-left: -3.1rem;
+  border-radius: 50% 50% 4px 4px / 100% 100% 4px 4px;
+  background: linear-gradient(100deg, var(--mm-rim-hi), var(--mm-rim) 45%, var(--mm-rim-lo));
+  box-shadow: inset 0 -2px 0 var(--mm-medal-ring);
+  pointer-events: none;
+}
+
+.mm-lamp::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  width: 2px;
+  height: 12rem;
+  margin-left: -1px;
+  background: var(--mm-rim);
+}
+
+.mm-lamp::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 26rem;
+  height: 14rem;
+  margin-left: -13rem;
+  /* The bulb under the shade, then its light. */
+  background:
+    radial-gradient(circle at 50% 0%, var(--mm-medal) 0 0.42rem, transparent 0.5rem),
+    radial-gradient(ellipse 50% 100% at 50% 0%, var(--mm-glow), transparent 78%);
+}
+
+/* The baize: the lamp's pool, the nap, and a stitched seam inside the rim. */
 .mm-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 0.6rem;
   width: 100%;
-  max-width: 26rem;
-  margin: 0 auto;
+  padding: 1rem;
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse 75% 60% at 50% 28%, var(--mm-pool), transparent 75%),
+    var(--mm-nap-img),
+    radial-gradient(ellipse at 50% 40%, var(--mm-felt), var(--mm-felt-edge));
+  box-shadow:
+    inset 0 3px 14px var(--mm-shadow),
+    inset 0 0 0 1px var(--mm-rim-lo);
+  outline: 1.5px dashed var(--mm-stitch);
+  outline-offset: -7px;
 }
 
 /* 3:4 is the shape of a playing card; a square grid reads as a keypad. */
 .mm-card {
+  position: relative;
   aspect-ratio: 3 / 4;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.25rem;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-2);
-  background: var(--surface);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: linear-gradient(var(--mm-face-hi), var(--mm-face) 70%);
+  color: var(--mm-glyph);
   font-family: inherit;
   cursor: pointer;
+  box-shadow:
+    0 2px 0 var(--mm-face-edge),
+    0 9px 14px -7px var(--mm-shadow);
   transition:
-    border-color 180ms var(--ease),
-    background 180ms var(--ease),
-    transform 180ms var(--ease);
+    transform 200ms var(--ease),
+    box-shadow 200ms var(--ease);
+  /* The deal: once, as the round opens, from Pico's side of the table. The
+     shorthand is restated whole wherever a second animation joins it, so this
+     one keeps its place in the list and never replays. */
+  animation: mm-deal 460ms var(--ease) calc(var(--i) * 40ms + 60ms) backwards;
+}
+
+@keyframes mm-deal {
+  from {
+    opacity: 0;
+    transform: translate(2.6rem, -0.8rem) rotate(8deg) scale(0.92);
+  }
 }
 
 .mm-card[data-face='down']:hover {
-  border-color: var(--accent-soft);
-  transform: translateY(-2px);
+  transform: translateY(-4px);
+  box-shadow:
+    0 2px 0 var(--mm-face-edge),
+    0 18px 18px -9px var(--mm-shadow);
 }
 
+.mm-card:focus-visible {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: 3px;
+}
+
+/* The back: Pico's badge in a gold-ringed medallion on the deck's lattice,
+   printed inside a margin of the card's own stock — which is what separates a
+   teal back from teal baize, the way a real deck's white border does. */
+.mm-back {
+  position: absolute;
+  inset: 4px;
+  border-radius: 6px;
+  background:
+    var(--mm-badge-img) center / 50% auto no-repeat,
+    radial-gradient(circle closest-side, var(--mm-medal) 0 56%, var(--mm-medal-ring) 57% 63%, transparent 64%),
+    repeating-linear-gradient(45deg, var(--mm-back-line) 0 1px, transparent 1px 7px),
+    repeating-linear-gradient(-45deg, var(--mm-back-line) 0 1px, transparent 1px 7px),
+    linear-gradient(155deg, var(--mm-back), var(--mm-back-deep));
+  box-shadow:
+    inset 0 0 0 3px var(--mm-back-deep),
+    inset 0 0 0 4px var(--mm-back-edge);
+  animation: mm-show 180ms var(--ease);
+}
+
+/* Up: lifted toward the player and ringed — and that includes a card whose
+   face is still on its way from the server, which is still the back. */
 .mm-card[data-face='up'] {
-  border-color: var(--accent-lit);
-  background: var(--surface-2);
+  transform: translateY(-5px) scale(1.03);
+  box-shadow:
+    0 0 0 2px var(--accent-lit),
+    0 2px 0 var(--mm-face-edge),
+    0 20px 22px -10px var(--mm-shadow);
 }
 
 /* Matched cards stay on the board rather than clearing off it: the whole game
    is remembering where things were, and a board that empties as you go removes
-   the evidence you were building. */
+   the evidence you were building. They settle back down, ringed in the
+   accent. */
 .mm-card[data-face='matched'] {
-  border-color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.14);
   cursor: default;
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 2px 0 var(--mm-face-edge),
+    0 7px 10px -6px var(--mm-shadow);
 }
 
-.mm-back {
-  width: 1.15rem;
-  height: 1.15rem;
-  border-radius: 6px;
-  border: 1px solid var(--border-2);
+/* A sheen runs across a pair once as it goes down. */
+.mm-card[data-face='matched']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(115deg, transparent 38%, var(--mm-sheen) 50%, transparent 62%) 160% 0 / 260% 100% no-repeat;
+  opacity: 0;
+  pointer-events: none;
+  animation: mm-sheen 900ms ease-out 80ms;
+}
+
+@keyframes mm-sheen {
+  from {
+    opacity: 1;
+    background-position: 160% 0;
+  }
+  to {
+    opacity: 1;
+    background-position: -60% 0;
+  }
+}
+
+/* The beat before a pair settles: the two that match glow. */
+.mm-card[data-verdict='pair'] {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 22px 2px rgba(var(--glow-rgb), calc(0.4 * var(--glow-k))),
+    0 20px 22px -10px var(--mm-shadow);
+}
+
+/* A miss: the two faces knock and fade a little while they are readable, and
+   go back down. Not a colour — the palette has one accent and it is right's. */
+.mm-card[data-verdict='miss'] {
+  animation:
+    mm-deal 460ms var(--ease) calc(var(--i) * 40ms + 60ms) backwards,
+    mm-wobble 380ms ease-in-out;
+}
+
+.mm-card[data-verdict='miss'] .mm-icon,
+.mm-card[data-verdict='miss'] .mm-pip {
+  opacity: 0.55;
+  filter: grayscale(0.6);
+}
+
+@keyframes mm-wobble {
+  0%,
+  100% {
+    rotate: 0deg;
+  }
+  25% {
+    rotate: -3.5deg;
+  }
+  60% {
+    rotate: 2.5deg;
+  }
 }
 
 .mm-icon {
-  font-size: 1.75rem;
+  font-size: clamp(1.7rem, 1rem + 2.6vw, 2.35rem);
   line-height: 1;
+  transition:
+    opacity 160ms var(--ease),
+    filter 160ms var(--ease);
+  animation: mm-show 200ms var(--ease);
 }
 
+/* A server board's faces are marks, not pictures; they take the deck's ink. */
+.mm-grid[data-kind='glyph'] .mm-icon {
+  font-size: clamp(1.9rem, 1.1rem + 2.8vw, 2.6rem);
+  color: var(--mm-glyph);
+}
+
+.mm-pip {
+  position: absolute;
+  top: 0.38rem;
+  left: 0.42rem;
+  font-size: 0.62rem;
+  font-style: normal;
+  line-height: 1;
+  transition:
+    opacity 160ms var(--ease),
+    filter 160ms var(--ease);
+  animation: mm-show 200ms var(--ease);
+}
+
+.mm-pip-end {
+  top: auto;
+  left: auto;
+  right: 0.42rem;
+  bottom: 0.38rem;
+  rotate: 180deg;
+}
+
+@keyframes mm-show {
+  from {
+    opacity: 0;
+    scale: 0.86;
+  }
+}
+
+/* The word a match teaches, on the card in the accent's fill. */
 .mm-label {
-  padding: 0 0.2rem;
-  font-size: 0.58rem;
-  font-weight: 700;
+  position: absolute;
+  right: 0.3rem;
+  bottom: 0.45rem;
+  left: 0.3rem;
+  padding: 0.22rem 0.25rem;
+  border-radius: 5px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.6rem;
+  font-weight: 800;
   line-height: 1.15;
   text-align: center;
-  color: var(--accent-ink);
+  animation: mm-show 260ms var(--ease) 140ms backwards;
 }
 
-/* The word the last match taught, which is the point of the game being here. */
+.mm-card[data-face='matched'] .mm-pip-end {
+  display: none;
+}
+
+.mm-seal {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+  display: grid;
+  place-items: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  animation: mm-pop 340ms cubic-bezier(0.2, 1.6, 0.4, 1) 120ms backwards;
+}
+
+@keyframes mm-pop {
+  from {
+    opacity: 0;
+    scale: 0.3;
+  }
+}
+
+/* ── Pico's corner ── */
+
+.mm-dealer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 0.2rem;
+}
+
+.mm-perch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.mm-bird {
+  display: block;
+  width: 7.4rem;
+  height: 7.4rem;
+  margin-bottom: -0.5rem;
+  /* Drawn facing right; mirrored to look across at the table on his left. */
+  transform: scaleX(-1);
+}
+
+.mm-decks {
+  display: block;
+  width: 7rem;
+  height: auto;
+}
+
+/* The board's line, as Pico's speech: what a match just taught, or how to
+   play. Opaque paper, because the room behind it is moving. */
 .mm-learned {
-  min-height: 2.6rem;
+  position: relative;
+  width: 100%;
+  min-height: 5rem;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  border-radius: 14px;
+  background: var(--mm-paper);
+  color: var(--mm-paper-mut);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  text-align: center;
+  text-wrap: balance;
+  box-shadow: 0 14px 24px -14px var(--mm-shadow);
+}
+
+.mm-learned::after {
+  content: '';
+  position: absolute;
+  bottom: -0.4rem;
+  left: 50%;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-left: -0.45rem;
+  border-radius: 2px;
+  background: var(--mm-paper);
+  transform: rotate(45deg);
+}
+
+.mm-said {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.1rem;
-  font-size: 0.85rem;
-  color: var(--text-mut);
+  animation: mm-say 320ms var(--ease);
 }
 
 .mm-learned b {
   font-family: var(--font-display);
-  font-size: 1.05rem;
-  color: var(--accent-ink);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--mm-paper-ink);
 }
 
-/* ── word builder ── */
+@keyframes mm-say {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
+  }
+}
 
+@media (prefers-reduced-motion: reduce) {
+  .mm-card,
+  .mm-card[data-verdict='miss'],
+  .mm-card[data-face='matched']::after,
+  .mm-back,
+  .mm-icon,
+  .mm-pip,
+  .mm-label,
+  .mm-seal,
+  .mm-said {
+    animation: none;
+  }
+}
+
+/* A phone: Pico's corner goes under the table as a row — Pico on his decks,
+   talking to the right — and the table gives back some of its padding. */
+@media (max-width: 40rem) {
+  .mm-stage {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.9rem;
+  }
+
+  /* Its cord would run through the header's two figures, which meet in the
+     middle at this width. */
+  .mm-lamp {
+    display: none;
+  }
+
+  .mm-table {
+    padding: 0.55rem;
+    border-radius: 18px;
+  }
+
+  .mm-grid {
+    padding: 0.7rem;
+    border-radius: 12px;
+    outline-offset: -5px;
+  }
+
+  .mm-dealer {
+    flex-direction: row-reverse;
+    align-items: flex-end;
+    gap: 0.8rem;
+  }
+
+  .mm-bird {
+    width: 5rem;
+    height: 5rem;
+    margin-bottom: -0.35rem;
+    transform: none;
+  }
+
+  .mm-decks {
+    width: 4.8rem;
+  }
+
+  .mm-learned {
+    flex: 1 1 auto;
+    min-height: 4.2rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .mm-learned::after {
+    bottom: 1.1rem;
+    left: -0.4rem;
+    margin-left: 0;
+  }
+}
+
+/* ── word builder: Pico's study ───────────────────────────────────────────
+ *
+ * The round is a room. A painted wall behind (`.wb-room`, the canvas in
+ * `games/word/desk.ts`), and in front of it the furniture, which is markup: the
+ * shelf Pico stands on holding the clue, the desk, the rack the word is set in,
+ * and the tiles. The objects are DOM because they have to sit where the layout
+ * puts them in five languages and two widths; only the scenery is painted.
+ *
+ * **Every material colour here is a `--wb-*` property**, set on the round from
+ * `WORD_SCENE` in `games/word/config.ts` — the scene palette, the same kind of
+ * exception as the platformer's. Nothing in this block names a colour. The
+ * chrome — the header row, the pips, the buttons, the verdict pill — stays on
+ * the site's tokens, and *right* is still the accent fill: when a word lands,
+ * its tiles are the only mint on the desk.
+ *
+ * The tiles are the point. Ivory with a darker side standing under them, so
+ * each one is a block with a height rather than a box with a border: it lifts
+ * toward the hand, sinks when pressed, and drops into its groove on the rack
+ * (`wb-land`, CSS on mount — the slot's letter is keyed by the tile it came
+ * from, so arriving is a new element). A spent tile leaves its socket behind
+ * and holds its place, for the reason the old note gave: the tray is a layout
+ * the player is reading, and reflowing it on every tap loses them.
+ */
+
+.wb-round {
+  --wb-pad: clamp(1.4rem, 4vw, 2rem);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: var(--wb-pad);
+  /* Under the canvas, for the frame before it paints. */
+  background: var(--wb-wall-bottom);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.wb-room {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Five stamps, one per word. Centred under the header because they are the
+   round's, not the word's. */
 .wb-pips {
   display: flex;
-  gap: 0.3rem;
+  justify-content: center;
+  gap: 0.45rem;
 }
 
 .wb-pips i {
-  width: 1.6rem;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--border-2);
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-2);
+  transition:
+    background 220ms var(--ease),
+    border-color 220ms var(--ease),
+    transform 220ms var(--ease);
+}
+
+.wb-pips i[data-now='true'] {
+  border-color: var(--accent-lit);
+  transform: scale(1.25);
 }
 
 .wb-pips i[data-on='true'] {
+  border-color: transparent;
   background: var(--accent);
+  transform: none;
+}
+
+/* ── the shelf ── */
+
+.wb-stage {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.9rem;
+  width: min(100%, 34rem);
+  margin: 1.9rem auto 1rem;
+  padding: 0 0.3rem;
+}
+
+/* The plank, wider than what stands on it, with the light along its front edge
+   and its shadow on the wall below. */
+.wb-stage::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 100%;
+  left: -1.6rem;
+  right: -1.6rem;
+  height: 0.8rem;
+  border-radius: 3px;
+  background:
+    var(--wb-grain-img) 0 0 / 420px 120px,
+    linear-gradient(var(--wb-shelf-hi) 0 2px, var(--wb-shelf) 2px 62%, var(--wb-shelf-lo));
+  box-shadow: 0 16px 18px -12px var(--wb-shadow);
+}
+
+/* Its two brackets. */
+.wb-stage::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: calc(100% + 0.8rem);
+  left: 10%;
+  right: 10%;
+  height: 0.9rem;
+  background:
+    linear-gradient(var(--wb-shelf-lo), var(--wb-shelf-lo)) left top / 0.45rem 100% no-repeat,
+    linear-gradient(var(--wb-shelf-lo), var(--wb-shelf-lo)) right top / 0.45rem 100% no-repeat;
+}
+
+.wb-perch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 6.6rem;
+  height: 6.6rem;
+  /* The design box keeps a margin under the feet; this puts them on the wood. */
+  margin-bottom: -0.45rem;
+}
+
+.wb-pico {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * The lamp over Pico. Hung from his perch rather than painted into the room so
+ * it is over him at every width, and its cord runs up out of the panel. It
+ * sways — a long, slow swing, the room's one moving object — and stops under
+ * reduced motion.
+ */
+.wb-lamp {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.35rem);
+  width: 3.1rem;
+  height: 1.4rem;
+  margin-left: -1.55rem;
+  border-radius: 1.55rem 1.55rem 0.35rem 0.35rem;
+  background: linear-gradient(165deg, var(--wb-lamp-shade-hi), var(--wb-lamp-shade) 65%);
+  box-shadow: inset 0 -2px 0 var(--wb-shelf-lo);
+  transform-origin: 50% -16rem;
+  animation: wb-sway 6.5s ease-in-out infinite alternate;
+}
+
+.wb-lamp::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  width: 2px;
+  height: 18rem;
+  margin-left: -1px;
+  background: var(--wb-lamp-shade);
+}
+
+/* The cone of light falling from it, behind Pico. */
+.wb-lamp::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 12rem;
+  height: 8.5rem;
+  margin-left: -6rem;
+  background: radial-gradient(ellipse 50% 100% at 50% 0%, var(--wb-glow), transparent 85%);
+  pointer-events: none;
+}
+
+.wb-lamp i {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 0.95rem;
+  height: 0.5rem;
+  margin: -0.15rem 0 0 -0.475rem;
+  border-radius: 0 0 0.5rem 0.5rem;
+  background: var(--wb-bulb);
+  box-shadow:
+    0 0 12px 4px var(--wb-glow),
+    0 0 36px 16px var(--wb-glow);
+}
+
+@keyframes wb-sway {
+  from {
+    transform: rotate(-1.1deg);
+  }
+  to {
+    transform: rotate(1.1deg);
+  }
+}
+
+/* Waiting on the server: a thought, over his head. */
+.wb-think {
+  position: absolute;
+  z-index: 2;
+  top: -0.85rem;
+  right: -1.1rem;
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.38rem 0.5rem;
+  border-radius: 999px;
+  background: var(--wb-paper);
+  box-shadow: 0 6px 12px -6px var(--wb-shadow);
+}
+
+.wb-think::after {
+  content: '';
+  position: absolute;
+  left: 0.15rem;
+  bottom: -0.35rem;
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 50%;
+  background: var(--wb-paper);
+}
+
+.wb-think i {
+  width: 0.34rem;
+  height: 0.34rem;
+  border-radius: 50%;
+  background: var(--wb-paper-mut);
+  animation: wb-dot 1.05s ease-in-out infinite;
+}
+
+.wb-think i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.wb-think i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes wb-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.45;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/*
+ * The clue, on a note Pico holds up — taped at the top, leaning a degree off
+ * true on the shelf, with a tail toward him because it is what he is saying.
+ * Opaque paper rather than glass: the room behind it moves, and the clue is
+ * the one thing on the screen that must read first time.
+ */
+.wb-note {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 23rem;
+  min-height: 5.4rem;
+  display: grid;
+  place-items: center;
+  padding: 1.15rem 1.5rem 1.05rem;
+  border-radius: 7px;
+  background: var(--wb-paper);
+  box-shadow:
+    0 1px 0 var(--wb-tile-side),
+    0 14px 24px -12px var(--wb-shadow);
+  transform: rotate(-1.1deg);
+  transform-origin: 50% 100%;
+}
+
+.wb-note::before {
+  content: '';
+  position: absolute;
+  top: -0.55rem;
+  left: 50%;
+  width: 3.8rem;
+  height: 1.1rem;
+  margin-left: -1.9rem;
+  border-radius: 2px;
+  background: var(--wb-tape);
+  transform: rotate(-4deg);
+}
+
+.wb-note::after {
+  content: '';
+  position: absolute;
+  left: -0.42rem;
+  bottom: 1.25rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 2px;
+  background: var(--wb-paper);
+  transform: rotate(45deg);
 }
 
 .wb-hint {
+  margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1rem, 2.6vw, 1.2rem);
+  font-size: clamp(1.02rem, 0.85rem + 0.9vw, 1.3rem);
+  font-weight: 500;
+  line-height: 1.3;
   text-align: center;
+  text-wrap: balance;
+  color: var(--wb-paper-ink);
 }
 
-.wb-slots,
-.wb-tray {
+.wb-tier {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.65rem;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  justify-content: center;
+  gap: 0.2rem;
 }
 
-.wb-slot,
-.wb-key {
+.wb-tier i {
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 50%;
+  border: 1px solid var(--wb-paper-mut);
+}
+
+.wb-tier i[data-on='true'] {
+  border-color: transparent;
+  background: var(--wb-right-side);
+}
+
+/* Solved: a stamp comes down on the note's corner. */
+.wb-stamp {
+  position: absolute;
+  top: -0.95rem;
+  right: -0.8rem;
   display: grid;
   place-items: center;
   width: 2.6rem;
-  height: 3rem;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-2);
-  background: var(--surface);
-  font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-weight: 600;
-  transition:
-    border-color 150ms var(--ease),
-    background 150ms var(--ease),
-    color 150ms var(--ease),
-    opacity 150ms var(--ease);
+  height: 2.6rem;
+  border-radius: 50%;
+  border: 2.5px solid var(--wb-right-side);
+  background: var(--wb-paper);
+  color: var(--wb-right-side);
+  transform: rotate(-14deg);
+  animation: wb-stamp 380ms cubic-bezier(0.2, 1.5, 0.4, 1) both;
 }
 
-.wb-slots[data-state='right'] .wb-slot {
-  border-color: transparent;
+@keyframes wb-stamp {
+  from {
+    opacity: 0;
+    transform: rotate(-14deg) scale(1.9);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-14deg) scale(1);
+  }
+}
+
+.wb-props {
+  flex: 0 0 auto;
+  width: 4.4rem;
+  height: auto;
+  margin-bottom: -0.05rem;
+}
+
+/* ── the desk ── */
+
+.wb-desk {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.05rem;
+  margin: 0.7rem calc(-1 * var(--wb-pad)) calc(-1 * var(--wb-pad));
+  padding: 1.55rem var(--wb-pad) calc(var(--wb-pad) * 0.8);
+  background:
+    radial-gradient(ellipse 55% 85% at 24% 0%, var(--wb-pool), transparent 75%),
+    var(--wb-grain-img) 0 0 / 420px 120px,
+    linear-gradient(var(--wb-desk-far), var(--wb-desk-near));
+  box-shadow:
+    inset 0 3px 0 var(--wb-desk-lip),
+    0 -16px 26px -18px var(--wb-shadow);
+}
+
+/* The composing rack the word is set in. Its width follows the word, and it is
+   the container the slots size themselves against. */
+.wb-rack {
+  position: relative;
+  container-type: inline-size;
+  width: min(100%, calc(var(--n) * 3.45rem + 1.45rem));
+  padding: 0.55rem 0.7rem 0.7rem;
+  border-radius: 14px;
+  background:
+    var(--wb-grain-img) 0 0 / 420px 120px,
+    linear-gradient(var(--wb-rack-hi), var(--wb-rack) 42%, var(--wb-rack-lo));
+  box-shadow:
+    0 5px 0 var(--wb-rack-lo),
+    0 16px 22px -10px var(--wb-shadow);
+}
+
+.wb-slots {
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.wb-slot {
+  --s: min(3.1rem, calc((100cqi - (var(--n) - 1) * 0.35rem) / var(--n)));
+  display: grid;
+  width: var(--s);
+  height: calc(var(--s) * 1.1);
+  border-radius: calc(var(--s) * 0.2);
+  background: var(--wb-groove);
+  box-shadow: inset 0 3px 5px var(--wb-groove-shade);
+}
+
+/* A letter in its groove: the tile, seated, standing on a shorter side. */
+.wb-tile {
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: linear-gradient(var(--wb-tile-hi), var(--wb-tile) 60%);
+  color: var(--wb-tile-ink);
+  font-family: var(--font-display);
+  font-size: calc(var(--s) * 0.5);
+  font-weight: 600;
+  line-height: 1;
+  box-shadow:
+    0 3px 0 var(--wb-tile-side),
+    0 6px 8px -3px var(--wb-shadow),
+    inset 0 1px 0 var(--wb-tile-glint);
+  transform: translateY(-3px);
+  /* No fill: once it has landed the tile's own transform is in charge again,
+     which is what lets the right and wrong rows below move it. */
+  animation: wb-land 240ms var(--ease);
+  transition:
+    background 200ms var(--ease),
+    color 200ms var(--ease),
+    box-shadow 200ms var(--ease),
+    transform 200ms var(--ease);
+}
+
+@keyframes wb-land {
+  from {
+    opacity: 0.3;
+    transform: translateY(-16px) scale(1.12);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* Right: the accent, standing on its own darker side, and the row hops left to
+   right as if it were being read out. */
+.wb-slots[data-state='right'] .wb-tile {
   background: var(--accent);
   color: var(--on-accent);
+  box-shadow:
+    0 3px 0 var(--wb-right-side),
+    0 8px 14px -5px var(--wb-shadow),
+    inset 0 1px 0 var(--wb-tile-glint);
+  animation: wb-hop 560ms var(--ease);
+  animation-delay: calc(var(--i) * 60ms);
+}
+
+@keyframes wb-hop {
+  0%,
+  100% {
+    transform: translateY(-3px);
+  }
+  35% {
+    transform: translateY(-15px) scale(1.06);
+  }
+  70% {
+    transform: translateY(-1px) scale(0.98);
+  }
 }
 
 /*
  * Wrong is not a colour.
  *
  * The palette has one accent, so the miss is drawn the way the field kit draws
- * an error: the tint comes *off*, the border goes to `--text-mut`, and the row
- * shakes. Louder by contrast and by motion rather than by hue.
+ * an error: the tiles go a step greyer, knock askew in their grooves, and the
+ * row shakes. Louder by contrast and by motion rather than by hue — and Pico,
+ * above, droops.
  */
-.wb-slots[data-state='wrong'] .wb-slot {
-  border-color: var(--text-mut);
-  background: transparent;
+.wb-slots[data-state='wrong'] .wb-tile {
+  background: var(--wb-tile-dim);
+  box-shadow:
+    0 2px 0 var(--wb-tile-side),
+    inset 0 1px 0 var(--wb-tile-glint);
+  transform: translateY(-1px) rotate(-3deg);
+}
+
+.wb-slots[data-state='wrong'] .wb-slot:nth-child(even) .wb-tile {
+  transform: translateY(-1px) rotate(2.5deg);
 }
 
 /*
@@ -10757,14 +12586,15 @@ button {
  *
  * The third state the other two screens already have — `.round-option` and
  * `.onb-option` both carry a `picked` look for exactly this moment. It is
- * deliberately *not* either of the two above: the row must read as committed
- * without reading as judged, because on a four-letter word a guess that has
- * been sent is right about as often as it is wrong and marking it either way
- * before the reply lands is a coin toss the screen has no business making.
+ * deliberately *not* either of the two above: the tiles are pressed home into
+ * their grooves, committed without being judged, because on a four-letter word
+ * a guess that has been sent is right about as often as it is wrong.
  */
-.wb-slots[data-state='picked'] .wb-slot {
-  border-color: var(--border-2);
-  background: var(--surface-2);
+.wb-slots[data-state='picked'] .wb-tile {
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 var(--wb-tile-side),
+    inset 0 1px 0 var(--wb-tile-glint);
 }
 
 .wb-slots[data-shake='true'] {
@@ -10786,48 +12616,321 @@ button {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .wb-slots[data-shake='true'] {
-    animation: none;
+/* A solved word throws a handful of pieces off the rack, wider than tall
+   because the rack is. */
+.wb-burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.wb-burst i {
+  --a: calc(var(--k) * 30deg + 8deg);
+  position: absolute;
+  top: -0.28rem;
+  left: -0.2rem;
+  width: 0.4rem;
+  height: 0.56rem;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  animation: wb-burst 950ms cubic-bezier(0.15, 0.7, 0.3, 1) 140ms;
+}
+
+.wb-burst i:nth-child(3n) {
+  background: var(--wb-tile);
+}
+
+.wb-burst i:nth-child(3n + 1) {
+  background: var(--wb-bulb);
+}
+
+@keyframes wb-burst {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(0.5);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(cos(var(--a)) * 11rem), calc(sin(var(--a)) * 4.2rem)) rotate(240deg) scale(1);
   }
 }
 
+/* ── the tray ── */
+
+.wb-tray {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem 0.6rem;
+  max-width: 38rem;
+  padding-top: 0.45rem;
+}
+
 .wb-key {
+  --tilt: 0deg;
+  display: grid;
+  place-items: center;
+  width: 3.1rem;
+  height: 3.35rem;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(var(--wb-tile-hi), var(--wb-tile) 60%);
+  color: var(--wb-tile-ink);
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow:
+    0 5px 0 var(--wb-tile-side),
+    0 11px 14px -5px var(--wb-shadow),
+    inset 0 1px 0 var(--wb-tile-glint);
+  transform: translateY(-5px) rotate(var(--tilt));
   cursor: pointer;
-  border-color: var(--accent-soft);
+  transition:
+    transform 170ms var(--ease),
+    box-shadow 170ms var(--ease),
+    background 170ms var(--ease),
+    color 170ms var(--ease);
+}
+
+/* Set down by hand, not on a grid: each tile a degree or two off true. */
+.wb-key:nth-child(4n + 1) {
+  --tilt: -2.2deg;
+}
+.wb-key:nth-child(4n + 2) {
+  --tilt: 1.4deg;
+}
+.wb-key:nth-child(4n + 3) {
+  --tilt: -0.7deg;
+}
+.wb-key:nth-child(4n) {
+  --tilt: 2.6deg;
 }
 
 .wb-key:not(:disabled):hover {
-  background: var(--surface-2);
-  border-color: var(--accent-lit);
+  transform: translateY(-9px) rotate(0deg);
+  box-shadow:
+    0 5px 0 var(--wb-tile-side),
+    0 18px 18px -8px var(--wb-shadow),
+    inset 0 1px 0 var(--wb-tile-glint);
 }
 
-/* A spent letter holds its place rather than closing the gap — the tray is a
-   layout the player is reading, and reflowing it on every tap loses them. */
-.wb-key[data-used='true'] {
-  opacity: 0.2;
-  border-color: var(--border);
-  background: transparent;
+.wb-key:not(:disabled):active {
+  transform: translateY(-1px) rotate(0deg);
+  box-shadow:
+    0 1px 0 var(--wb-tile-side),
+    0 3px 5px -2px var(--wb-shadow),
+    inset 0 1px 0 var(--wb-tile-glint);
+  transition-duration: 40ms;
+}
+
+.wb-key:focus-visible {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: 4px;
+}
+
+.wb-key:disabled {
   cursor: default;
 }
+
+/* Spent: the socket it stood in, with the letter a ghost in it. */
+.wb-key[data-used='true'] {
+  background: var(--wb-socket);
+  color: var(--wb-socket-ink);
+  box-shadow: inset 0 2px 5px var(--wb-groove-shade);
+  transform: rotate(var(--tilt));
+}
+
+/* ── the verdict and the tools ── */
 
 .wb-controls,
 .wb-done {
   display: flex;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.6rem;
   align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
 }
 
 .wb-done b {
-  width: 100%;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 1.05rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--glass);
   font-family: var(--font-display);
-  font-size: 1.15rem;
-  color: var(--accent-lit);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
 }
 
+/* Right is already the accent fill on the rack; a second mint pill beside the
+   mint "Next" button read as two buttons. The line keeps its glass and takes
+   a lit dot instead. */
+.wb-done[data-tone='right'] b {
+  gap: 0.55rem;
+  border-color: var(--accent-soft);
+}
+
+.wb-done[data-tone='right'] b::before {
+  content: '';
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.22);
+}
+
+.wb-done[data-tone='wait'] b {
+  color: var(--text-mut);
+}
+
+.wb-done[data-tone='refused'] .field-error {
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  background: var(--glass);
+}
+
+.wb-tool,
+.wb-tool:hover {
+  background: var(--glass);
+}
+
+.wb-undo-ico {
+  transform: scaleX(-1);
+}
+
+.wb-hint-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+}
+
+.wb-hint-label small {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+.wb-desk .round-quit {
+  margin-top: 0;
+}
+
+/* The desk's two front corners: tea on the left, cards and a pencil on the
+   right — clear of the rack, the tray and the tools, which are all centred. */
+.wb-desk-prop {
+  position: absolute;
+  bottom: 1.1rem;
+  height: auto;
+  pointer-events: none;
+}
+
+.wb-cup {
+  left: 4.5%;
+  width: 4.6rem;
+}
+
+.wb-cards {
+  right: 3.5%;
+  width: 6.6rem;
+}
+
+.wb-steam path {
+  animation: wb-steam 3.6s ease-in-out infinite;
+}
+
+.wb-steam path:nth-child(2) {
+  animation-delay: 1.2s;
+}
+
+.wb-steam path:nth-child(3) {
+  animation-delay: 2.4s;
+}
+
+@keyframes wb-steam {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* Nothing in the study moves for a reader who has asked for stillness: no
+   sway, no drop, no hop, no shake, no confetti. Every state is still drawn —
+   the tiles still change colour and sit askew on a wrong row. */
+@media (prefers-reduced-motion: reduce) {
+  .wb-lamp,
+  .wb-steam path,
+  .wb-think i,
+  .wb-tile,
+  .wb-slots[data-state='right'] .wb-tile,
+  .wb-slots[data-shake='true'],
+  .wb-stamp {
+    animation: none;
+  }
+
+  .wb-burst {
+    display: none;
+  }
+}
+
+/* A phone: the props leave the shelf so the note has the width, the lamp goes
+   (its cord would run through the header), and the bird and the tiles come
+   down a size. */
+@media (max-width: 40rem) {
+  .wb-props,
+  .wb-lamp,
+  .wb-desk-prop {
+    display: none;
+  }
+
+  .wb-stage {
+    gap: 0.6rem;
+    margin: 1.2rem auto 0.7rem;
+  }
+
+  .wb-desk {
+    margin-top: 0.4rem;
+  }
+
+  .wb-perch {
+    width: 4.9rem;
+    height: 4.9rem;
+    margin-bottom: -0.35rem;
+  }
+
+  .wb-note {
+    min-height: 4.6rem;
+    padding: 0.95rem 1.05rem 0.85rem;
+  }
+
+  .wb-tray {
+    gap: 0.65rem 0.5rem;
+  }
+
+  .wb-key {
+    width: min(3.1rem, 11.2vw);
+    height: min(3.35rem, 12.2vw);
+    font-size: min(1.45rem, 5.6vw);
+    border-radius: 9px;
+  }
+}
 
 /* ── the board ── */
 
@@ -10991,10 +13094,12 @@ button {
 }
 
 /* ── the flight game ─────────────────────────────────────────────────────
-   Squawk's Flight sits inside the same `.round` glass panel the quiz rounds
+   Pico's Flight sits inside the same `.round` glass panel the quiz rounds
    use, so only the stage and its overlays are new here. The canvas paints its
-   own ground: nothing below sets a colour on it, because a canvas cannot read
-   a custom property and the two would drift.
+   own world — sky, ranges, town, columns, turf, all of it from
+   `flight/scene.ts` — and nothing below sets a colour on it, because a canvas
+   cannot read a custom property and the two would drift. Everything here is
+   chrome over that picture, and chrome stays on the tokens.
    ──────────────────────────────────────────────────────────────────────── */
 
 .fly {
@@ -11005,22 +13110,35 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.4rem;
 }
 
 .fly-hud {
-  min-width: 3.2rem;
-  padding: 0.3rem 0.9rem;
+  min-width: 3.4rem;
+  padding: 0.28rem 0.95rem;
   border: 1px solid var(--border-2);
   border-radius: 999px;
   background: var(--surface);
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 1.5rem;
+  font-weight: 700;
+  font-size: 1.55rem;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
   text-align: center;
   color: var(--accent-lit);
+  /* Keyed on the score, so every gap re-mounts the pill and this plays once:
+     the number answers the gate Pico just flew, the way the runes on the gate
+     answer it on the stage. */
+  animation: fly-pop 420ms var(--ease);
+}
+
+@keyframes fly-pop {
+  0% {
+    transform: scale(1.28);
+  }
+  100% {
+    transform: none;
+  }
 }
 
 /* Banked: past the target the round is safe and every gap after it is profit. */
@@ -11028,14 +13146,41 @@ button {
   border-color: transparent;
   background: var(--accent);
   color: var(--on-accent);
+  box-shadow: 0 0.4rem 1.4rem -0.5rem rgba(var(--glow-rgb), calc(0.7 * var(--glow-k)));
 }
 
 .fly-goal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-fnt);
+}
+
+/* One pip a gap toward the bank line — the goal counted, not just stated. */
+.fly-pips {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.fly-pips i {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-2);
+  transition:
+    background-color 240ms var(--ease),
+    border-color 240ms var(--ease),
+    transform 240ms var(--ease);
+}
+
+.fly-pips i[data-on='true'] {
+  border-color: transparent;
+  background: var(--accent);
+  transform: scale(1.12);
 }
 
 /*
@@ -11071,6 +13216,12 @@ button {
   background: none;
   overflow: hidden;
   cursor: pointer;
+  /* A window onto the scene rather than a slot cut in the panel: a soft drop
+     below it, and a hairline of light inside the frame so the edge of the sky
+     does not bleed into the glass around it. */
+  box-shadow:
+    0 1.4rem 2.6rem -1.6rem var(--shadow),
+    inset 0 0 0 1px rgba(var(--panel-rgb), 0.35);
   /*
    * At rest the stage is just a card in a scrolling page, so a finger dragged
    * across it must still scroll — `manipulation` only takes away the double-tap
@@ -11096,24 +13247,65 @@ button {
   height: 100%;
 }
 
+/*
+ * The ready hint: a small glass pill over the hills, with a thumb-sized dot
+ * that ripples on the beat of a tap. The pill is glass and not bare text
+ * because the scene under it is a lit town on one theme and a bright meadow
+ * on the other — bare text was legible on one of them.
+ */
 .fly-hint {
   position: absolute;
-  inset: auto 0 12%;
-  color: var(--text-mut);
+  left: 50%;
+  bottom: 15%;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  /* Wraps rather than overflowing: the Russian hint is twice the English one,
+     and a phone's stage is under 20rem wide. */
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  padding: 0.5rem 0.95rem 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 1.2rem;
+  background: rgba(var(--panel-rgb), 0.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text);
   font-size: 0.85rem;
   font-weight: 700;
-  animation: fly-pulse 2.4s var(--ease) infinite;
+  line-height: 1.3;
+  text-align: left;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
-@keyframes fly-pulse {
-  50% {
-    opacity: 0.45;
+.fly-tap {
+  position: relative;
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.fly-tap::after {
+  content: '';
+  position: absolute;
+  inset: -0.3rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  animation: fly-ripple 1.6s var(--ease) infinite;
+}
+
+@keyframes fly-ripple {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.55);
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .fly-hint {
-    animation: none;
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
   }
 }
 
@@ -11121,18 +13313,39 @@ button {
  * The end of a run, held for a beat before the result card. There is no red in
  * this palette, so a crash *removes* the accent rather than adding a colour —
  * the panel goes neutral, and only a finished round gets its accent back.
+ *
+ * **It waits before it covers the stage.** The crash is the one moment in the
+ * round worth watching — the impact star, the feathers, Pico knocked out and
+ * tumbling to the turf — and a veil that frosts over on the same frame hides
+ * all of it. So the veil fades in once the tumble has played, and Pico comes
+ * back on it in the verdict's mood: cheering, with a ring of sparks, when the
+ * round was banked; downcast when it fell short. Every delay below lands
+ * inside `BEAT_MS` (1.1s in `FlightGame.tsx`), before the result card.
  */
 .fly-over {
   position: absolute;
   inset: 0;
   display: grid;
   place-content: center;
+  justify-items: center;
   gap: 0.35rem;
-  background: rgba(var(--panel-rgb), 0.72);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  padding: 1.25rem;
+  text-align: center;
+  background: rgba(var(--panel-rgb), 0.7);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
   color: var(--text-mut);
   font-size: 0.85rem;
+  animation: fly-veil 300ms var(--ease) 420ms both;
+}
+
+@keyframes fly-veil {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .fly-over b {
@@ -11145,10 +13358,87 @@ button {
   color: var(--accent-ink);
 }
 
+.fly-over-pico {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin-bottom: 0.35rem;
+  animation: fly-rise 420ms var(--ease) 460ms both;
+}
+
+@keyframes fly-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.8rem) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The banked round's ring of sparks: ten marks thrown out from behind Pico. */
+.fly-burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.fly-burst i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.42rem;
+  height: 0.42rem;
+  margin: -0.21rem 0 0 -0.21rem;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transform: rotate(calc(var(--i) * 36deg)) translateY(0);
+  animation: fly-spark 620ms var(--ease) 560ms both;
+}
+
+.fly-burst i:nth-child(even) {
+  width: 0.2rem;
+  height: 0.7rem;
+  margin: -0.35rem 0 0 -0.1rem;
+  border-radius: 0.1rem;
+}
+
+@keyframes fly-spark {
+  0% {
+    opacity: 1;
+    transform: rotate(calc(var(--i) * 36deg)) translateY(-1.2rem);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(calc(var(--i) * 36deg)) translateY(-4.2rem);
+  }
+}
+
+/* Held still, and shown at once: nothing is tumbling under it to wait for. */
+@media (prefers-reduced-motion: reduce) {
+  .fly-hud,
+  .fly-tap::after,
+  .fly-over,
+  .fly-over-pico,
+  .fly-burst i {
+    animation: none;
+  }
+
+  .fly-burst {
+    display: none;
+  }
+}
+
 /* The reduced-motion opt-in, hosted in the same `.round` panel. */
 .fly-ready {
   align-items: center;
   text-align: center;
+}
+
+.fly-ready-pico {
+  margin-bottom: -0.4rem;
 }
 
 .fly-ready p {
@@ -15051,19 +17341,6 @@ button {
   }
 
   /*
-   * The letter tray is the one place a fixed rem width cannot survive: a long
-   * word is eight or nine tiles, and at 2.6rem apiece that is 374px of tiles on
-   * a 360px phone — so the tray wraps to three rows and the word stops reading
-   * as a word. `min()` lets the tile shrink with the viewport instead.
-   */
-  .wb-slot,
-  .wb-key {
-    width: min(2.6rem, 11vw);
-    height: min(3rem, 13vw);
-    font-size: min(1.25rem, 5.4vw);
-  }
-
-  /*
    * The console's top bar is sticky, and at this width its four items wrap to
    * two rows — nearly a fifth of the screen permanently spent on a bar that
    * says who is signed in. The tag goes (the console has exactly one kind of
@@ -16533,8 +18810,8 @@ button {
  *
  * Emoji from the self-hosted Twemoji subset rather than an image — `flagOf`
  * builds the regional-indicator pair from the ISO code, and this site makes no
- * third-party runtime requests. The four sanctioned colour exceptions include
- * flag emoji for exactly this: the thing depicted *is* its colours.
+ * third-party runtime requests. The sanctioned colour exceptions include flag
+ * emoji for exactly this: the thing depicted *is* its colours.
  */
 .onb-flag {
   align-self: center;
@@ -20575,68 +22852,74 @@ p.lst-soft {
 
 /* ═══════════════════════════════════════════════════════════════ 2048 ══
  *
- * The board (`games/Merge2048.tsx`) and its hover miniature. `mg-` was
+ * The round (`games/Merge2048.tsx`) and its hover miniature. `mg-` was
  * grepped first and is unused elsewhere.
  *
- * **One accent, and a value is its strength.** The original game paints every
- * value its own colour, which is the "hue per item" this sheet does not do. A
- * tile here carries `--mg-level` (log2 of its value, set inline) and the fill
- * is the accent at an alpha that climbs with it; from 256 up (`data-big`) it
- * is the solid accent with `--on-accent` ink. So a heavier tile *looks*
- * heavier in both themes, and the number on it says exactly how heavy.
+ * **The board is a scene, and the scene is a canvas.** `games/bakery/scene.ts`
+ * paints Pico's counter — wall, garland, lamps, shelves, a wooden tray and the
+ * glazed tiles in it — and this sheet only lays out the box it paints into.
+ * `.mg-stage` is the window; `.mg-board` is the tray's footprint inside it (the
+ * scene reads that box on resize and draws the tray there, so CSS decides the
+ * size and the canvas decides the look); the padding round the board is the
+ * room the scene needs to be a room — garland and Pico on the rim above, the
+ * counter below, shelves at the sides once there is space for them.
+ *
+ * **No colour here is the scene's.** Its palette is TypeScript
+ * (`bakery/config.ts`) because a canvas cannot read a custom property, and
+ * because a bakery's wood and glaze are a place's colours rather than the
+ * page's — the same footing as the platformer's `LEVEL.palette`. The stage's
+ * hairline is the page's `--border`, which is all the chrome there is.
  */
-.mg-board {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
-  width: 100%;
-  max-width: 26rem;
-  margin: 0 auto;
-  padding: 0.5rem;
+.mg-stage {
+  position: relative;
+  isolation: isolate;
+  /* Top: the garland, and Pico standing on the rim (his box is a quarter of
+     the board, clamped — see `layout.pico`). Bottom: the counter's front. */
+  padding: clamp(5.1rem, 4.2rem + 2.4vw, 6.9rem) 0.65rem clamp(1.9rem, 1.2rem + 2vw, 3.4rem);
+  border: 1px solid var(--border);
   border-radius: var(--r);
-  border: 1px solid var(--border-2);
-  background: var(--surface);
-  /* A swipe on the board moves tiles, not the page. */
+  overflow: hidden;
+  /* A swipe anywhere in the scene moves tiles, not the page. */
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
 
 /* While the server places the new tile — input is held, so say so quietly. */
-.mg-board[data-pending='true'] {
+.mg-stage[data-pending='true'] {
   cursor: progress;
 }
 
-.mg-cell {
+.mg-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.mg-board {
+  position: relative;
+  width: 100%;
+  max-width: 25rem;
   aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--r-sm);
-  background: rgba(var(--accent-rgb), 0.05);
-  color: var(--text);
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  /* Four digits have to fit a phone's tile, so the size steps down with them. */
-  font-size: clamp(1.1rem, 0.6rem + 2.4vw, 1.9rem);
-  line-height: 1;
+  margin: 0 auto;
 }
 
-.mg-cell[data-value] {
-  background: rgba(var(--accent-rgb), calc(0.1 + var(--mg-level) * 0.06));
-}
-
-.mg-cell[data-value='1024'],
-.mg-cell[data-value='2048'],
-.mg-cell[data-value='4096'],
-.mg-cell[data-value='8192'] {
-  font-size: clamp(0.9rem, 0.45rem + 2vw, 1.5rem);
-}
-
-.mg-cell[data-big='true'] {
-  background: var(--accent);
-  color: var(--on-accent);
+/* On a phone the scene takes the card's whole width: the round's padding is
+   1.4rem there (its clamp's floor below 560px), and the stage steps into it so
+   the board gains ~2.8rem — a quarter of a tile on a 375px screen. The stage
+   becomes a band across the card, square at the sides where it meets the
+   card's border. */
+@media (max-width: 560px) {
+  .mg-stage {
+    margin-inline: -1.4rem;
+    padding-inline: 0.55rem;
+    border-inline: 0;
+    border-radius: 0;
+  }
 }
 
 .mg-round .round-top {
@@ -20668,159 +22951,113 @@ p.lst-soft {
   margin-top: 1rem;
 }
 
-/* A new tile arrives with a pop — the original's one piece of motion that
-   carries information (where the tile landed). Dropped under reduced motion. */
-@media (prefers-reduced-motion: no-preference) {
-  .mg-cell[data-fresh='true'] {
-    animation: mg-arrive 160ms var(--ease) both;
-  }
-}
-
-@keyframes mg-arrive {
-  from {
-    transform: scale(0.4);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-/* The card's miniature: the same cells, smaller. */
-.pv-merge {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.25rem;
+/* The card's miniature — 2048's tray and Food Cross's crate alike — painted
+   once by the rounds' own functions (`games/preview.tsx`). Still, like the
+   board between moves. `pv-mini` was grepped first; `.pv-scene` is the
+   flight's, a cover-fitted backdrop, which this is not. */
+.pv-mini {
+  display: block;
   width: 100%;
-  max-width: 9.5rem;
-  margin-inline: auto;
-}
-
-.pv-merge .mg-cell {
-  border-radius: 6px;
-  font-size: 0.7rem;
+  height: 100%;
 }
 
 /* ═══════════════════════════════════════════════════════════ food cross ══
  *
- * The board (`games/FoodCross.tsx`) and its hover miniature. `fc-` was
+ * The round (`games/FoodCross.tsx`) and its hover miniature. `fc-` was
  * grepped first and is unused elsewhere.
  *
- * The foods are emoji — their colours are the exception the root `CLAUDE.md`
- * sanctions for things that *are* their colours. Everything the board adds is
- * the accent: the selected ring, and the specials' marks. A striped food carries
- * stripes **along the line it will clear** (rows for a row-clearer, columns for
- * a column-clearer), so the mark says what it does rather than only that it is
- * special.
+ * **The board is a scene, and the scene is a canvas** — `games/stall/scene.ts`
+ * paints Pico's market stall: the striped awning, string lights, the sky, a
+ * crate tray with a gingham cloth, and the foods (`stall/foods.ts`). This sheet
+ * lays out the box it paints into, the same arrangement as 2048's: `.fc-stage`
+ * is the window, `.fc-board` the crate's footprint (the scene reads its box on
+ * resize), and `.fc-grid` the cloth inside the crate's rim.
+ *
+ * **The sixty-four buttons are still the board** — for the keyboard, for a
+ * screen reader, and as the pointer's targets — laid transparently over the
+ * picture of it. They have to sit exactly on the painted cells, which is why
+ * `.fc-grid` is inset by **3.5cqi: that number is `STALL.layout.frame`** (the
+ * rim as a share of the board's side), and `cqi` is the board's own width
+ * because `.fc-board` is the container. Change one, change the other.
+ *
+ * No colour here is the scene's (`stall/config.ts` holds those, for the reasons
+ * it gives); the focus ring is the page's `--accent-lit`, because a focus ring
+ * is chrome, and the canvas draws the selection in the theme's accent too.
  */
-.fc-board {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 0.25rem;
-  width: 100%;
-  max-width: 30rem;
-  margin: 0 auto;
-  padding: 0.4rem;
+.fc-stage {
+  position: relative;
+  isolation: isolate;
+  /* Top: the awning, its lights, and Pico on the crate's rim. Bottom: the
+     counter's front. */
+  padding: clamp(5.3rem, 4.4rem + 2.4vw, 7rem) 0.5rem clamp(1.5rem, 0.9rem + 2vw, 3rem);
+  border: 1px solid var(--border);
   border-radius: var(--r);
-  border: 1px solid var(--border-2);
-  background: var(--surface);
+  overflow: hidden;
   /* A drag on the board swaps foods; it does not scroll the page. */
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
 
-/* On a phone eight columns are tight, so the board borrows the panel's side
-   padding and closes its gaps: on a 375px screen that takes a food from 27px
-   to about 35px across, which is the difference between tapping one and
-   tapping its neighbour. */
-@media (max-width: 520px) {
-  .fc-board {
-    width: calc(100% + 2.7rem);
-    margin-inline: -1.35rem;
-    gap: 2px;
-    padding: 3px;
-  }
-
-  .fc-cell {
-    border-radius: 6px;
-  }
-}
-
-.fc-board[data-busy='true'] {
+.fc-stage[data-busy='true'] {
   cursor: progress;
 }
 
-.fc-cell {
-  position: relative;
-  aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: rgba(var(--accent-rgb), 0.06);
-  font-size: clamp(1.05rem, 0.4rem + 2.8vw, 1.6rem);
-  line-height: 1;
-  cursor: pointer;
-  font-family: inherit;
-  color: inherit;
-  transition:
-    transform 160ms var(--ease),
-    opacity 160ms var(--ease),
-    border-color 160ms var(--ease);
-}
-
-.fc-cell > span {
-  position: relative;
-  z-index: 1;
+.fc-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
 
-.fc-cell[data-selected='true'] {
-  border-color: var(--accent-lit);
-  background: rgba(var(--accent-rgb), 0.18);
+.fc-board {
+  position: relative;
+  width: 100%;
+  max-width: 27rem;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  container-type: inline-size;
+}
+
+.fc-grid {
+  position: absolute;
+  inset: 3.5cqi;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+}
+
+.fc-cell {
+  padding: 0;
+  border: 0;
+  border-radius: 22%;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .fc-cell:focus-visible {
   outline: 2px solid var(--accent-lit);
-  outline-offset: 1px;
+  outline-offset: -3px;
 }
 
-/* The specials' marks, in the accent. */
-.fc-cell[data-special]::after {
-  content: '';
-  position: absolute;
-  inset: 2px;
-  border-radius: 6px;
-  pointer-events: none;
-}
-
-.fc-cell[data-special='row']::after {
-  background: repeating-linear-gradient(
-    to bottom,
-    rgba(var(--accent-rgb), 0.45) 0 2px,
-    transparent 2px 6px
-  );
-}
-
-.fc-cell[data-special='col']::after {
-  background: repeating-linear-gradient(
-    to right,
-    rgba(var(--accent-rgb), 0.45) 0 2px,
-    transparent 2px 6px
-  );
-}
-
-.fc-cell[data-special='bomb']::after {
-  border: 2px solid var(--accent-lit);
-}
-
-.fc-cell[data-clearing='true'] {
-  transform: scale(0.55);
-  opacity: 0.2;
+/* On a phone eight columns are tight, so the stage takes the card's whole
+   width: the round's padding is 1.4rem there (its clamp's floor below 560px)
+   and the stage steps into it, which takes a food from ~31px to ~37px across
+   on a 375px screen — the difference between tapping one and tapping its
+   neighbour. Square at the sides, where it meets the card's border. */
+@media (max-width: 560px) {
+  .fc-stage {
+    margin-inline: -1.4rem;
+    padding-inline: 0.3rem;
+    border-inline: 0;
+    border-radius: 0;
+  }
 }
 
 .fc-round .round-top {
@@ -20840,52 +23077,13 @@ p.lst-soft {
   margin: 0.9rem auto 0;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .fc-cell[data-shake='true'] {
-    animation: fc-shake 320ms var(--ease);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .fc-cell {
-    transition: none;
-  }
-}
-
-@keyframes fc-shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  25% {
-    transform: translateX(-3px);
-  }
-  75% {
-    transform: translateX(3px);
-  }
-}
-
-/* The card's miniature: a corner of the real board. */
-.pv-food {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.2rem;
-  width: 100%;
-  max-width: 9rem;
-  margin-inline: auto;
-}
-
-.pv-food .fc-cell {
-  font-size: 1rem;
-  border-radius: 6px;
-  cursor: default;
-}
-
 /* ═══════════════════════════════════════════════════════════ food ninja ══
  *
- * The field (`games/FoodNinja.tsx`) and its hover miniature. `nj-` was
- * grepped first and is unused elsewhere. The canvas draws the foods (emoji) and
- * the blade (the theme's primary, via `usePalette`); this sheet only frames it.
+ * The field of Pico Ninja (`games/FoodNinja.tsx`). `nj-` was grepped first and
+ * is unused elsewhere. The canvas draws the whole scene — the night market,
+ * Pico, the foods, the blade — from `games/ninja/`, in a palette of its own
+ * that lives in TypeScript; this sheet only frames it. Its veils are the shared
+ * `ReadyVeil` / `EndVeil` (`.ar-overlay`), so it has none of its own any more.
  *
  * 4:5 so a phone held upright gets a field taller than it is wide — foods are
  * thrown upwards — and capped at 70% of the viewport's height so the clock and
@@ -20924,29 +23122,6 @@ p.lst-soft {
   user-select: none;
   -webkit-user-select: none;
   cursor: crosshair;
-}
-
-.nj-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  padding: 1.5rem;
-  text-align: center;
-  background: rgba(var(--panel-rgb), 0.55);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-}
-
-.nj-overlay p {
-  margin: 0;
-  max-width: 22rem;
-  color: var(--text);
-  font-size: 0.95rem;
-  line-height: 1.5;
 }
 
 .nj-round .round-quit {
@@ -21015,7 +23190,7 @@ p.lst-soft {
 }
 
 /*
- * The two veils, in Bird's Flight's terms — the one arcade game that came
+ * The two veils, in Pico's Flight's terms — the one arcade game that came
  * first, and so the reference the rest are held to.
  *
  * **Before the round** the flight shows its field with nothing over it but a
@@ -21030,8 +23205,7 @@ p.lst-soft {
  * outcome set in the display face; the arcade end veil now reads the same.
  * `role='status'` is what tells the two apart, and it is already on every one.
  */
-.ar-overlay:not([role='status']),
-.nj-overlay:not([role='status']) {
+.ar-overlay:not([role='status']) {
   justify-content: flex-end;
   gap: 0.85rem;
   padding: 1.25rem 1.25rem 9%;
@@ -21040,40 +23214,116 @@ p.lst-soft {
   -webkit-backdrop-filter: none;
 }
 
-.ar-overlay:not([role='status']) p,
-.nj-overlay:not([role='status']) p {
+.ar-overlay:not([role='status']) p {
   max-width: 20rem;
   color: var(--text-mut);
   font-size: 0.85rem;
   font-weight: 700;
 }
 
-.ar-overlay[role='status'],
-.nj-overlay[role='status'] {
+.ar-overlay[role='status'] {
   background: rgba(var(--panel-rgb), 0.72);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
 
-.ar-overlay[role='status'] p,
-.nj-overlay[role='status'] p {
+.ar-overlay[role='status'] p {
   font-family: var(--font-display);
   font-size: 1.15rem;
   font-weight: 700;
   color: var(--text);
 }
 
+/*
+ * The host in the two veils (`ReadyVeil` / `EndVeil` in `games/hud.tsx`):
+ * waiting beside the Start press, then answering the round's end with his face
+ * before the result card answers it with numbers. Standing on a shadow of his
+ * own so he reads as on the field rather than pasted over it.
+ */
+.ar-veil-host {
+  position: relative;
+  display: block;
+  width: 72px;
+  height: 72px;
+}
+
+.ar-end .ar-veil-host {
+  width: 92px;
+  height: 92px;
+}
+
+.ar-veil-host::after {
+  content: '';
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 0;
+  height: 10%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--shadow), transparent);
+  z-index: -1;
+}
+
+.ar-end {
+  gap: 0.5rem;
+}
+
+.ar-veil-detail {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+.ar-end[data-pose='happy'] p {
+  color: var(--accent-ink);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ar-end .ar-veil-host {
+    animation: rs-host-in 520ms var(--ease) 120ms both;
+  }
+}
+
+/*
+ * Pico Jump (`.pj-field`) and Pico's Ball (`.pb-field`) end on a picture — Pico
+ * knocked out and tumbling off the bottom, the confetti at the summit, the
+ * ball dropping past him into the sea — so their end veil waits a beat before
+ * it frosts the field. Only the veil's arrival moves: the round is banked on
+ * the same timer as every other game, and the veil is in the DOM (and read
+ * out) from the first frame. Both prefixes were grepped and free.
+ */
+/*
+ * Pico's Ball keeps its host in the field: Pico, his board and the ball wait
+ * at the foot, exactly where the shared ready veil sets its hint. So on this
+ * field the hint sits in the open sky between the wall and the sea instead,
+ * on a soft pool of the panel rather than a shade from the bottom — the
+ * wall, the board and the bird all stay in view while it is read.
+ */
+.pb-field > .ar-overlay:not([role='status']) {
+  justify-content: center;
+  padding-bottom: 16%;
+  background: radial-gradient(ellipse 78% 25% at 50% 41%, rgba(var(--panel-rgb), 0.86) 0%, rgba(var(--panel-rgb), 0.6) 55%, rgba(var(--panel-rgb), 0) 100%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pj-field > .ar-end,
+  .pb-field > .ar-end {
+    animation: pj-veil-in 280ms var(--ease) 380ms both;
+  }
+}
+
+@keyframes pj-veil-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .ar-round .round-quit {
   display: block;
   margin: 0.9rem auto 0;
-}
-
-.ar-note {
-  margin: 0.9rem 0 0;
-  text-align: center;
-  color: var(--text-mut);
-  font-size: 0.88rem;
-  line-height: 1.5;
 }
 
 .ar-acts {
@@ -21250,338 +23500,454 @@ p.lst-soft {
   }
 }
 
-/* The five cards' miniatures. */
-.pv-snake,
+/* Snake (Pico's Flock) and Canon Numbers paint a scene, and the end of a round
+   is a moment in it — Pico dazed under his dizzy stars, or cheering on the
+   deck. So their end veil waits before it frosts over, exactly as Pico's
+   Flight's `.fly-over` does (`fly-veil`, 480ms): the moment plays, then the
+   words arrive. Reduced motion has no moment to wait for. */
+.ar-overlay.ar-over-late {
+  animation: fly-veil 320ms var(--ease) 480ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ar-overlay.ar-over-late {
+    animation: none;
+  }
+}
+
+/* Pico's Flock starts with Pico mid-lawn (the rules put the head on row 8),
+   so on a phone the ready veil's three lines and its button rose over him —
+   the hint covering the bird it is about. Snug pulls the block down: less
+   air under the button and between the two. */
+.ar-overlay.ar-ready-snug:not([role='status']) {
+  gap: 0.55rem;
+  padding-bottom: 0.85rem;
+}
+
+/* The five cards' miniatures. Pico's Flock and Canon Numbers are canvases
+   (`.pv-mini`, the shared `Miniature`) painted once by their rounds' own
+   scenes; Canon Numbers' sum sits over its canvas as the round's banner sits
+   over its field, in the banner's own tokens. */
 .pv-cannon {
-  display: grid;
-  gap: 2px;
+  position: relative;
+  display: block;
   width: 100%;
-  max-width: 9rem;
-  margin-inline: auto;
-}
-
-.pv-snake {
-  grid-template-columns: repeat(6, 1fr);
-}
-
-.pv-snake i,
-.pv-cannon i {
-  aspect-ratio: 1;
-  display: grid;
-  place-items: center;
-  border-radius: 3px;
-  background: rgba(var(--accent-rgb), 0.06);
-  font-style: normal;
-  font-size: 0.75rem;
-  line-height: 1;
-}
-
-.pv-snake i[data-on='true'] {
-  background: rgba(var(--accent-rgb), 0.55);
-}
-
-.pv-snake i[data-head='true'] {
-  background: var(--accent);
-}
-
-/* Canon Numbers in miniature: the sum, three discs with the answer struck, and
-   the cannon under it — the same three things, in the same places, as the round. */
-.pv-cannon {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.35rem;
-  max-width: 7.5rem;
+  height: 100%;
 }
 
 .pv-cannon em {
-  font-style: normal;
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 0.85rem;
-  color: var(--text);
-}
-
-.pv-cannon span {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 0.35rem;
-  width: 100%;
-}
-
-.pv-cannon i {
-  flex: none;
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-family: var(--font-display);
-  font-weight: 800;
-}
-
-.pv-cannon i:nth-child(2) {
-  margin-top: 0.45rem;
-}
-
-/* The struck answer: emptied to a ring, the way the round's burst begins. */
-.pv-cannon i[data-hit='true'] {
-  background: transparent;
-  box-shadow: 0 0 0 2px var(--accent-lit);
-  color: var(--accent-ink);
-}
-
-.pv-cannon b {
-  width: 1.5rem;
-  height: 0.75rem;
-  margin-top: 1.1rem;
-  border-radius: 0.75rem 0.75rem 0 0;
-  background: var(--accent);
-  position: relative;
-}
-
-.pv-cannon b::before {
-  content: '';
   position: absolute;
+  top: 0.45rem;
   left: 50%;
-  bottom: 0.45rem;
-  width: 0.45rem;
-  height: 0.85rem;
-  border-radius: 2px;
-  background: var(--accent);
   transform: translateX(-50%);
+  padding: 0.18rem 0.7rem;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: rgba(var(--panel-rgb), 0.86);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-style: normal;
+  font-weight: 600;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.pv-brick {
-  position: relative;
-  display: block;
-  width: 100%;
-  max-width: 9rem;
-  aspect-ratio: 4 / 3;
-  margin-inline: auto;
-}
-
-.pv-brick-wall {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 2px;
-}
-
-.pv-brick-wall i {
-  height: 0.55rem;
-  border-radius: 2px;
-  background: rgba(var(--accent-rgb), 0.45);
-}
-
-.pv-brick-wall i[data-hard='true'] {
-  background: var(--accent);
-}
-
-.pv-brick-wall i[data-gone='true'] {
-  visibility: hidden;
-}
-
-.pv-brick-ball,
-.pv-brick-paddle {
-  position: absolute;
-  background: var(--accent);
-}
-
-.pv-brick-ball {
-  left: 46%;
-  top: 52%;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-}
-
-.pv-brick-paddle {
-  left: 34%;
-  bottom: 6%;
-  width: 32%;
-  height: 0.3rem;
-  border-radius: 99px;
-}
-
-.pv-doodle {
-  position: relative;
-  display: block;
-  width: 100%;
-  max-width: 7rem;
-  aspect-ratio: 3 / 4;
-  margin-inline: auto;
-}
-
-.pv-doodle i,
-.pv-doodle b {
-  position: absolute;
-  background: var(--accent);
-}
-
-.pv-doodle i {
-  width: 32%;
-  height: 0.28rem;
-  border-radius: 99px;
-  opacity: 0.8;
-}
-
-.pv-doodle b {
-  width: 0.9rem;
-  height: 0.9rem;
-  border-radius: 4px;
-}
-
-.pv-zuma {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  width: 100%;
-  max-width: 10rem;
-  margin-inline: auto;
-  padding-block: 1.2rem;
-}
-
-/* The four marks — a dot, a ring, a bar, a cross — in the ground on the
-   accent, so a kind is a shape rather than a hue. */
-.pv-zuma i,
-.pv-zuma b {
-  position: relative;
-  flex: none;
-  width: 1rem;
-  height: 1rem;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.pv-zuma b {
-  margin-left: 0.5rem;
-  transform: translateY(-0.9rem);
-}
-
-.pv-zuma [data-kind]::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  margin: auto;
-}
-
-.pv-zuma [data-kind='0']::after {
-  width: 0.3rem;
-  height: 0.3rem;
-  border-radius: 50%;
-  background: var(--bg);
-}
-
-.pv-zuma [data-kind='1']::after {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  border: 2px solid var(--bg);
-  box-sizing: border-box;
-}
-
-.pv-zuma [data-kind='2']::after {
-  width: 0.55rem;
-  height: 2px;
-  background: var(--bg);
-}
-
-.pv-zuma [data-kind='3']::after {
-  width: 0.55rem;
-  height: 0.55rem;
-  background:
-    linear-gradient(45deg, transparent 42%, var(--bg) 42% 58%, transparent 58%),
-    linear-gradient(-45deg, transparent 42%, var(--bg) 42% 58%, transparent 58%);
-}
-
-/* The card's miniature: three foods hanging in the air, the middle one cut. */
-.pv-ninja {
-  position: relative;
-  display: block;
-  width: 100%;
-  max-width: 11rem;
-  aspect-ratio: 4 / 3;
-  margin-inline: auto;
-}
-
-.pv-ninja-food {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  font-size: 1.6rem;
-  line-height: 1;
-}
-
-.pv-ninja-food[data-sliced='true'] {
-  display: flex;
-}
-
-.pv-ninja-food[data-sliced='true'] b:first-child {
-  clip-path: inset(0 50% 0 0);
-  transform: translate(-3px, 2px) rotate(-12deg);
-}
-
-.pv-ninja-food[data-sliced='true'] b:last-child {
-  clip-path: inset(0 0 0 50%);
-  margin-left: -1.6rem;
-  transform: translate(3px, 2px) rotate(12deg);
-}
-
-.pv-ninja-food b {
-  font-weight: 400;
-}
-
-.pv-ninja-blade {
-  position: absolute;
-  left: 18%;
-  right: 18%;
-  top: 34%;
-  height: 3px;
-  border-radius: 3px;
-  background: var(--accent-lit);
-  transform: rotate(-14deg);
-  opacity: 0.8;
-}
+/* Picuma's and Pico Ninja's miniatures are `.pv-mini` canvases too, painted
+   by their rounds' scenes (`picuma/miniature.ts`, `ninja/miniature.ts`); the
+   CSS marks and emoji they were drawn with before are gone with them. */
 
 /* ══════════════════════════════════════════════════ invite friends ══
  *
- * The Play screen's invite card (`InviteCard.tsx`). The same panel as the
- * confirmation one below it — glass, a kicker, a line of copy — because it is
- * the same kind of thing on the same screen. `play-invite` was grepped first:
- * nothing else on the site uses the name.
+ * The Play screen's invite button and the panel it opens (`InvitePanel.tsx`).
+ * It was a glass card in the page's flow; the owner asked for it to be a screen
+ * of its own coming in from the right "like the AI assistant", so the page
+ * keeps a button beside the title and the card's content moved into a sheet.
+ * `play-invite` was grepped first: nothing else on the site uses the name.
+ *
+ * The sheet is the assistant's construction — opaque `--bg`, a hairline, the
+ * dock's header — but **modal**, so it carries a scrim and stands at the vsh
+ * sheet's 70, above the dock's 61 and its button's 45, so neither can land on
+ * its controls in whichever corner the dock is in (and opening this one closes
+ * the dock anyway). The dim is `--ink-rgb`, the brand's own near-black, rather
+ * than the black literal the older scrims took.
  *
  * The code is printed in tabular figures inside a well, so a friend reading it
  * off somebody's phone can tell the characters apart; the two presses sit to
  * its right where there is room and wrap under it on a phone.
  */
-.play-invite {
+
+/* The page head with the button beside it: title and lede in a column that
+   takes the room, the button bottom-aligned to the lede. It wraps under them
+   when the two no longer fit side by side, which is every phone. */
+.play-head {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+}
+
+.play-head > div {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+/* A measure of its own, so where the lede breaks does not depend on how wide
+   the button is — the button gains its figure when the server answers, and
+   without this the lede reflowed from one line to two under the reader. */
+.play-head p {
+  max-width: 30rem;
+}
+
+/*
+ * The button. A pill on glass, because it sits over the backdrop like the
+ * cards do; the disc is the accent so it is the first mark the eye finds under
+ * the title, and the figure is a tinted chip in `--accent-ink` (small text, so
+ * the ink step — see `src/site/CLAUDE.md`).
+ */
+.play-invite-tile {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
   gap: 0.6rem;
-  padding: clamp(1rem, 2.6vw, 1.4rem) clamp(1.1rem, 3vw, 1.6rem);
-  margin-bottom: 1.5rem;
-  border-radius: var(--r-lg);
+  min-height: var(--tap);
+  max-width: 100%;
+  padding: 0.3rem 1rem 0.3rem 0.3rem;
+  border-radius: 999px;
   border: 1px solid var(--border-2);
   background: var(--glass);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 12px 32px -20px rgba(var(--glow-rgb), calc(0.9 * var(--glow-k)));
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 200ms var(--ease),
+    background 200ms var(--ease),
+    transform 160ms var(--ease);
 }
 
-.play-invite-kicker {
+/* The tint is laid over the glass rather than replacing it: `--surface-2` alone
+   is a 6% wash and the backdrop would show straight through the pill. */
+.play-invite-tile:hover {
+  border-color: var(--accent-ink);
+  background: linear-gradient(var(--surface-2), var(--surface-2)), var(--glass);
+}
+
+.play-invite-tile:active {
+  transform: scale(0.97);
+  transition-duration: 40ms;
+}
+
+.play-invite-tile:focus-visible {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: 3px;
+}
+
+.play-invite-tile-ico {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.play-invite-tile-label {
+  min-width: 0;
+}
+
+.play-invite-tile-gift {
+  flex: 0 0 auto;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent-ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The arrow travels on a transform, the way the "more" links' does. Pushed to
+   the far end, which only shows where the pill is stretched (a phone). */
+.play-invite-tile-arrow {
+  flex: 0 0 auto;
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--accent-ink);
+  transition: transform 220ms var(--ease);
+}
+
+.play-invite-tile:hover .play-invite-tile-arrow {
+  transform: translateX(3px);
+}
+
+/*
+ * The scrim and the sheet. The dim is a pseudo-element rather than the
+ * container's own background so that fading it does not fade the sheet with
+ * it — opacity on a parent is opacity on everything inside.
+ */
+.play-invite-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+
+.play-invite-scrim::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(var(--ink-rgb), 0.46);
+  animation: play-invite-fade 240ms var(--ease) both;
+}
+
+:root[data-theme='light'] .play-invite-scrim::before {
+  background: rgba(var(--ink-rgb), 0.3);
+}
+
+.play-invite-scrim[data-leaving]::before {
+  animation: play-invite-fade-out 200ms ease-in both;
+}
+
+/*
+ * Docked right and standing off every edge by the same 0.75rem, at the
+ * assistant card's material. Full height because the content is long — the
+ * link, the code, three figures, the bar and every friend — and it scrolls
+ * inside the body, so the head and its close never leave the screen.
+ */
+.play-invite-panel {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  width: min(27rem, calc(100vw - 1.5rem));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+  box-shadow: 0 30px 80px -40px var(--shadow);
+  animation: play-invite-in 340ms var(--ease) both;
+}
+
+.play-invite-panel:focus {
+  outline: none;
+}
+
+/* Out faster than in, and accelerating rather than settling: a sheet you
+   dismissed should be gone, and one you opened should be seen arriving.
+   `EXIT_MS` in `InvitePanel.tsx` is this duration. */
+.play-invite-scrim[data-leaving] > .play-invite-panel {
+  animation: play-invite-out 200ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes play-invite-in {
+  from {
+    transform: translateX(calc(100% + 1rem));
+  }
+}
+
+@keyframes play-invite-out {
+  to {
+    transform: translateX(calc(100% + 1rem));
+  }
+}
+
+@keyframes play-invite-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes play-invite-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+.play-invite-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0.85rem 0.85rem 1.15rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.play-invite-title {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.68rem;
+  gap: 0.6rem;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text);
+}
+
+.play-invite-title-ico {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent-lit);
+}
+
+.play-invite-close {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-mut);
+  cursor: pointer;
+  transition: background 200ms var(--ease), color 200ms var(--ease);
+}
+
+.play-invite-close:hover {
+  background: var(--surface-2);
+  color: var(--accent-ink);
+}
+
+.play-invite-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.15rem 1.15rem calc(1.4rem + env(safe-area-inset-bottom));
+}
+
+/* The reward as a figure: what a glance takes away. Large type, so the lit
+   step rather than the ink. */
+.play-invite-reward {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.5rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.play-invite-reward p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.55rem;
+  margin: 0;
+}
+
+.play-invite-reward b {
+  font-family: var(--font-display);
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-lit);
+}
+
+.play-invite-reward span {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+.play-invite-friends {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.play-invite-friends h3 {
+  margin: 0;
+  font-family: inherit;
+  font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--text-fnt);
 }
 
-.play-invite-kicker i {
-  display: inline-flex;
-  color: var(--accent-lit);
+.play-invite-note {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+.play-invite-down {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+/* A phone: the whole screen, in from the right, no inset and no corners —
+   a 0.75rem frame of dimmed page round a 360px sheet reads as a mistake. No
+   text input here, so no keyboard to fight, which is the reason the dock
+   stops short of full height and this does not. */
+@media (max-width: 30rem) {
+  /* Under the lede, the width of the column: one row in every language,
+     rather than a pill whose edge lands wherever its translation ends. */
+  .play-head > .play-invite-tile {
+    flex-basis: 100%;
+  }
+
+  .play-invite-panel {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .play-invite-head {
+    padding-top: calc(0.85rem + env(safe-area-inset-top));
+  }
+}
+
+/* Movement only: a tapped button keeps its colour, it does not keep a nudge. */
+@media (hover: none) {
+  .play-invite-tile:hover .play-invite-tile-arrow {
+    transform: none;
+  }
+}
+
+/* No slide and no fade — the sheet is simply there, and simply gone (the
+   component skips its exit wait under the same query). */
+@media (prefers-reduced-motion: reduce) {
+  .play-invite-scrim::before,
+  .play-invite-scrim[data-leaving]::before,
+  .play-invite-panel,
+  .play-invite-scrim[data-leaving] > .play-invite-panel {
+    animation: none;
+  }
+
+  .play-invite-tile:hover .play-invite-tile-arrow,
+  .play-invite-tile:active {
+    transform: none;
+  }
 }
 
 .play-invite-line {

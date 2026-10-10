@@ -816,9 +816,11 @@ export const consumerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/assistant/ask',
     auth: 'user',
-    /* Async, because the answer may be handed to a language model to reword
-       before it is stored and returned — see `ports/llm.ts`. Everything the
-       sentence *says* was decided synchronously before that. */
+    /* The model answers when one is configured — with tools bound to this
+       account (`domain/assistantTools.ts`), every figure checked before it is
+       returned (`ports/llm.ts`) — and the keyword router answers when not, or
+       when the model fails. The response shape is the same either way, and a
+       model answer can take several seconds: the clients show a thinking turn. */
     handler: async (ctx) => {
       const { user } = actor(ctx);
 
@@ -828,7 +830,7 @@ export const consumerRoutes: Route[] = [
        *
        * It is the one consumer entitlement whose ceiling is a running cost
        * rather than a design choice: every ask is a retrieval pass, and with
-       * `PAYLEZ_LLM=live` it is also a model call. `requireCapacity` throws the
+       * `PAYLEZ_LLM=live` it is also a tool loop of model calls. `requireCapacity` throws the
        * same 403 the gift-card tier does, naming the key, the limit and what has
        * been spent, so the app can say "that is your five for today" instead of
        * "something went wrong".

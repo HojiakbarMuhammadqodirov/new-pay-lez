@@ -254,6 +254,25 @@ web scoring (§30 of the response-shape list) is a row of the same table now,
 **`nearest`** on `Finish` for the result card's reward line — "you're 60 from
 10% off at Café X" — the website now does.
 
+**2026-10-10, every website arcade round has an end — nothing the app sends is
+scored differently.** No bound, mapping, field or event for `breakout`,
+`doodle_jump`, `zuma`, `food_ninja` or the held `cannon_numbers` board moved, and
+`/start` content for those is unchanged, so Pico's Ball, Pico Jump, Picuma and
+Pico Ninja need no change. What moved, all of it additive:
+
+- `ARCADE_ECONOMY` rows gained **`roundSeconds`**, the website's round: Snake 90,
+  Canon Numbers 90, Bounce Ball 150, Doodle Jump 90, Zuma 120, Food Ninja 60.
+  The website ends its rounds there (a countdown in the header); the server does
+  not hold the bounded games to it — their rate bound already caps a claim by
+  real elapsed time — so an app round of any length is scored exactly as before.
+- **Snake** (web only) sends `content.roundMs` (90 000) and is replayed only up to
+  it; a Snake round's turns after 90 s of ticks are not played.
+- The website's Doodle Jump ends at **the summit** — the 50th platform, a perfect
+  round — and now steps the app's integrator (fixed 1/120 s); Zuma moves in the
+  app's 1/60 s. If the app wants the same ends it can take them as-is: summit at
+  `perfectPlatforms`, the clocks above, "Time — banking your round." when one
+  runs out. Optional; nothing on the server expects it.
+
 - **`points_multiplier`** (1 / 1.25 / 1.75) is a **game-round rule only**. It is
   not applied to a scan, a first visit, a stamp card or a new category — those
   have four named entitlements of their own. It multiplies the base and **not**
@@ -502,6 +521,20 @@ articles, the news feed, the community directory, and 19 currencies.
   `entitlement_required` carrying `limit` and `used`, so write "that is your five
   for today" rather than a generic error. Send the `sessionId` you were given;
   one belonging to another account is a 404.
+- **The assistant is Claude now (2026-10-10), and nothing about the response
+  changed.** With the model on, the server answers *any* question — points,
+  games, vouchers, places, the newcomer's guide — in the reader's language (the
+  account's `language`, else `Accept-Language`: en, pl, uz, ru, uk), from tools
+  bound to the signed-in account, with every figure checked before it is sent.
+  The body is the same `{ text, facts, results, action, grounding, empty }`:
+  `facts` are the figures the sentence used, `results` rows carry `venue_id`
+  and `name` (plus `discount_pct` / `points_cost` on a voucher rung), and
+  `action.href` stays in the vocabulary `_follow` already reads (`#/venue/:id`,
+  `#/learn`, `#/wallet`, `#/deals`). Two things to check on the app's side:
+  **an answer can take 5–15 seconds** (the server gives up at 15 and answers
+  from its keyword router instead), so keep the thinking state up and keep the
+  client timeout where it is (`ApiConfig.timeout`, 20 s) or longer — never shorter; and keep sending `sessionId` — the last few turns
+  of that conversation are what make a follow-up like "and the cheapest?" work.
 
 ---
 
@@ -1995,7 +2028,7 @@ rule to port, and the web's `src/site/games/arcade.ts` is a line-for-line copy.
 
 | Game | Start `content` | During | Finish `report` |
 |---|---|---|---|
-| Snake | `{cols: 16, rows: 16, foods: number[512]}` — cell indices; the next food is the next entry not under the snake | nothing | `{turns: [tick, dir][], ticks}` — **replayed** on the server; dir 0 up · 1 right · 2 down · 3 left, applied before that tick's move |
+| Snake | `{cols: 16, rows: 16, foods: number[512], roundMs: 90000}` — cell indices; the next food is the next entry not under the snake; `roundMs` is the round's clock in ticks played (2026-10-10) | nothing | `{turns: [tick, dir][], ticks}` — **replayed** on the server, up to `roundMs`; dir 0 up · 1 right · 2 down · 3 left, applied before that tick's move |
 | Canon Numbers | `{board: number[48], cols: 6, rows: 8, turns: 30}` | `POST …/events {kind: "fire", payload: {col, from}}` → `{cannon: {board, hits, turn, destroyed, over}}` — 2048's `from` rule | none |
 | Bounce Ball | `{cols: 8, rows: 5, wall: number[40]}` — hit points per brick | nothing | `{broken: number[]}` — brick ids |
 | Doodle Jump | `{platforms: number[400]}` — 0..1 across; heights are `doodleHeights` | nothing | `{reached}` — highest platform index + 1 |

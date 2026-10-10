@@ -41,7 +41,7 @@ each loads only when you work on files matching its `paths:` — read the one fo
 the area you are in before changing it:
 
 - `server.md` — The backend (`server/`)
-- `assistant.md` — The assistant dock
+- `assistant.md` — The assistant: the Claude tool loop, its fallback, and the dock
 - `auth-routing.md` — Sign-in, the session mirror, routing and the head
 - `games.md` — L-Earn and the Play screen
 - `wallet.md` — The wallet
@@ -165,20 +165,43 @@ discarded, they are what an English reader sees.
 in dark, a cyan on near-white in light. Don't introduce a third hue; derive
 tints from the accent with alpha the way `--surface` / `--border` do.
 
-There are exactly four sanctioned exceptions, and all four are cases where the
-thing depicted *is* its colours: flag emoji; the controller's four face buttons
-on the light page (`BUTTON_COLORS` in `controller/Controller3D.tsx`); the
-platformer behind L-Earn (`LEVEL.palette` in `level/config.ts`);
-and the Google "G" on the sign-in button (`GoogleMark` in `auth/GoogleButton.tsx`).
+The sanctioned exceptions are all cases where the thing depicted *is* its
+colours, and they are a closed list: flag emoji; the controller's four face
+buttons on the light page (`BUTTON_COLORS` in `controller/Controller3D.tsx`);
+the platformer behind L-Earn (`LEVEL.palette` in `level/config.ts`); the Google
+"G" on the sign-in button (`GoogleMark` in `auth/GoogleButton.tsx`); Pico, the
+mascot parrot the games share (`PICO_BRAND` in `pico/palette.ts`); and the
+games' stage scenes, below.
 
 The G's colours are Google's brand terms, not our choice; everything around it
 is tokens. In the level, the ground and the runner stay in `primaryColor`, and
 the `ink` row is **not** a second accent ramp — nothing in `site.css` may reach
-for it. None of the four is licence for a fifth hue.
+for it. Pico's teal, bill and crest are the app's mascot carried over value for
+value, and `pico/palette.ts` is the only file that names them; a one-colour Pico
+is `picoMono(tint)`, never a shade picked by hand. None of these is licence for
+a hue that is not on the list.
 
-The partner dashboard is the one sanctioned exception to the two-colour rule:
-light mode is the v3 mock's palette, scoped to `.pd-app` and spent only through
-the `--dx-*` tokens in `dashboard.css` (see `.claude/rules/dashboard.md`).
+**A game's stage may carry its own scene palette when the stage is a picture of
+a place** — the level's argument again: a bakery, a harbour or a beach painted
+in one accent is a diagram of a place, not a place. Each game keeps its palette
+in **one** TS config, keyed by theme (or by the theme's tone, `glow` / `ink`):
+`flight/scene.ts`, and under `games/` — `stage/config.ts` (`STAGE_PALETTE`, the
+four quiz sets), `cannon/look.ts`, and `config.ts` in `word/`, `memory/`,
+`bakery/`, `stall/`, `flock/`, `jump/`, `ball/`, `picuma/` and `ninja/`. What
+keeps it on brand:
+
+- It harmonises with the teal and Pico's range, and **spends the brand accent on
+  what means points** — so the accent still answers "where do I score?".
+- It is **never named in `site.css`.** DOM that needs a scene colour gets it as an
+  inline custom property set from the config (`--fs-*`, `--wb-*`, `--mm-*` …),
+  so the sheet's no-literal rule holds.
+- Foods and other objects that *are* their colours **keep a silhouette each**, so
+  colour is never the only cue (Picuma's balls are marks first).
+
+The partner dashboard is the other kind of exception — a second palette for a
+whole screen rather than a thing depicted: light mode is the v3 mock's palette,
+scoped to `.pd-app` and spent only through the `--dx-*` tokens in
+`dashboard.css` (see `.claude/rules/dashboard.md`).
 
 **When a design hands you a hue per item, reach for texture — unless the item is
 an object.** Two mocks do it. The wallet mock gives each band its own colour and

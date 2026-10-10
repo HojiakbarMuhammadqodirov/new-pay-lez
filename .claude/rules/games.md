@@ -42,12 +42,39 @@ file any more — its holdings are the server's.
 - New games are **appended** to `GAMES`; the grid names a card by its index in
   `GAMES`, never in the filtered list.
 
+**The ids are the rulebook's and the names are Pico's.** Six games carry the
+app's names now, in all five dictionaries — Pico's Flight (`flight`), Pico's
+Flock (`snake`), Pico Jump (`doodle`), Pico's Ball (`breakout`), Picuma (`zuma`)
+and Pico Ninja (`ninja`) — and **no id moved**: the server's game types, the
+economics rows, `SERVER_GAME` and the component files (`Snake.tsx`,
+`DoodleJump.tsx`, `Breakout.tsx`, `Zuma.tsx`, `FoodNinja.tsx`) all keep the old
+words. Rename the copy, never the id; an id is in rows the app already wrote.
+
+**Inviting friends is a panel, not a section of the page** (`InvitePanel.tsx`,
+the owner's call). The Play head (`.play-head`) carries one button beside the
+title, whose `+N` chip appears only once `GET /v1/referrals` has answered; the
+link, code, share, counts, milestone and every friend live in a modal sheet down
+the right (`.play-invite-*`, z 70, full screen on a phone). Modal on purpose —
+it is a task, not something read beside the page — so it traps focus, holds the
+page still, and closes on Escape, the cross or the scrim. One side panel at a
+time: opening it calls `closeAssistant()`, and `openAssistant()` closes it. The
+`/i/<code>` landing (`invite.tsx`) is still a page.
+
 **Hovered cards play a working miniature of the round** (`games/preview.tsx`,
 `══ game previews ══` in `site.css`):
 
 - **It is the game, not a picture of one** — real deck cards from
-  `games/data/decks.json`, a real shuffled word, `flagOf('PL')`, the real
-  `PARROT_PARTS` sprite.
+  `games/data/decks.json`, a real shuffled word, `flagOf('PL')`, and the real
+  Pico (`drawPico`, the call the round's canvas makes) over a still painted by
+  the round's own painter.
+- **Most are `Miniature` stills** — a canvas (`.pv-mini`) painted once by the
+  game's own `miniature.ts` (`bakery/`, `stall/`, `flock/`, `cannon/`, `ball/`,
+  `jump/`, `picuma/`, `ninja/`), so a card cannot drift from its scene. The
+  flight's is `FlightPainter.still()` with the columns and Pico moving on CSS
+  in front of it. Memory and Word Builder are DOM and take the round's own
+  materials (`tableSceneStyle`, `wordSceneStyle`); the word preview's
+  whole-row "right" is an `::after` overlay reading `attr(data-l)`, because the
+  slots fill one letter at a time and the verdict is the word's.
 - **It copies the game's own states** — `.round-option` right/wrong chips,
   `.mm-card`'s three faces, and memory cards **do not flip** because the real
   board doesn't. Don't invent motion the game lacks.
@@ -85,6 +112,22 @@ whole file falls back to English.
 describe the word without naming it ("Место, где ты живёшь" for ДОМ, never
 "дом"). Ukrainian has the same trap with near-cognates.
 
+**The round is played in Pico's study** (`data-stage="study"`, materials in
+`word/config.ts` as `--wb-*`), with Pico's pose per board state in `PICO_FOR`.
+A slot's size is the rack's width over the word's length — `--n` on
+`.wb-rack`, in container-query units — so an eleven-letter Polish word stays
+one row on a phone. **Slots are the word's length and the tray is not**: the
+server can deal decoy letters, so the tray may hold more tiles than there are
+slots, and nothing may assume the two counts agree.
+
+## Memory Match
+
+**Still no flip.** The redesign gave the cards a fade, a deal, a wobble and a
+sheen, and never a rotation — the real board's rule, which the preview copies.
+If a second animation is ever added to `.mm-card`, **restate the whole
+`animation` shorthand with `mm-deal` first**: a rule naming only the new one
+replaces the list, and the deal replays the moment it stops applying.
+
 ## Server-held games
 
 **2048** — the board is public, so what stays secret is **where the next tile
@@ -110,24 +153,61 @@ unmount, or StrictMode leaves it reading "gone" and every reply is ignored.
 **Food Ninja** — an action game, so it is bounded rather than checked:
 `server/domain/foodNinja.ts` fixes the round from a seed, a `start` event stamps
 the server clock, and a `slice` counts only for a food in the air by that clock,
-once, at most six a swipe. Two points a food, 50 for a perfect round, no
-per-game combo bonus (flat bonuses are the master formula's job). Canvas state
-lives in refs in one rAF loop; React hears only the count and whole seconds.
+once, at most six an event. Two points a food, 50 for a perfect round, no
+per-game combo bonus (flat bonuses are the master formula's job). **A cut is
+sent the moment the blade makes it**, not when the finger lifts: a slice is only
+credited inside its food's flight + 1.5 s, and a long held drag used to report
+its first foods after their window shut, so the screen's count and the result
+card's disagreed for an honest player. Canvas state lives in refs in one rAF
+loop; React hears only the count and whole seconds.
 
-**Arcade: Snake, Canon Numbers, Bounce Ball (`breakout`), Doodle Jump, Zuma** —
-`server/domain/arcade.ts` copied to `src/site/games/arcade.ts`; screens
-`games/Snake.tsx`, `CannonNumbers.tsx`, `Breakout.tsx`, `DoodleJump.tsx`,
-`Zuma.tsx`, appended to `GAMES` in that order after `ninja`. Snake's turns are
-**replayed** by the server (its step must stay identical on both sides — both
-suites pin the same cases); the three physics games are **bounded** by duration
-like the flight. Zuma's four ball kinds are four *marks* (dot, ring, bar,
-cross), not hues. All five draw on a canvas in one rAF loop. Classes: `.ar-*`
-shared frame, `.cn-*` Canon Numbers' clock and goal banner.
+**Arcade: Snake (Pico's Flock), Canon Numbers, Bounce Ball (`breakout`, Pico's
+Ball), Doodle Jump (Pico Jump), Zuma (Picuma)** — `server/domain/arcade.ts`
+copied to `src/site/games/arcade.ts`; screens `games/Snake.tsx`,
+`CannonNumbers.tsx`, `Breakout.tsx`, `DoodleJump.tsx`, `Zuma.tsx`, appended to
+`GAMES` in that order after `ninja`. Snake's turns are **replayed** by the
+server (its step must stay identical on both sides — both suites pin the same
+cases); the three physics games are **bounded** by duration like the flight.
+All five draw on a canvas in one rAF loop. Classes: `.ar-*` shared frame,
+`.cn-*` Canon Numbers' clock and goal banner.
+
+**Every arcade round ends, and the header counts down to it.** The latest end is
+`roundSeconds` in `ARCADE_ECONOMY`, mirrored as `SNAKE_ROUND_MS`,
+`BREAKOUT_ROUND_SECONDS`, `DOODLE_ROUND_SECONDS`, `ZUMA_ROUND_SECONDS` in
+`games/arcade.ts` (and Canon Numbers' `ROUND_SECONDS`, Food Ninja's
+`DURATION_MS`); `npm run verify` holds them to the table, and the cards quote
+them. The ends are the games' own: Snake — a crash, or 90 s; Doodle Jump — a
+fall, **the summit** (the website's level is the first 50 platforms, the 50th
+flagged; landing on it is a perfect round and ends it won), or 90 s; Bounce
+Ball — the ball lost, the wall cleared, or 150 s (a ball can loop up an empty
+column for ever); Zuma — the hole, the chain cleared, or a 120 s backstop
+(clearing the front pulls the chain back indefinitely). Four rules travel with
+it:
+
+- **The clock is the game's, never the wall's** — Snake's is the ticks played
+  (`state.ms`), Doodle Jump's and Zuma's are fixed steps taken, Bounce Ball's and
+  Canon Numbers' the clamped frames simulated — so a hidden tab pauses the round
+  and its clock together. Canon Numbers' used to be wall time over a frozen
+  field. Food Ninja is the exception: its clock is the server's.
+- **Snake's end is replayed too.** `snakeOutOfTime` is one line on each side,
+  the server keeps `roundMs` in the round's secret, and both suites pin the tick
+  a circling snake stops on (642).
+- **Physics step in fixed steps or capped sub-steps.** Doodle Jump's integrator
+  is `doodleAdvance` in `arcade.ts` — the app's 1/120 s step, so the jump is the
+  same height at 25 and 144 Hz (it used to peak at 0.295 on a slow phone and
+  0.316 on a fast monitor); Zuma moves in the app's 1/60 s; every loop caps one
+  frame (40–100 ms) so a tab back from the background resumes, not leaps.
+- **Quit is off once a round is over.** In the beat between the end and the
+  result card the round is being banked, and a Quit there abandoned a finished
+  round. Each screen also keeps `onDone` in a ref, so a parent re-render cannot
+  keep re-arming the banking timer.
 
 **Canon Numbers is a maths shooter on the web** — a sum at the top, numbered
 discs falling, tap one (or ← → and Space) and the cannon fires at it; the
 answer scores and deals a new sum, a wrong number costs a point; 90 seconds,
-sums climbing with the net score. Tunables in `games/cannon/config.ts`
+sums climbing with the net score. A ball is judged by the sum it was **fired
+at**: one still in the air when that sum was answered, landing on a number that
+answered it, is forgiven rather than charged. Tunables in `games/cannon/config.ts`
 (`CANNON_SCORING` is the block the `cannon_numbers` economics row must agree with), the maths
 in `games/cannon/goals.ts` (pinned by `npm run verify`). It is **reported**
 (`{hits, wrong}`) and bounded by duration (`scoreCannon`). The server still
@@ -137,21 +217,107 @@ had no maths in it: the numbers were hit points.
 
 **The arcade games' economics are one table.** `ARCADE_ECONOMY` in
 `server/config.ts` holds, per game after the rulebook's eight, how a result maps
-onto 0..100 and how fast it may honestly arrive; payouts come only from the
-master formula. The target is per minute: no game may credit a perfect round
-sooner than `MIN_PERFECT_SECONDS` (20, an honest perfect quiz), and
-`verify:api` checks every row — Canon Numbers' is `cannon_numbers`, with the
-old flat `cannon*` keys kept as aliases like every other game's.
-`npm run verify` holds the offline mirror's per-unit rates to the table, and
-`CANNON_SCORING` to the Canon Numbers row.
+onto 0..100, how fast it may honestly arrive and when the website's round ends;
+payouts come only from the master formula. The target is per minute: no game may
+credit a perfect round sooner than `MIN_PERFECT_SECONDS` (20, an honest perfect
+quiz), and none later than its own clock — `verify:api` checks every row — Canon
+Numbers' is `cannon_numbers`, with the old flat `cannon*` keys kept as aliases
+like every other game's. `npm run verify` holds the offline mirror's per-unit
+rates and clocks to the table, and `CANNON_SCORING` to the Canon Numbers row.
+The per-round table against a quiz, and rulebook-format sections for Snake and
+Canon Numbers (which the rulebook lacks), are "Arcade economics" in
+`server/README.md`. The server's bounds for the four games the app plays did not
+move with the clocks, and must not move without the app.
 
 **Every arcade header is the originals' header** (`games/hud.tsx`): progress
 toward a perfect round on the left (`n / perfect`), a clock in `.round-clock` on
-the right (`RoundClock` counts up, or the game's own countdown / moves left),
-and `PerfectBar` — the quiz's `.round-bar` filled by performance. The ready veil
-is Bird's Flight's (field visible, muted hint, shade from the bottom), the end
-veil its `.fly-over`. The result card names the server's `nearest` venue
-voucher ("You're 60 from 10% off at …") whenever a server round returns one.
+the right (`RoundClock` counts **down** from the seconds left the game passes it,
+`data-low` for the last ten; Canon Numbers and Food Ninja draw their own), and
+`PerfectBar` — the quiz's `.round-bar` filled by performance. The veils
+(`.ar-overlay`, and `ReadyVeil` / `EndVeil` in the same file) read as the
+flight's: the ready one is Pico's Flight's
+(field visible, muted hint, shade from the bottom, Pico waiting beside Start),
+the end one its `.fly-over`. The result card names the server's `nearest`
+venue voucher ("You're 60 from 10% off at …") whenever a server round returns
+one.
+
+## The shared shell
+
+Every round is played on a painted set, and the set is shared code, so a fix to
+one stage is a fix to all of them.
+
+- **`.round[data-stage]` plus `<StageScene motif …/>`** puts a painted set
+  behind a round's DOM. It is built on `games/diorama.tsx` (`Diorama`, the room
+  canvas Memory Match and Word Builder mount directly) — **keep that API
+  stable**; a change there is a change to every quiz, the result card and both
+  boards.
+- **The four quizzes are one component, `QuizRound.tsx`**, on four motifs:
+  `parade` (flags), `atlas` (capitals), `lab` (Brain Games) and `city` (the
+  local quiz, whose city comes from `quizCountryFor`). The engine moved in whole
+  from `games.tsx`; only what it is played in front of changed. Its end reaches
+  `onDone` from an effect on a `result` it writes once, never from inside a
+  state updater — that is React's "cannot update a component while rendering a
+  different one", and StrictMode runs updaters twice.
+- **The result card is `ResultCard.tsx`**, with Pico's face read off the round
+  (`MOOD` in `stage/config.ts`, on `correct / total`), so a 1-of-5 round is not
+  cheered.
+- **Arcade veils are `.ar-overlay`, one look for all of them**, told apart by
+  `role="status"` (the end). `ReadyVeil` / `EndVeil` in `hud.tsx` are the
+  shared components (ready: Pico Ninja, Picuma; end: Pico's Ball, Pico Jump,
+  Pico Ninja, Picuma); the others write the same overlay by hand. `.ar-over-late`
+  holds an end veil 480 ms so the crash or the cheer is seen before the words
+  cover it (Pico's Flock, Canon Numbers); `.ar-ready-snug` lowers the ready veil
+  where Pico starts mid-field and the hint would sit on him.
+- **The `.round-clock` dial keys off `role="timer"`**, because the same slot
+  also holds readings that are not time — Food Cross's and 2048's moves — and
+  a dial on "12 moves left" is a picture of the wrong thing.
+- **A wrong answer's strike-through is on `.qz-text` only.** A
+  `text-decoration` on the button propagates into every block inside it, and
+  through the key it turned a "C" into a "€".
+
+## Pictures only watch
+
+**Every scene reads the game's state and never writes it.** The rules, the
+score, the requests and the replies are what they were before the redesign;
+the picture is told what happened, at the same lines that update the rules, and
+draws it. A scene that decided anything would be a second implementation of
+the game, and the server's copy is already the second. Specifics:
+
+- **2048** (`bakery/scene.ts`) is told `slide` / `spawn` / `settle` / `snap`;
+  `bakery/tracks.ts` is animation only, and `settle` snaps to the server's
+  board whenever the two disagree.
+- **Food Cross** (`stall/scene.ts`) is told `swap` / `refuse` / `step` /
+  `restore` / `sync`; `stall/fall.ts` is animation only. A valid swap is shown
+  before the reply (`canSwap` already proved it a move) and swapped back in
+  sight if the reply fails. `.fc-grid`'s `inset: 3.5cqi` **must equal**
+  `STALL.layout.frame`, or the sixty-four transparent buttons stop lying over
+  the foods they name.
+- **Neither can stall a round.** 2048 never waits on its scene, and Food Cross's
+  waits resolve on a timer rather than on the painter, so a stage scrolled out
+  of sight — no frames — still finishes its cascade.
+- **Pico's Flock** (`flock/`) draws one tick behind the rules so it can glide
+  between cells; its chick rows and its hedge are drawn round the grid and never
+  alter a cell.
+- **Canon Numbers** (`cannon/scene.ts`, `cannon/look.ts`): the rail stays on
+  `TARGET.floorY`, the line past which a target is gone, so what reads as
+  "landed" is what the rules call landed.
+- **Pico Jump**: `JUMP_SCENE.lift` / `readyDrop` are drawing offsets only.
+- **Pico's Ball**: a picture-only strip (`BALL_SCENE.strip`) sits under the
+  field for Pico's board, but the ball is still lost at the **field's** own
+  bottom edge; `Breakout.tsx` hands the scene `BallGeometry` from its own
+  constants, so the two cannot disagree about a rectangle.
+- **Picuma**: its rules send two picture notes, `popRun` and `joined`, so a pop
+  bursts where the orbs were. The four ball kinds are **marks first** (dot,
+  ring, bar, cross); the app's stone materials (jade, gold, coral, deep teal)
+  are a second cue, set at different lightnesses so a greyscale screen still
+  sorts them (`picuma/config.ts`).
+- **Pico Ninja**: the picture notices a cut by the rules' `halves` list. The web
+  round has no bombs because the server's round has none — a bomb is a rule,
+  not a picture.
+- **Pico's Flight**: the art is `flight/scene.ts` + `painter.ts`, and nothing
+  there is read by `engine.ts`. Pico is drawn `anchor: 'body'`, sized from
+  `FLIGHT.bird.radius` (`picoSizeForBodyRadius`), so his body *is* the hit
+  circle; `npm run verify` pins it.
 
 ## Scoring, streak and energy
 
@@ -160,10 +326,13 @@ voucher ("You're 60 from 10% off at …") whenever a server round returns one.
 freeze. Each game computes its own number and hands it over; **no scorer
 restates what a streak is.**
 
-**Nothing that can be lost, is.** Only the flight has a fail state (a crash).
-Quizzes run all five questions however many go wrong, so `won` on a quiz means
-the **clean sweep**. Don't add a mistake limit — it makes a round shorter, not
-harder.
+**Nothing that can be lost, is.** Of the rulebook's eight only the flight has a
+fail state (a crash). Quizzes run all five questions however many go wrong, so
+`won` on a quiz means the **clean sweep**. Don't add a mistake limit — it makes a
+round shorter, not harder. The arcade games' fail states (Snake's crash, Bounce
+Ball's one ball, Doodle Jump's fall, Zuma's hole) are the rulebook's own for
+those games and stay; it is also why their casual rounds pay below a quiz's —
+see "Arcade economics" in `server/README.md`.
 
 **Halves are floored once, at the end** (`flightPoints`, `wordRoundPoints`): a
 gap is 0.5 and a hinted word is half its tier. Flooring per item double-charges;

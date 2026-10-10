@@ -1,9 +1,23 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import { useCopy } from '../i18n/context';
-import { fill } from '../i18n/currency';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from 'react';
+import { useCopy, useLanguage } from '../i18n/context';
+import { fill, plural } from '../i18n/currency';
 import { memoryPoints } from '../auth/player';
 import { today } from '../auth/player';
 import { sendMove, type MoveResult } from '../api/consumer';
+import { Icon } from '../icons';
+import { AnimatedPico, type PicoPose } from '../pico';
+import { useTheme } from '../theme/context';
+import { Diorama } from './diorama';
+import { MEMORY_MOTION } from './memory/config';
+import { TABLE_PALETTE, TABLE_ROOM, tableSceneStyle } from './memory/table';
 import { buildMemoryBoard, type MemoryCard } from './rounds';
 
 /**
@@ -120,6 +134,10 @@ export function MemoryMatch({
   onQuit: () => void;
 }) {
   const copy = useCopy().games;
+  const [language] = useLanguage();
+  /* The card room's materials (`memory/config.ts`) follow the theme; nothing
+     about the game does. */
+  const { theme } = useTheme();
 
   /*
    * The server round, or `null` for a board this file deals itself.
@@ -526,21 +544,54 @@ export function MemoryMatch({
     after(700, () => onDone(memoryPoints(seconds), total, true));
   }, [found, total, onDone, after]);
 
+  /* The table's materials, as `--mm-*` properties — one object per theme. */
+  const scene = tableSceneStyle(theme);
+
   if (!remote && !cards) {
+    /* The room is already up while the deck loads, so the panel does not swap
+       from glass to a card table under the player when it lands. */
     return (
-      <div className="round round-loading" role="status">
+      <div className="round round-loading mm-round" data-stage="table" role="status" style={scene}>
+        <Diorama className="mm-room stage-set" painter={TABLE_ROOM} palette={TABLE_PALETTE[theme]} />
         {copy.loading}
       </div>
     );
   }
 
+  /*
+   * Whether the two cards face up right now are a pair, a miss, or not known
+   * yet — read off what is on the table, for the cards' look and Pico's face.
+   *
+   * **Nothing in the game consults it.** The verdict that counts is still the
+   * one `flip` (locally) or the server's reply (`submit`) settles; this is the
+   * same fact as the player can see it, which is why a server board's pair
+   * reads `null` until both faces have arrived — the player cannot see a miss
+   * before then either, and neither can Pico.
+   */
+  let verdict: 'pair' | 'miss' | null = null;
+  if (flipped.length === 2) {
+    const [a, b] = flipped;
+    const one = cards ? cards[a]?.pair : known[a];
+    const two = cards ? cards[b]?.pair : known[b];
+    if (one != null && two != null) verdict = one === two ? 'pair' : 'miss';
+  }
+
   return (
-    <div className="round mm-round">
+    <div className="round mm-round" data-stage="table" style={scene}>
+      {/*
+        ── the card room ──
+
+        The wall and the lamplight are painted (`memory/table.ts`); the table,
+        its baize and every card are markup in front of it, because a grid of
+        buttons has to be one.
+      */}
+      <Diorama className="mm-room stage-set" painter={TABLE_ROOM} palette={TABLE_PALETTE[theme]} />
+
       <div className="round-top">
         <span className="round-count">
           {fill(copy.memory.pairs, { found: String(found), total: String(total) })}
           <span aria-hidden> · </span>
-          {fill(copy.memory.moves, { n: String(moves) })}
+          {fill(plural(language, moves, copy.memory.moves), { n: String(moves) })}
         </span>
         {/* The stopwatch takes the clock slot, which is where a quiz puts its
             countdown — the same corner of the same header, because it answers
@@ -550,85 +601,200 @@ export function MemoryMatch({
         <Stopwatch from={startedAt} stopped={found >= total} />
       </div>
 
-      {/* Four columns and a 3:4 card, which is the shape a playing card is; a
-          square grid reads as a keypad. */}
-      <div className="mm-grid">
-        {Array.from({ length: size }, (_, index) => {
-          const face = faces[index] ?? 'down';
-          const up = face !== 'down';
-          /* What is drawn on the front of this card. A local board knows every
-             face from the moment it is dealt; a server board knows the ones it
-             has been told, and `null` is the state this whole screen is built
-             around — turned over, and the reply not back yet. */
-          const card = cards ? cards[index] : null;
-          const icon = card ? card.icon : known[index] ?? null;
-          return (
-            <button
-              /* A server board has no keys of its own — its cards are positions
-                 and nothing else — so the index is the identity there. It is
-                 stable: the grid is dealt once and never reordered. */
-              key={card ? card.key : index}
-              type="button"
-              className="mm-card"
-              data-face={face}
-              disabled={up || busy}
-              aria-label={
-                !up
-                  ? copy.memory.facedown
-                  : icon === null
-                    ? copy.memory.turning
-                    : (card?.label ?? icon)
-              }
-              onClick={() => flip(index)}
-            >
-              {up && icon !== null ? (
+      <div className="mm-stage">
+        {/* The table: a stained rim round a baize the lamp lights from above.
+            Four columns and a 3:4 card, which is the shape a playing card is;
+            a square grid reads as a keypad. */}
+        <div className="mm-table">
+          {/* The lamp hangs from the table rather than the room so it is over
+              the baize at every width; its cord runs up out of the panel. */}
+          <span className="mm-lamp" aria-hidden />
+          <div className="mm-grid" data-kind={remote ? 'glyph' : 'emoji'}>
+            {Array.from({ length: size }, (_, index) => {
+              const face = faces[index] ?? 'down';
+              const up = face !== 'down';
+              /* What is drawn on the front of this card. A local board knows every
+                 face from the moment it is dealt; a server board knows the ones it
+                 has been told, and `null` is the state this whole screen is built
+                 around — turned over, and the reply not back yet. */
+              const card = cards ? cards[index] : null;
+              const icon = card ? card.icon : known[index] ?? null;
+              return (
+                <button
+                  /* A server board has no keys of its own — its cards are positions
+                     and nothing else — so the index is the identity there. It is
+                     stable: the grid is dealt once and never reordered. */
+                  key={card ? card.key : index}
+                  type="button"
+                  className="mm-card"
+                  data-face={face}
+                  data-verdict={up && verdict && flipped.includes(index) ? verdict : undefined}
+                  style={{ '--i': index } as CSSProperties}
+                  disabled={up || busy}
+                  aria-label={
+                    !up
+                      ? copy.memory.facedown
+                      : icon === null
+                        ? copy.memory.turning
+                        : (card?.label ?? icon)
+                  }
+                  onClick={() => flip(index)}
+                >
+                  {up && icon !== null ? (
+                    <>
+                      {/* The face, printed the way a playing card is: the mark
+                          large in the middle and small in two corners. It
+                          arrives by fading in where the back was (`mm-show`) —
+                          **there is no flip**, on the board or in its preview,
+                          because a turn that animated would be a card that can
+                          be caught half-way. */}
+                      <i className="mm-pip" aria-hidden>
+                        {icon}
+                      </i>
+                      <span className="mm-icon" aria-hidden>
+                        {icon}
+                      </span>
+                      <i className="mm-pip mm-pip-end" aria-hidden>
+                        {icon}
+                      </i>
+                      {face === 'matched' && card && <span className="mm-label">{card.label}</span>}
+                      {face === 'matched' && (
+                        <span className="mm-seal" aria-hidden>
+                          <Icon name="check" size={11} strokeWidth={3.4} />
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    /* The back — Pico's badge on the deck's printed lattice — and
+                       the same back on a card that is up with its face still in
+                       the air: `.mm-card` is lit and lifted at `data-face='up'`
+                       while this is still the back. Drawing a placeholder glyph
+                       in the icon slot would be inventing a face to say there is
+                       no face yet. */
+                    <span className="mm-back" aria-hidden />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <Dealer found={found} total={total} miss={verdict === 'miss'}>
+          {/*
+            What was just learned, and the whole reason the game is on this site
+            — in Pico's speech bubble, because he is the one teaching it.
+            `aria-live` because the label appears without anything being
+            focused, and a matched pair with a word on it is the one thing here
+            worth announcing.
+
+            A server board has no word to teach — its faces are symbols — so it
+            keeps its own line here for the whole round rather than swapping to a
+            label that does not exist. The slot is kept either way: it is the
+            live region, and it holds the board's height steady between the
+            first match and the last. The inner span is keyed by what is said,
+            so a new word pops in (`mm-say`) while the region itself stays put.
+          */}
+          <p className="mm-learned" aria-live="polite">
+            <span className="mm-said" key={learned ? learned.key : 'hint'}>
+              {learned ? (
                 <>
-                  <span className="mm-icon" aria-hidden>
-                    {icon}
-                  </span>
-                  {face === 'matched' && card && <span className="mm-label">{card.label}</span>}
+                  <b>{learned.label}</b>
+                  {learned.en !== learned.label && <span>{learned.en}</span>}
                 </>
+              ) : remote ? (
+                copy.memory.serverHint
               ) : (
-                /* The same mark a face-down card carries, because the card is
-                   the honest thing to change and it already has: `.mm-card` is
-                   lit and lifted at `data-face='up'` while this is still the
-                   back. Drawing a placeholder glyph in the icon slot would be
-                   inventing a face to say there is no face yet. */
-                <span className="mm-back" aria-hidden />
+                copy.memory.hint
               )}
-            </button>
-          );
-        })}
+            </span>
+          </p>
+        </Dealer>
       </div>
-
-      {/*
-        What was just learned, and the whole reason the game is on this site.
-        `aria-live` because the label appears without anything being focused, and
-        a matched pair with a word on it is the one thing here worth announcing.
-
-        A server board has no word to teach — its faces are symbols — so it keeps
-        its own line here for the whole round rather than swapping to a label
-        that does not exist. The slot is kept either way: it is the live region,
-        and it holds the board's height steady between the first match and the
-        last.
-      */}
-      <p className="mm-learned" aria-live="polite">
-        {learned ? (
-          <>
-            <b>{learned.label}</b>
-            {learned.en !== learned.label && <span>{learned.en}</span>}
-          </>
-        ) : remote ? (
-          copy.memory.serverHint
-        ) : (
-          copy.memory.hint
-        )}
-      </p>
 
       <button type="button" className="link-btn round-quit" onClick={onQuit}>
         {copy.quit}
       </button>
     </div>
+  );
+}
+
+/**
+ * Pico, dealing — standing on the spare decks beside the table, with the
+ * board's line in a speech bubble over him.
+ *
+ * His face is the table's: pleased for a beat when a pair goes down
+ * (`MEMORY_MOTION.cheerMs`), downcast while a missed pair is showing and a
+ * moment after (`sulkMs`), delighted for good once the board is clear, idle
+ * otherwise. The beats are his own timers in his own state, so a mood
+ * changing re-renders this corner and not the twelve cards — and none of it
+ * feeds back into the game: `found` and `miss` come in, a pose goes out.
+ */
+function Dealer({
+  found,
+  total,
+  miss,
+  children,
+}: {
+  found: number;
+  total: number;
+  miss: boolean;
+  children: ReactNode;
+}) {
+  const [cheer, setCheer] = useState(false);
+  const [sulk, setSulk] = useState(false);
+  const seen = useRef(found);
+
+  useEffect(() => {
+    if (found <= seen.current) {
+      seen.current = found;
+      return;
+    }
+    seen.current = found;
+    setCheer(true);
+    const id = window.setTimeout(() => setCheer(false), MEMORY_MOTION.cheerMs);
+    return () => window.clearTimeout(id);
+  }, [found]);
+
+  useEffect(() => {
+    if (miss) {
+      setSulk(true);
+      return;
+    }
+    const id = window.setTimeout(() => setSulk(false), MEMORY_MOTION.sulkMs);
+    return () => window.clearTimeout(id);
+  }, [miss]);
+
+  const pose: PicoPose = found >= total || cheer ? 'happy' : sulk ? 'sad' : 'idle';
+
+  return (
+    <div className="mm-dealer">
+      {children}
+      <div className="mm-perch">
+        {/* Drawn facing right; the sheet mirrors the box where the table is to
+            his left, so he always looks at the cards. */}
+        <span className="mm-bird">
+          <AnimatedPico pose={pose} />
+        </span>
+        <DeckStack />
+      </div>
+    </div>
+  );
+}
+
+/** The spare decks Pico stands on: three boxes of this deck, edge-on. */
+function DeckStack() {
+  return (
+    <svg className="mm-decks" viewBox="0 0 100 34" aria-hidden>
+      <rect x="4" y="22" width="92" height="11" rx="2.5" fill="var(--mm-back-deep)" />
+      <rect x="4" y="22" width="92" height="2.6" rx="1.3" fill="var(--mm-face)" />
+      <rect x="10" y="11.5" width="82" height="11" rx="2.5" fill="var(--mm-back)" />
+      <rect x="10" y="11.5" width="82" height="2.6" rx="1.3" fill="var(--mm-face)" />
+      <rect x="7" y="1" width="84" height="11" rx="2.5" fill="var(--mm-back-deep)" />
+      <rect x="7" y="1" width="84" height="2.6" rx="1.3" fill="var(--mm-face)" />
+      <circle cx="49" cy="6.8" r="2.4" fill="var(--mm-medal-ring)" />
+      <circle cx="51" cy="17.3" r="2.4" fill="var(--mm-medal-ring)" />
+      <circle cx="50" cy="27.8" r="2.4" fill="var(--mm-medal-ring)" />
+    </svg>
   );
 }
 

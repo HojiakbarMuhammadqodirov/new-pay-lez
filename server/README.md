@@ -85,10 +85,18 @@ go on running offline against `:memory:`; Postgres has no such thing.
 | `STRIPE_WEBHOOK_SECRET` | unset | **Secret.** Per endpoint, shown once at creation, and different for test and live. Without it a delivery cannot be verified and is refused — which is correct: a trusted unauthenticated webhook is an endpoint anybody can use to grant themselves a plan. |
 | `PAYLEZ_SITE_ORIGIN` | first of `PAYLEZ_ORIGINS` | Where checkout returns the customer to. |
 | `PAYLEZ_PUSH` | `local` | Same, for FCM/APNs. |
-| `PAYLEZ_LLM` | `off` | `live` lets a model reword the assistant's answer. Off, it composes deterministically. |
+| `PAYLEZ_LLM` | `off` | `live` lets Claude answer the assistant's questions with tools (see "The assistant" below). Off, the keyword router answers. |
 | `ANTHROPIC_API_KEY` | unset | **Secret.** The Claude key. Both this and `PAYLEZ_LLM=live` are required; either one alone leaves the model off. |
-| `PAYLEZ_LLM_MODEL` | `claude-haiku-4-5` | Which model does the rewording. |
-| `PAYLEZ_LLM_MAX_TOKENS` / `PAYLEZ_LLM_TIMEOUT_MS` | `400` / `3000` | Ceilings on one rewrite. Past either, the deterministic sentence is sent. |
+| `PAYLEZ_LLM_MODEL` | `claude-sonnet-5-5` | Which model answers. `claude-haiku-5-5` is the cheaper option, `claude-opus-5-5` the strongest. The boot log names the one in use. |
+| `PAYLEZ_LLM_EFFORT` | `low` | `output_config.effort`, sent only to models that accept it. `low` is chat speed. |
+| `PAYLEZ_LLM_DEADLINE_MS` / `PAYLEZ_LLM_REQUEST_MS` | `15000` / `10000` | The whole answer, and one call. Past either, the router answers instead. Kept under the phone app's 20 s request timeout. |
+| `PAYLEZ_LLM_TOOL_ROUNDS` / `PAYLEZ_LLM_OUTPUT_TOKENS` | `4` / `3000` | Rounds of lookups before the model must answer; `max_tokens` per call, thinking included. |
+| `PAYLEZ_LLM_FALLBACKS` | on | `off` stops sending the server-side refusal fallback (`fallbacks: "default"`) on the models that take it. |
+| `PAYLEZ_LLM_BASE` | `https://api.anthropic.com` | The Messages API's base URL (`ANTHROPIC_BASE_URL` also works). A proxy — or `verify:api`'s fake endpoint. |
+
+`PAYLEZ_LLM_MAX_TOKENS` and `PAYLEZ_LLM_TIMEOUT_MS` sized the old one-sentence
+rewrite (400 tokens, 3 s) and are **no longer read**; the boot warns if either is
+still set, because at those values a tool loop could never finish.
 | `PAYLEZ_ADMIN_EMAIL` / `PAYLEZ_ADMIN_PASSWORD` | unset | Provisions the one admin at boot. Unset means `/v1/admin/*` is unreachable. |
 
 #### Where the Claude key goes
@@ -125,6 +133,43 @@ Two switches rather than one, because they answer different questions: the key
 says a model *can* be called, `PAYLEZ_LLM=live` says this deployment *wants*
 one. A staging box that inherits a production env file does not start spending.
 
+The boot log says which assistant is running —
+`assistant: live via Claude (claude-sonnet-5-5, effort low)` or
+`assistant: deterministic (PAYLEZ_LLM is not live)` — and every model failure
+after that is one line: the reason, the HTTP status and error type, the latency.
+Never the question and never the key.
+
+#### The assistant
+
+`domain/assistant.ts` answers both `POST /v1/assistant/ask` and the partner
+`…/assistant/ask`. With the model live it runs a **tool loop** (`ports/llm.ts`):
+system prompt + tools + the last six transcript messages + the question; while
+Claude stops for `tool_use`, the server runs the tools it asked for and sends
+the results back; at most `PAYLEZ_LLM_TOOL_ROUNDS` rounds, then it must answer.
+
+- **The tools are bound to the asker** (`domain/assistantTools.ts`). A player's:
+  points and history and the vouchers they can afford, games status (streak,
+  energy, featured game, weekly cap), wallet, missions, invites, place search
+  over venues + deals + the guide's directory, one place's hours and voucher
+  ladder, and the newcomer's guide (search, then read an article). An owner's —
+  only for a venue they manage, re-checked on every call: the month, a 7/30/90-
+  day trend, offers, budget, top customers who share their profile (on plans
+  with named profiles), the plan. No tool takes a user id or a venue id.
+- **The prompt is built from the running configuration** (`domain/assistantPrompt.ts`)
+  — `CONFIG`, the plan rows, the game rotation, the category tree — and frozen
+  per side, so it is the cached prefix (`cache_control` on the system block).
+- **Every figure in the answer must be in the data.** `groundedNumbers` checks
+  each against the tool results, the knowledge block, the conversation and the
+  question; a miss is sent back once, a second miss is discarded.
+- **Anything else is the router's answer** — the deterministic sentences the
+  assistant had before the model. Off, failing, refused, slow, ungrounded: the
+  endpoint answers either way, in the same response shape, and
+  `assistant_messages.answered_by` says which path wrote it (`model`,
+  `fallback`, `rules`).
+
+`verify:api` tests all of it against a scripted fake `/v1/messages`
+(`verify-assistant.ts`); nothing calls the real API.
+
 ## Layout
 
 ```
@@ -152,7 +197,9 @@ domain/              the rules. React-free, HTTP-free, testable on their own
        games.ts      §7   server-owned answers and scoring
        social.ts     §8   referrals and leaderboards
        notifications.ts §9 inbox, frequency caps, quiet hours
-       assistant.ts  §10  grounded retrieval, consumer and partner
+       assistant.ts  §10  the assistant: Claude with tools, the router as its floor
+       assistantTools.ts  the tools, each bound to the asker
+       assistantPrompt.ts the rules and the knowledge block, from config
        analytics.ts  §12/B9 the estimated-sales pipeline and the findings
        dashboard.ts  B9   the dashboard's day series, till log, insights,
                           reminders, audiences, listing and the counter tool
@@ -180,7 +227,7 @@ implementation plugs in.
 | --- | --- | --- |
 | `ports/billing.ts` | The whole subscription lifecycle, source reconciliation, entitlement resolution, webhook idempotency | The network call to Stripe / the App Store, and their signature schemes |
 | `ports/push.ts` | Every delivery decision: frequency cap, quiet hours, mode tag, partner quota, the honest reach figure | The FCM / APNs connection |
-| `ports/llm.ts` | Retrieval, grounding, the deterministic sentence, the model call and the post-check | Nothing — this one is wired. Unset by default; see `PAYLEZ_LLM` above |
+| `ports/llm.ts` | The tool loop, the figure check, the fallback to the deterministic answer, the failure log | Nothing — this one is wired. Unset by default; see `PAYLEZ_LLM` above |
 
 NFC is *not* on that list. `crypto/nfc.ts` implements AES-CMAC (checked against
 RFC 4493's own vectors), the PICC decryption, the AN12196 session key and the
@@ -321,7 +368,12 @@ which is not the same for all five:
 - **Snake is replayed.** The report is the turns, not a count; the server plays
   them on the round's own food list with the same step and counts what that
   game ate, stopping where the ticks would have taken longer than the round
-  lasted (`snakeSlackMs`).
+  lasted (`snakeSlackMs`) **or where the round's own clock ran out** —
+  `roundMs`, 90 s of ticks, written into the secret at `/start` and sent as
+  `content.roundMs` so the screen's countdown stops on the same tick
+  (`snakeOutOfTime`, one line on each side). A turn reported after the clock is
+  never played; a round opened before the clock existed has none in its secret
+  and is replayed without one.
 - **Canon Numbers is held for the app and bounded for the website.** The app
   plays the turn-based board, 2048's arrangement: the board is in the secret,
   each `fire` is applied here, the next row comes from the seed, and `from`
@@ -335,6 +387,73 @@ which is not the same for all five:
   so a report can only name what exists, and `arcade.bounded` caps it by the
   round's duration at the fastest honest rate (`…PerSecond` + `…Allowance` in
   `CONFIG.games`) — refusing the impossible, not refereeing the plausible.
+
+**Every round ends.** `roundSeconds` in `ARCADE_ECONOMY` is the website's round
+for each game — the countdown in its header and the latest it can end — and
+`verify:api` holds every row to it: a perfect round must be creditable inside
+the clock, and the typical round must fit. Only Snake's clock is enforced here
+(it is replayed); the bounded games' clocks are the client's, because the rate
+bound already caps a claim by real elapsed time, and the Flutter app plays its
+versions with the rulebook's ends and no clock — nothing about this re-scores an
+app round.
+
+## Arcade economics
+
+The six games after the rulebook's eight are priced by §4.1's master formula and
+nothing else: each maps its result onto performance 0..100, the formula does the
+rest (2..18 base, featured ×1.5, decay by round, plan multiplier, the perfect
+bonus that decays). `ARCADE_ECONOMY` in `config.ts` is the table — the mapping,
+the rate bound, the clock — and its comment carries the per-minute comparison.
+Per **round** (that is, per energy) they compare with a quiz like this, at decay
+1.00 on Free:
+
+| Game | The round ends at… | Perfect = | Casual | Good | Perfect | Typical | pts/min (typ.) |
+|---|---|---|---|---|---|---|---|
+| Quiz (×3) | five questions | 5/5 | 3/5 → 11 | 4/5 → 14 | 18 + 10 | ~45 s | ~15–19 |
+| Food Ninja | 60 s | 50 foods | 25–35 → 9–13 | 40–49 → 14–18 | 18 + 10 | 60 s | ~9–16 |
+| Snake | a crash, or 90 s | 25 foods | 8–14 → 6–10 | 18–24 → 13–17 | 18 + 10 | ~45 s | ~7–19 |
+| Canon Numbers | 90 s | 25 net hits | 12–16 → 9–12 | 18–22 → 13–16 | 18 + 10 | 90 s | ~6–9 |
+| Bounce Ball | ball lost, wall cleared, or 150 s | 40 bricks | 8–16 → 4–7 | 20–30 → 9–14 | 18 + 10 | ~60 s | ~4–11 |
+| Doodle Jump | a fall, the summit, or 90 s | 50 platforms | 10–20 → 4–7 | 25–40 → 9–14 | 18 + 10 | ~45 s | ~7–17 |
+| Zuma | the hole, chain cleared, or 120 s | 60 balls | 15–25 → 5–8 | 30–48 → 9–14 | 18 + 10 | ~75 s | ~4–11 |
+
+Where the figures come from: the rulebook's own typical points for the four the
+app also plays (Pico Ninja, Pico's Ball, Pico Jump, Picuma), autopilots run on
+this code's real step for the timings — a shortest-path Snake (25 foods in 23–33 s
+of game time), a never-missing aiming paddle (a whole wall in 108–150 s), a
+next-platform climber (the 50th in 36–42 s at any frame rate), a greedy Zuma
+shooter (17–53 balls before the hole, 60–92 s) — and estimates for Snake's and
+Canon Numbers' casual players, which have no rulebook section. **No arcade game
+can credit a perfect round sooner than an honest perfect quiz (20 s)**, and none
+pays more per minute than the question games; per round they are level by
+construction.
+
+**The one place the set is stingy is the casual round of the three physics
+games** — Bounce Ball, Doodle Jump and Zuma pay a casual player 4–8 where a
+casual quiz pays 11, because one lost ball, one fall or one hole ends the round
+and their mapping is a share or a rate the rulebook fixed. That mapping is shared
+with the app; changing it on this server would re-score app rounds, so it has to
+move with the app if it moves at all — and a richer mapping (a perfect climb at
+40 platforms, say) needs its rate bound tightened in the same change, or a
+perfect round becomes creditable sooner than the 20 s `verify:api` holds every
+row to.
+
+The two games the rulebook does not cover, in its own format so they can be
+pasted into it:
+
+### Snake *(the website's "Snake" — server `snake`; no app version)*
+- **A 16 × 16 board, one snake, one food at a time.** The food list (512 cells) is dealt by the server from the round's seed; the next food is the next entry not under the snake. The snake quickens as it eats — a tick is 140 ms, 3 ms shorter per food, down to 70 ms. Hitting the wall or its own body ends the round, and so does the **clock: 90 seconds of the game's own time** (the ticks played), counted down on screen.
+- **Performance = min(100, foods eaten × 4)**. **Eat 25 foods for a perfect round** (100, so the perfect-round bonus applies). The round runs on to a crash or the clock after that; nothing more is paid.
+- **Replayed, not reported.** The client sends the turns it applied (`{turns: [tick, dir][], ticks}`); the server plays them again on the same food list with the same rules and counts what that game ate, stopping where the round's clock does (`roundMs`, kept in the round's secret) or where the round's real duration plus 3 s would. A client cannot claim a food it did not reach, and turns after the clock are never played. A shortest-path autopilot needs 23–33 s of game time for 25 foods, so a perfect round cannot be credited sooner than an honest perfect quiz (§9.3).
+- **Typical points** (base, decay 1.00, no plan multiplier): 8 foods (32%) → 6 · 12 foods (48%) → 9 · 15 foods (60%) → 11 · 20 foods (80%) → 14 · 25+ → 18 + the perfect-round bonus. A casual round crashes after 8–14 foods in 25–45 s (6–10 points); a good one reaches 18–24 (13–17). A round that eats nothing still pays the floor of 2.
+- Not in the featured rotation; one energy per round, practice at zero energy, as every game.
+
+### Canon Numbers *(the website's maths shooter — server `cannon_numbers`; the app plays the older held board)*
+- **A sum at the top, numbered discs drifting down, a cannon at the bottom.** Tap a number (or aim with ← → and fire with Space) and the cannon fires at it. The number that answers the sum scores and deals a new sum; a wrong number costs a point. **90 seconds**, counted down on screen. The sums climb with the net score — inside ten, then to twenty with subtraction, then the 2/5/10 tables and "any multiple of", then the full tables, then division and missing numbers — and the field always carries at least three near misses beside the answer (one off, ten off, the digits swapped, the sum where the product was asked), so firing at everything scores nothing.
+- **Performance = min(100, max(0, correct − wrong) × 4)**. **25 net correct answers for a perfect round.** A shot already in the air when its sum was answered, which strikes a number that answered that sum, is neither a hit nor a miss.
+- **Reported and bounded.** The client sends `{hits, wrong}` at the finish; the server believes **at most one correct hit a second of round time + 4**, and never more than 150 (`ARCADE_ECONOMY.cannon_numbers`), so a perfect claim takes at least 21 s. A quick player answers 25 in ~60–70 s.
+- **Typical points** (base, decay 1.00, no plan multiplier): 10 net (40%) → 7 · 15 net (60%) → 11 · 20 net (80%) → 14 · 25 net → 18 + the perfect-round bonus. A casual round lands 12–16 net (9–12 points), a good one 18–22 (13–16). A round that answers nothing still pays the floor of 2.
+- Not in the featured rotation; one energy per round, practice at zero energy, as every game. (The app's held board, `fire` events, is scored separately: 4 a block destroyed, 25 for a perfect round.)
 
 ## Gift cards: real codes, one shelf per country
 

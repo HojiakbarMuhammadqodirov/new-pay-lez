@@ -1009,6 +1009,10 @@ export async function migrate(db: Db): Promise<void> {
      what lets a tag's first tap present counter 0. Same lines in `pg.ts`. */
   await addColumn(db, 'tag_registry', 'label', 'TEXT');
   await addColumn(db, 'tag_registry', 'last_tap_at', 'TEXT');
+  /* Which path wrote an assistant answer — the model, the router after a
+     failed model call, or the router with none configured. NULL on every
+     older row is right: those were all the router. Same line in `pg.ts`. */
+  await addColumn(db, 'assistant_messages', 'answered_by', 'TEXT');
 
   /* The handle's uniqueness, and it lives here rather than as a `UNIQUE` in
      `schema.sql` because `ALTER TABLE … ADD COLUMN` cannot carry one — so an

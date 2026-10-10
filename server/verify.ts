@@ -25,6 +25,7 @@ import { importLegacy, readWordBank, WORD_BANK_CSV } from './db/import.ts';
 import { boot } from './main.ts';
 import { catalogueRetirement } from './verify-catalogue.ts';
 import { nfcTaps } from './verify-nfc.ts';
+import { assistantModel } from './verify-assistant.ts';
 import { csvParts, parseCsv } from './db/csv.ts';
 import { ARCADE_ECONOMY, CONFIG, MIN_PERFECT_SECONDS } from './config.ts';
 import { allRoutes } from './http/routes/index.ts';
@@ -5149,12 +5150,14 @@ async function assistantRules(): Promise<void> {
     'prose with no figures at all is fine',
     llm.onlyKnownNumbers('Nothing to report yet.', facts, grounded),
   );
-  /* Off is the default and it must be free: no key, no request, no waiting. */
+  /* Off is the default and it must be free: no key, no request, no waiting.
+     The model path itself — the tool loop, the fallbacks, the guard on real
+     answers — is `verify-assistant.ts`, against a scripted fake endpoint. */
   check('the model is off unless it is configured on', llm.mode() === 'off');
   eq(
-    'and with it off the draft is returned unchanged',
-    await llm.compose({ draft: grounded, facts, language: 'en', side: 'consumer' }),
-    grounded,
+    'and with it off nothing is asked',
+    await llm.ask({ system: '', context: '', tools: [], history: [], question: 'x', run: async () => ({ data: null }) }),
+    { ok: false, reason: 'off', ms: 0 },
   );
 
   await w.db.close();
@@ -11596,6 +11599,7 @@ async function run(): Promise<void> {
   await entitlementRules();
   await partnerPriceCard();
   await assistantRules();
+  await assistantModel({ describe, check, eq });
   await socialRules();
   await referralRules();
   await trafficRules();
@@ -12293,6 +12297,25 @@ async function arcadeRules(): Promise<void> {
   eq('a replay held to a clock that has not run plays nothing', arcade.snakeReplay(list, toFirst, 60, 0).eaten, 0);
   eq('turning straight back is ignored, not a crash into the neck', arcade.snakeReplay(list, [[0, 3]], 3, 1e9).dead, false);
 
+  /*
+   * ── Snake's clock: the round ends at `roundSeconds` of its own ticks ──
+   *
+   * A snake that circles an eight-cell loop for ever, with every food parked in
+   * the far corner, never eats and never crashes — before the clock, nothing
+   * ended that round. The website's copy (`npm run verify`) pins the same tick.
+   */
+  const corner = Array.from({ length: arcade.SNAKE_FOOD_LIST }, () => arcade.SNAKE_COLS * arcade.SNAKE_ROWS - 1);
+  const circle: Array<[number, number]> = [];
+  for (let t = 0; t < 2000; t += 8) circle.push([t, 2], [t + 2, 3], [t + 4, 0], [t + 6, 1]);
+  const roundMs = CONFIG.games.snakeRoundSeconds * 1000;
+  const circled = arcade.snakeReplay(corner, circle, 5000, roundMs);
+  eq('a snake circling for ever is ended by the clock, not a crash', [circled.dead, circled.eaten], [false, 0]);
+  eq('…on tick 642 of the 90-second clock: 642 ticks of 140 ms is 89.88 s', [circled.ticks, circled.ms], [642, 89_880]);
+  check('…because the next tick would have run past it', arcade.snakeOutOfTime({ ms: circled.ms, eaten: 0 }, roundMs));
+  eq('…and with no clock it would have run to the end of the report',
+    arcade.snakeReplay(corner, circle, 1000, Number.POSITIVE_INFINITY).ticks, 1000);
+  eq('the flat key the scorer reads is the row', CONFIG.games.snakeRoundSeconds, ARCADE_ECONOMY.snake.roundSeconds);
+
   /* ── Snake on the server: the report is turns, never a count ── */
   const w = await world();
   const t0 = '2026-05-04T10:00:00.000Z';
@@ -12316,6 +12339,33 @@ async function arcadeRules(): Promise<void> {
   });
   const expected = arcade.snakeReplay(sent, path, 60, 60_000 + CONFIG.games.snakeSlackMs).eaten;
   eq('a round is scored on what the replay ate, whatever the report claims', snakeDone.performance, Math.min(100, expected * CONFIG.games.snakePerformancePerFood));
+
+  /* The clock travels with the round: sent to the screen, and kept in the
+     secret so `/finish` replays to *this* round's clock. */
+  eq('Snake is dealt its clock', (snakeRound.content as { roundMs?: number }).roundMs, roundMs);
+  eq('…and keeps it in the secret', (seeded as unknown as { roundMs?: number }).roundMs, roundMs);
+  const clockedRound = async (k: number, secret: (s: Record<string, unknown>) => Record<string, unknown>) => {
+    const opened = await games.startSession(w.db, { userId: w.customerId, gameType: 'snake', language: 'en', at: day(k) });
+    const stored = JSON.parse(
+      (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, { i: opened.sessionId }))!.secret,
+    ) as Record<string, unknown>;
+    await w.db.run(`UPDATE game_sessions SET secret = $s WHERE id = $i`, { s: JSON.stringify(secret(stored)), i: opened.sessionId });
+    const foods = (opened.content as { foods: number[] }).foods;
+    const turns = route(arcade.snakeStart(foods));
+    const scored = await games.finish(w.db, {
+      sessionId: opened.sessionId,
+      userId: w.customerId,
+      clientReport: { turns, ticks: 60 },
+      at: day(k, 60_000),
+    });
+    return { scored, eats: arcade.snakeReplay(foods, turns, 60, Number.POSITIVE_INFINITY).eaten };
+  };
+  const expired = await clockedRound(11, (s) => ({ ...s, roundMs: 100 }));
+  eq('a report runs only to the round’s clock — turns after it are never played', expired.scored.performance, 0);
+  const legacy = await clockedRound(12, ({ roundMs: _gone, ...s }) => s);
+  eq('…and a round opened before the clock existed is replayed as it was played, with none',
+    legacy.scored.performance, Math.min(100, legacy.eats * CONFIG.games.snakePerformancePerFood));
+  check('…which is a round that ate', legacy.eats >= 1);
 
   /* ── Canon Numbers ── */
   const rngC = games.arcadeRng('seed-c', 'cannon');
@@ -12421,7 +12471,13 @@ async function arcadeRules(): Promise<void> {
     check(`${game}: a perfect round cannot be credited sooner than the quickest perfect quiz (${soonest.toFixed(1)}s >= ${MIN_PERFECT_SECONDS}s)`, soonest >= MIN_PERFECT_SECONDS);
     check(`${game}: its result maps onto the 0..100 scale`, row.measure === 'share' ? row.performancePerUnit === 0 : row.performancePerUnit > 0 && row.performancePerUnit <= 100);
     check(`${game}: a typical round is no quicker than the quickest perfect quiz`, row.typicalSeconds >= MIN_PERFECT_SECONDS);
+    /* Every round ends (`roundSeconds`), and the end must not be the thing that
+       stops an honest perfect round being credited: the bound has to allow a
+       perfect claim inside the clock, and the typical round has to fit in it. */
+    check(`${game}: a perfect round fits inside its clock (${soonest.toFixed(1)}s <= ${row.roundSeconds}s)`, soonest <= row.roundSeconds);
+    check(`${game}: …and so does a typical one`, row.typicalSeconds <= row.roundSeconds);
   }
+  eq('food_ninja: its clock is the server’s own round', ARCADE_ECONOMY.food_ninja.roundSeconds * 1000, ninja.DURATION_MS);
   /* Canon Numbers' flat keys are aliases of its row, as every other game's are —
      the scorer reads the flat names, so they must be the row's values. */
   check('cannon_numbers: the flat keys the scorer reads are its row',

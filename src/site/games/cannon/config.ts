@@ -16,7 +16,7 @@
  * `CANNON_SCORING` is the whole of what a round is worth, in the rulebook's
  * shape (`landing/uploads/paylez-points-rulebook.md` §4–§5): the game produces
  * a 0..100 **performance** and the master formula (`arcadePoints` here,
- * `CONFIG.games` on the server) turns that into points. Bird's Flight is the
+ * `CONFIG.games` on the server) turns that into points. Pico's Flight is the
  * model — "performance = min(100, obstacles × 4)" — because this is the same
  * kind of game: an arcade round whose raw result is a count.
  *
@@ -44,7 +44,13 @@ export const CANNON_SCORING = {
 /** Net hits for a perfect round — what the card's reward line names. */
 export const CANNON_PERFECT = Math.ceil(100 / CANNON_SCORING.perHit);
 
-/** The round, in seconds. 90 lands a whole round inside the 1–2 minute brief. */
+/**
+ * The round, in seconds of the game's own clock (frames simulated, so a hidden
+ * tab pauses it). 90 lands a whole round inside the 1–2 minute brief, and a
+ * quick player answers the 25 sums of a perfect round in ~60–70 of them. It is
+ * the `roundSeconds` of the `cannon_numbers` row of `ARCADE_ECONOMY`, and
+ * `npm run verify` holds the two together.
+ */
 export const ROUND_SECONDS = 90;
 
 /* ── the field ──────────────────────────────────────────────────────────── */

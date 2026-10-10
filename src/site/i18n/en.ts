@@ -7,6 +7,8 @@
  * `content.ts` (icons, hrefs, stats), which is what keeps the copy free of
  * anything that isn't words.
  */
+import type { Counted } from './currency';
+
 export const en = {
   code: 'en',
   label: 'English',
@@ -948,24 +950,28 @@ export const en = {
     /* Signed out. */
     lockedTitle: 'Sign in to ask',
     lockedBody:
-      'The assistant answers from your own points, vouchers and city. That needs an account.',
+      'The assistant answers from your own points, wallet and games, the places on Paylez and the newcomer’s guide. That needs an account.',
     lockedAction: 'Sign in',
 
     /* Signed in — the greeting takes the first name only. */
     greeting: 'Hello, {name}',
-    lede: 'Ask about anything — points, vouchers, paperwork, or where to find something near you.',
+    lede: 'Ask about anything — points, games, vouchers, paperwork, or where to find something near you.',
     placeholder: 'Ask anything…',
     send: 'Send',
     suggestions: [
       'How many points do I need for a voucher?',
       'How do I register my address?',
       'What is open near me right now?',
+      'Which game should I play today?',
     ],
     you: 'You',
     /* The states a real call has that a canned reply did not. See the note at
        the top of `AssistantDock.tsx`: a refusal, an unreachable server and a
        broken one are three different findings and must not read as one. */
     thinking: 'Thinking…',
+    /* Beside the dots once an answer has taken a few seconds — a model answer
+       that looks several things up can take ten or more. */
+    thinkingLong: 'Still looking that up — this can take a few seconds.',
     limitReached:
       'That is all your questions for today. The allowance resets tomorrow, and a paid plan raises it.',
     offline: 'I could not reach the server, so I have not answered that yet.',
@@ -1377,9 +1383,10 @@ export const en = {
      * run through `fill()` at the call site, so the seven without a hole are
      * unaffected.
      */
-    /* The Play screen's invite card (`InviteCard.tsx`). `{link}` in
-       `shareText` is the invite URL; `progress` takes three counts from
-       `GET /v1/referrals`. */
+    /* The Play screen's invite button and the panel it opens
+       (`InvitePanel.tsx`). `{link}` in `shareText` is the invite URL; every
+       figure is from `GET /v1/referrals`. `kicker` is the button's label and
+       the panel's title. */
     inviteCard: {
       kicker: 'Invite friends',
       /* The figures are the server's (`GET /v1/referrals`), never typed here. */
@@ -1404,6 +1411,16 @@ export const en = {
       statusPaid: 'Visited · +{n}',
       unavailable: 'Your invite link could not be loaded.',
       retry: 'Try again',
+      /* The button's figure — drawn only once the server has answered. */
+      tileBoth: '+{n} each',
+      tileSplit: '+{mine} for you',
+      /* Under the panel's big "+100". */
+      rewardEach: 'points each, for you and your friend',
+      rewardMine: 'points for you',
+      rewardTheirs: 'points for your friend',
+      friendsEmpty: 'Nobody has joined with your link yet. Friends appear here as soon as they sign up.',
+      loading: 'Loading your invite link…',
+      close: 'Close',
     },
     names: [
       "Pico's Flight",
@@ -1420,12 +1437,18 @@ export const en = {
       'Word Builder · {language}',
       '2048',
       'Food Cross',
-      'Food Ninja',
-      'Snake',
+      /* `ninja` and `zuma` carry the app's names, Pico Ninja and Picuma: Pico
+         is the player in both. The ids stay as they were. */
+      'Pico Ninja',
+      /* `snake` is drawn as Pico leading a line of chicks (`games/flock/`), so
+         it is named for that; the rules and the id are still Snake's. */
+      "Pico's Flock",
       'Canon Numbers',
-      'Bounce Ball',
-      'Doodle Jump',
-      'Zuma',
+      /* `breakout` and `doodle` carry the app's names too: Pico's Ball (Pico
+         under his surfboard, the paddle) and Pico Jump (Pico is the jumper). */
+      "Pico's Ball",
+      'Pico Jump',
+      'Picuma',
     ],
     /* `{questions}`, `{seconds}`, `{points}` and `{mistakes}` are filled from the
        game's own row, so a rules line never disagrees with the game it labels. */
@@ -1600,9 +1623,14 @@ export const en = {
     /* The arcade games' header bar: how far the round is toward performance
        100, where its points stop growing (`PerfectBar` in `games/hud.tsx`). */
     perfectProgress: 'Progress to a perfect round',
+    /* An arcade round whose clock ran out (Snake, Pico's Ball, Pico Jump,
+       Zuma — `RoundClock` counts it down in the header). */
+    roundTime: 'Time — banking your round.',
     resultAfford: 'You have enough for a voucher — go and spend it.',
     resultSpend: 'Spend points',
-    resultStreak: 'Streak: {streak} days',
+    /* A count, so a wording per plural category (`plural()` in `currency.ts`):
+       "1 days" was the card's own line on every player's first day. */
+    resultStreak: { one: 'Streak: {streak} day', other: 'Streak: {streak} days' } as Counted,
     again: 'Play again',
     backToGames: 'Back to the games',
 
@@ -1631,14 +1659,14 @@ export const en = {
      * catches a missing key but would say nothing about a missing array entry.
      */
     flight: {
-      rule: 'Fly as far as the bird can · it speeds up as you go',
+      rule: 'Fly as far as Pico can · the pace picks up as you go',
       reward: 'One crash ends it · +{points} a gap · up to {max} a flight',
       goal: '{target} to bank the round',
       hint: 'Tap the screen to flap',
       resume: 'Tap to pick up where you left off',
       aria: 'Flight game. Tap the stage to flap.',
-      crashed: 'The bird clipped a column',
-      resultScore: '{cleared} gaps flown',
+      crashed: 'Pico clipped a column',
+      resultScore: { one: '{cleared} gap flown', other: '{cleared} gaps flown' } as Counted,
       motionTitle: 'This one moves',
       motionBody:
         'Your device asks for less motion, and this game is continuous movement across the screen — there is no still version of it. The other games are quizzes and puzzles, and they stay put. If you would rather fly anyway, everything that is not the game itself will hold still.',
@@ -1663,7 +1691,7 @@ export const en = {
          the bands could move without the copy noticing. */
       reward: 'Under {seconds} seconds pays {points} · slower pays less',
       pairs: 'Pairs {found} / {total}',
-      moves: '{n} moves',
+      moves: { one: '{n} move', other: '{n} moves' } as Counted,
       facedown: 'Face-down card',
       /* A card that has been turned and whose face has not arrived. Only a
          server board has one: it holds the layout, so a face is something this
@@ -1674,7 +1702,7 @@ export const en = {
          keep — its faces are symbols. Promising one and paying out nothing is
          the version of this that reads as a bug. */
       serverHint: 'Turn two cards over. Both faces show — remember where they were.',
-      resultScore: '{pairs} pairs found',
+      resultScore: { one: '{pairs} pair found', other: '{pairs} pairs found' } as Counted,
     },
 
     /* 2048 (`games/Merge2048.tsx`). `{tile}` in `reward` is the top band's
@@ -1684,7 +1712,7 @@ export const en = {
       reward: 'Scored on your biggest tile · reach {tile} for a perfect round',
       score: 'Score {n}',
       best: 'Best tile {tile}',
-      moves: '{n} moves',
+      moves: { one: '{n} move', other: '{n} moves' } as Counted,
       boardLabel: '2048 board. Swipe or use the arrow keys to move the tiles.',
       hint: 'Swipe, or use the arrow keys. Two equal tiles that meet become one.',
       over: 'No moves left — banking your round.',
@@ -1700,7 +1728,7 @@ export const en = {
       rule: 'Swap neighbours to line up 3 foods · {moves} moves',
       reward: 'Line up foods to score · cascades and 4- or 5-matches multiply it · {n} is a perfect round',
       score: 'Score {n}',
-      movesLeft: '{n} moves left',
+      movesLeft: { one: '{n} move left', other: '{n} moves left' } as Counted,
       boardLabel: 'Food Cross board. Tap a food and then a neighbour, or drag a food towards a neighbour, to swap them.',
       hint: 'Tap two neighbours or drag one onto the other. Four in a line makes a striped food, five makes a bomb.',
       over: 'Out of moves — banking your round.',
@@ -1710,21 +1738,25 @@ export const en = {
       resultScore: 'Score: {n}',
     },
 
-    /* Food Ninja (`games/FoodNinja.tsx`). The name is the same in every language. */
+    /* Pico Ninja (`games/FoodNinja.tsx`) — `ninja` below. */
     /* The five arcade games (`games/Snake.tsx`, `CannonNumbers.tsx`, `Breakout.tsx`,
-       `DoodleJump.tsx`, `Zuma.tsx`). Their names are the same in every language,
-       like 2048's; `breakout` is the game this product calls Bounce Ball. */
+       `DoodleJump.tsx`, `Zuma.tsx`). `breakout` is the game this product calls
+       Pico's Ball, `doodle` the one it calls Pico Jump, and `zuma` the one it
+       calls Picuma — the app's names, which Russian and Ukrainian spell in
+       Cyrillic as the app does. */
+    /* Pico's Flock: Snake's rules, drawn as Pico leading a line of chicks —
+       a treat eaten is a chick gained, the hedge is the wall, the line is the tail. */
     snake: {
-      rule: 'Eat, grow, and do not hit the wall or yourself',
-      reward: 'Every food counts · {n} is a perfect round',
-      eaten: 'Eaten {n}',
-      fieldLabel: 'Snake board. Use the arrow keys, swipe, or the buttons below to turn.',
-      intro: 'Steer the snake to the food. It grows with every bite and speeds up — the wall and your own tail end the round.',
+      rule: 'Gather chicks; do not bump the hedge or your own flock · {seconds} seconds',
+      reward: 'Every treat brings a chick · {n} is a perfect round',
+      eaten: 'Chicks {n}',
+      fieldLabel: 'Pico’s Flock garden. Use the arrow keys, swipe, or the buttons below to turn.',
+      intro: 'Lead Pico to the treats — each one adds a chick to the line. The hedge and your own flock end the round.',
       start: 'Start',
-      over: 'Crash — banking your round.',
+      over: 'Bump! Banking your round.',
       padLabel: 'Direction',
       dirs: ['Up', 'Right', 'Down', 'Left'],
-      resultScore: '{n} foods eaten',
+      resultScore: { one: '{n} chick gathered', other: '{n} chicks gathered' } as Counted,
     },
     cannon: {
       /* `games/CannonNumbers.tsx`: a sum at the top, falling numbers, shoot
@@ -1733,7 +1765,7 @@ export const en = {
       rule: 'Shoot the number that answers the sum · {seconds} seconds',
       reward: 'Each right answer scores, a wrong one costs a point · {n} is a perfect round',
       score: 'Score {n}',
-      timeLabel: '{n} seconds left',
+      timeLabel: { one: '{n} second left', other: '{n} seconds left' } as Counted,
       goalLabel: 'Shoot the answer',
       multiple: 'Any multiple of {n}',
       fieldLabel: 'Canon Numbers field. Tap or click a number to fire at it. On a keyboard, the left and right arrows aim and Space fires.',
@@ -1744,49 +1776,57 @@ export const en = {
       resultScore: 'Score: {n}',
     },
     breakout: {
-      rule: 'Keep the ball up and break the wall · one ball',
+      rule: 'Keep the ball up and break the wall · one ball · {seconds} seconds',
       reward: 'Scored on the share of the wall broken',
       broken: 'Bricks {n} / {total}',
-      fieldLabel: 'Bounce Ball field. Move the paddle with your finger, the mouse or the arrow keys.',
-      intro: 'Move the paddle to keep the ball in play. Darker bricks take two hits. Miss the ball and the round ends.',
+      /* The paddle is drawn as Pico's surfboard and the wall as a sandcastle,
+         whose darker wet-sand bricks are the two-hit ones (`games/ball/`). */
+      fieldLabel: 'Pico’s Ball beach. Move Pico’s surfboard with your finger, the mouse or the arrow keys.',
+      intro: 'Move Pico’s surfboard to keep the ball in play. The darker wet-sand bricks take two hits. Miss the ball and the round ends.',
       start: 'Launch',
       over: 'Ball lost — banking your round.',
       cleared: 'Wall cleared — banking your round.',
-      resultScore: '{n} bricks broken',
+      resultScore: { one: '{n} brick broken', other: '{n} bricks broken' } as Counted,
     },
     doodle: {
-      rule: 'Bounce from platform to platform · do not fall',
+      rule: 'Climb to the summit · do not fall · {seconds} seconds',
       reward: 'Every platform climbed counts · {n} is a perfect round',
       height: 'Height {n}',
-      fieldLabel: 'Doodle Jump field. Hold to the left or right of the jumper, or use the arrow keys, to steer.',
-      intro: 'The jumper bounces on its own. Steer it onto the next platform up — the gaps grow as you climb.',
+      fieldLabel: 'Pico Jump climb. Hold to the left or right of Pico, or use the arrow keys, to steer.',
+      intro: 'Pico bounces on his own — steer him up the platforms to the flag at the top. The gaps grow as you climb.',
       start: 'Start',
       over: 'Fell — banking your round.',
-      resultScore: '{n} platforms climbed',
+      /* The level's last platform is the perfect round's: landing on it ends the round won. */
+      summit: 'Summit — a perfect climb! Banking your round.',
+      resultScore: { one: '{n} platform climbed', other: '{n} platforms climbed' } as Counted,
     },
     zuma: {
-      rule: 'Shoot into the chain · three of a kind are gone',
+      rule: 'Shoot into the chain · three of a kind are gone · {seconds} seconds',
       reward: 'Scored on the share of the chain cleared',
       cleared: 'Cleared {n} / {total}',
-      fieldLabel: 'Zuma field. Point where to shoot and release to fire into the chain.',
+      fieldLabel: 'Picuma field. Point where to shoot and release to fire into the chain.',
       intro: 'A chain rolls towards the hole. Shoot balls into it — three or more with the same mark touching disappear.',
       start: 'Start',
       over: 'The chain reached the hole — banking your round.',
       won: 'Chain cleared — banking your round.',
       swap: 'Swap: {now} ↔ {next}',
       kinds: ['dot', 'ring', 'bar', 'cross'],
-      resultScore: '{n} balls cleared',
+      resultScore: { one: '{n} ball cleared', other: '{n} balls cleared' } as Counted,
+      /* Drawn over the field when one shot sets off more than one pop. */
+      combo: 'Combo ×{n}',
     },
     ninja: {
       rule: 'Swipe through the flying food · {seconds} seconds',
       reward: 'Every food you slice counts · {n} is a perfect round',
       sliced: 'Sliced {n}',
-      fieldLabel: 'Food Ninja field. Swipe across the flying food to slice it.',
+      fieldLabel: 'Pico Ninja field. Swipe across the flying food to slice it.',
       intro: 'Food flies up from the bottom. Swipe through it before it falls.',
       start: 'Start',
       over: 'Time — banking your round.',
       failed: 'Some slices did not reach the server. Your round still counts what did.',
-      resultScore: '{n} foods sliced',
+      resultScore: { one: '{n} food sliced', other: '{n} foods sliced' } as Counted,
+      /* Drawn over the field when one stroke of the blade cuts three or more. */
+      combo: '{n} in one swipe!',
     },
 
     /*
@@ -1809,6 +1849,10 @@ export const en = {
       undo: 'Undo',
       clear: 'Clear',
       reveal: 'Hint',
+      /* Under "Hint", inside the button: what pressing it costs, said before the
+         press. `wordPoints` halves a hinted word, and `reward` above says so on
+         the card — this is the same rule where the hand is. */
+      hintCost: 'word pays half',
       next: 'Next word',
       finish: 'See the result',
       correct: 'Correct · +{points} points',

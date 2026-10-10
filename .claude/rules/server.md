@@ -91,17 +91,20 @@ to say which. Those two have opposite fixes. Three rules travel with it — a
 while the raw counts do not; and neither a visit nor a claim is postable by a
 client, because both are what the dashboard argues from.
 
-**The assistant can be given a model, and the model may only rewrite.**
-`ports/llm.ts` is wired to the Claude Messages API and is off unless *both*
+**The assistant is Claude with tools, and the keyword router is its floor.**
+`ports/llm.ts` runs a Messages API tool loop and is off unless *both*
 `PAYLEZ_LLM=live` and `ANTHROPIC_API_KEY` are set — a server-side secret, never
-`VITE_`-prefixed, because Vite bakes those into the browser bundle. The model is
-handed the facts `domain/assistant.ts` retrieved and the sentence it already
-composed, and every figure in what comes back is checked against those facts
-before it is used (`onlyKnownNumbers`); a rewrite that introduced a number is
-discarded whole and the grounded draft is sent. Timeouts, refusals and errors
-all resolve to the same thing: the draft. Called with `fetch` rather than the
+`VITE_`-prefixed, because Vite bakes those into the browser bundle. The model
+answers the question itself, but can only see what the tools in
+`domain/assistantTools.ts` read — each bound to the asking user, or to one venue
+the asker manages — and every figure in its answer is checked against what they
+returned (`groundedNumbers`); one miss is sent back for correction, a second is
+discarded and the router answers. Timeouts, refusals, HTTP errors and the 15 s
+deadline all resolve the same way: the router's deterministic answer, one log
+line, `answered_by = 'fallback'` on the message. Default model
+`claude-sonnet-5-5` (`PAYLEZ_LLM_MODEL`). Called with `fetch` rather than the
 SDK on purpose — one dependency at one boundary is the budget, and `pg` has
-spent it.
+spent it. The detail is `.claude/rules/assistant.md`.
 
 **A plan can be paid for, and the money is Stripe's.** `ports/billing.ts` is the
 boundary and `ports/stripe.ts` is the transport, over `fetch` for the same

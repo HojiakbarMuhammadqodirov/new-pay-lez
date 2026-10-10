@@ -1,29 +1,45 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useReducedMotion } from '../../components/GlobeHero/hooks/useReducedMotion';
 import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
-import { usePalette } from '../theme/context';
+import { useTheme } from '../theme/context';
 import { ninjaMilestones, ninjaPoints, NINJA_PERFECT, NINJA_PER_FOOD } from '../auth/player';
-import { PerfectBar } from './hud';
+import { EndVeil, PerfectBar, ReadyVeil } from './hud';
 import { sendMove } from '../api/consumer';
-import { FOODS } from '../content';
 import { DURATION_MS, MAX_PER_SWIPE, RADIUS, localRng, positionAt, schedule, type Flyer } from './ninjaField';
+import { NinjaScene, type NinjaView } from './ninja/scene';
 
 /**
- * Food Ninja — foods are thrown up from the bottom of the field; swipe through
- * them to slice them. Sixty seconds, no bombs, and the waves grow and quicken as
- * the round goes on. Scored per food (see `ninjaField.ts` and the rulebook map
- * in `server/config.ts`).
+ * Food Ninja — called **Pico Ninja** on screen, the app's name for it: foods
+ * are thrown up from the bottom of the field; swipe through them to slice them.
+ * Sixty seconds, no bombs, and the waves grow and quicken as the round goes on.
+ * Scored per food (see `ninjaField.ts` and the rulebook map in
+ * `server/config.ts`). The id stays `ninja`, and the server's game type
+ * `food_ninja`; only the name a player reads changed.
+ *
+ * **No bombs here, on purpose.** The app deals a few bombs of its own that stun
+ * the blade; the server's round has none, and a bomb is a rule, not a picture.
+ * Adding them would change what a round can score, so the web round stays the
+ * server's round exactly.
  *
  * ## The server's round, drawn here
  *
  * With a `session` the schedule — every food, when it is thrown, from where and
  * how high — is the server's (`content.flyers`); this screen only moves the foods
  * along it. When the player presses Start, a `start` event stamps the server's
- * clock, and every swipe that cuts something sends the ids it cut as a `slice`
- * event. The server credits each one only while that food is really in the air
- * by its own clock, once, and never more than a swipe can cut; the finish is
- * scored on what it credited. The count on screen is this screen's own, for
- * immediate feedback — the result card names the server's.
+ * clock, and every stroke of the blade that cuts something sends the ids it cut
+ * as a `slice` event **at once**. The server credits each one only while that
+ * food is really in the air by its own clock, once, and never more than a
+ * swipe can cut; the finish is scored on what it credited. The count on screen
+ * is this screen's own, for immediate feedback — the result card names the
+ * server's.
+ *
+ * At once, and not when the finger lifts, which is how it was: a cut is only
+ * credited inside its food's flight plus 1.5 s, so a swipe held for a few
+ * seconds — one long drag across several waves — reported its first foods after
+ * their window had shut, and the server rightly refused them. The count on
+ * screen and the count on the result card then disagreed for an honest player,
+ * and a drag still held when the clock ran out never reported at all.
  *
  * Without one the screen throws its own round with `localRng`: the demo
  * accounts and a dead backend, paid into the local mirror and not ranked.
@@ -33,12 +49,21 @@ import { DURATION_MS, MAX_PER_SWIPE, RADIUS, localRng, positionAt, schedule, typ
  * The root `CLAUDE.md`'s load-bearing rule. The foods, the blade and the halves
  * of a sliced food live in refs and are drawn in one `requestAnimationFrame`
  * loop; React state changes only when the count or the whole second on the clock
- * does. The canvas takes the theme's `primary` for the blade, through
- * `usePalette` as every canvas here does, because a canvas cannot read a CSS
- * custom property; the foods are emoji, the sanctioned exception.
+ * does.
+ *
+ * ## The picture is `ninja/scene.ts`
+ *
+ * The night market, Pico in his headband, the foods drawn in his flat style
+ * and cut in two, the juice, the blade — all of it is the scene's, painted
+ * from the refs below and writing none of them. It notices a cut by finding a
+ * new entry in `halves`, which the cut already pushed; nothing in the cut, the
+ * schedule or the reporting knows the scene exists.
  */
 
-/** How long a sliced food's halves stay on screen. */
+/**
+ * How long a cut stays in `halves`. The scene finds new cuts there and draws
+ * the halves itself, for as long as it likes; this only keeps the list short.
+ */
 const HALVES_MS = 600;
 /** How long a point of the blade trail lasts. */
 const TRAIL_MS = 140;
@@ -78,7 +103,8 @@ export function FoodNinja({
   onQuit: () => void;
 }) {
   const copy = useCopy().games;
-  const palette = usePalette();
+  const { theme } = useTheme();
+  const reduced = useReducedMotion();
   const remote = session && Array.isArray(serverRound?.flyers) ? session : null;
   const duration = (remote && serverRound?.durationMs) || DURATION_MS;
 
@@ -93,13 +119,30 @@ export function FoodNinja({
   const sliced = useRef(new Set<number>());
   const halves = useRef<Slice[]>([]);
   const trail = useRef<Array<{ x: number; y: number; at: number }>>([]);
-  const stroke = useRef<number[]>([]);
   const seq = useRef(0);
   const confirmed = useRef(0);
   const inFlight = useRef<Promise<unknown>[]>([]);
   const finished = useRef(false);
-  const blade = useRef(palette.primary);
-  blade.current = palette.primary;
+  /* The picture: built once, reading the refs above and writing none of them. */
+  const scene = useRef<NinjaScene | null>(null);
+  if (!scene.current) scene.current = new NinjaScene();
+  const view = useRef<NinjaView>({
+    flyers: flyers.current,
+    sliced: sliced.current,
+    cuts: halves.current,
+    trail: trail.current,
+    trailMs: TRAIL_MS,
+    ms: -1,
+    phase: 'ready',
+  });
+  /* The round's clock as last drawn, so the end veil's field holds still. */
+  const lastMs = useRef(-1);
+  const shownPhase = useRef(phase);
+  shownPhase.current = phase;
+  /* A fresh `onDone` arrives with every parent render; the banking timer must
+     not be re-armed by each one. */
+  const done = useRef(onDone);
+  done.current = onDone;
 
   const alive = useRef(true);
   useEffect(() => {
@@ -109,8 +152,8 @@ export function FoodNinja({
     };
   }, []);
 
-  /* Send what one swipe cut. A swipe through more than the server believes a
-     swipe can cut is sent as consecutive swipes — rare, and every id is still
+  /* Send what one stroke of the blade cut. More than the server believes a
+     swipe can cut is sent as consecutive events — rare, and every id is still
      checked against the schedule. */
   const report = useCallback(
     (ids: number[]) => {
@@ -156,6 +199,50 @@ export function FoodNinja({
       });
   }, [phase, remote]);
 
+  /** One frame of the picture, from the refs as they stand, at the round's `ms`. */
+  const paint = useCallback((ms: number, now: number) => {
+    const element = canvas.current;
+    const picture = scene.current;
+    if (!element || !picture) return;
+    const v = view.current;
+    v.flyers = flyers.current;
+    v.sliced = sliced.current;
+    v.cuts = halves.current;
+    v.trail = trail.current;
+    v.ms = ms;
+    v.phase = shownPhase.current;
+    picture.paint(element, v, now);
+  }, []);
+
+  /* The theme, motion preference and the words the picture draws. */
+  useEffect(() => {
+    const picture = scene.current;
+    if (!picture) return;
+    picture.setTheme(theme);
+    picture.setReduced(reduced);
+    const face = getComputedStyle(document.documentElement).getPropertyValue('--font-display').trim();
+    picture.setText(face, copy.ninja.combo);
+    paint(lastMs.current, performance.now());
+  }, [theme, reduced, copy.ninja.combo, paint]);
+
+  /* Outside a round the market still lives — lanterns swinging, embers or
+     petals, Pico blinking, the last halves falling away — on a loop of its own
+     that touches nothing the round owns. Under reduced motion, once. */
+  useEffect(() => {
+    if (phase === 'playing') return;
+    if (reduced) {
+      paint(lastMs.current, performance.now());
+      return;
+    }
+    let frame = 0;
+    const loop = () => {
+      paint(lastMs.current, performance.now());
+      frame = requestAnimationFrame(loop);
+    };
+    frame = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frame);
+  }, [phase, reduced, paint]);
+
   /* The loop: move, draw, and end the round on the clock. */
   useEffect(() => {
     if (phase !== 'playing') return;
@@ -166,15 +253,6 @@ export function FoodNinja({
       if (!element) return;
       const context = element.getContext('2d');
       if (!context) return;
-      const ratio = window.devicePixelRatio || 1;
-      const width = element.clientWidth;
-      const height = element.clientHeight;
-      if (element.width !== Math.round(width * ratio)) {
-        element.width = Math.round(width * ratio);
-        element.height = Math.round(height * ratio);
-      }
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      context.clearRect(0, 0, width, height);
 
       const now = performance.now();
       const ms = now - startedAt.current;
@@ -184,59 +262,13 @@ export function FoodNinja({
         setSecondsLeft(left);
       }
 
-      const radius = RADIUS * width;
-      context.textAlign = 'center';
-      context.textBaseline = 'middle';
-      context.font = `${Math.round(radius * 1.7)}px system-ui, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif`;
-
-      /* The foods still in the air. */
-      for (const flyer of flyers.current) {
-        if (sliced.current.has(flyer.id)) continue;
-        const at = positionAt(flyer, ms);
-        if (!at) continue;
-        context.fillText(FOODS[flyer.kind] ?? '', at.x * width, height - at.y * height);
-      }
-
-      /* The halves of what was sliced, parting and fading. */
+      /* The rules' two lists, pruned as they always were — the trail's age is
+         what ends a stroke, so this filter is part of the cut, not the art. */
       halves.current = halves.current.filter((half) => now - half.at < HALVES_MS);
-      for (const half of halves.current) {
-        const age = (now - half.at) / HALVES_MS;
-        const spread = radius * 1.6 * age;
-        const fall = radius * 2.5 * age * age;
-        context.globalAlpha = 1 - age;
-        for (const side of [-1, 1]) {
-          context.save();
-          context.beginPath();
-          context.rect(
-            half.x + (side < 0 ? -radius * 2 : 0) + side * spread,
-            half.y - radius * 2 + fall,
-            radius * 2,
-            radius * 4,
-          );
-          context.clip();
-          context.fillText(FOODS[half.flyer.kind] ?? '', half.x + side * spread, half.y + fall);
-          context.restore();
-        }
-        context.globalAlpha = 1;
-      }
-
-      /* The blade. */
       trail.current = trail.current.filter((point) => now - point.at < TRAIL_MS);
-      if (trail.current.length > 1) {
-        context.strokeStyle = blade.current;
-        context.lineCap = 'round';
-        context.lineJoin = 'round';
-        for (let i = 1; i < trail.current.length; i += 1) {
-          const point = trail.current[i];
-          context.globalAlpha = 1 - (now - point.at) / TRAIL_MS;
-          context.lineWidth = 2 + 4 * (i / trail.current.length);
-          context.beginPath();
-          context.moveTo(trail.current[i - 1].x, trail.current[i - 1].y);
-          context.lineTo(point.x, point.y);
-          context.stroke();
-        }
-        context.globalAlpha = 1;
-      }
+
+      lastMs.current = ms;
+      paint(ms, now);
 
       if (ms >= duration) {
         setPhase('over');
@@ -246,7 +278,7 @@ export function FoodNinja({
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [phase, duration]);
+  }, [phase, duration, paint]);
 
   /* Over: wait for any slice still on its way, then bank. */
   useEffect(() => {
@@ -257,11 +289,11 @@ export function FoodNinja({
         if (finished.current || !alive.current) return;
         finished.current = true;
         const shown = remote ? confirmed.current : local;
-        onDone(ninjaPoints(local), ninjaMilestones(local), local >= NINJA_PERFECT, shown);
+        done.current(ninjaPoints(local), ninjaMilestones(local), local >= NINJA_PERFECT, shown);
       });
     }, END_MS);
     return () => window.clearTimeout(timer);
-  }, [phase, remote, onDone]);
+  }, [phase, remote]);
 
   /* The swipe: every pointer move is a segment of the blade, tested against
      every food in the air at this instant. */
@@ -281,7 +313,7 @@ export function FoodNinja({
     const height = event.currentTarget.clientHeight;
     const ms = now - startedAt.current;
     const radius = RADIUS * width;
-    let hit = 0;
+    const cutNow: number[] = [];
     for (const flyer of flyers.current) {
       if (sliced.current.has(flyer.id)) continue;
       const at = positionAt(flyer, ms);
@@ -291,17 +323,18 @@ export function FoodNinja({
       if (!crosses(last.x, last.y, x, y, cx, cy, radius)) continue;
       sliced.current.add(flyer.id);
       halves.current.push({ flyer, at: now, x: cx, y: cy });
-      stroke.current.push(flyer.id);
-      hit += 1;
+      cutNow.push(flyer.id);
     }
-    if (hit > 0) setCount(sliced.current.size);
+    if (cutNow.length > 0) {
+      setCount(sliced.current.size);
+      /* Sent now, while the food is still inside its window on the server's
+         clock — see the header. */
+      report(cutNow);
+    }
   };
 
   const release = () => {
     trail.current = [];
-    const ids = stroke.current;
-    stroke.current = [];
-    report(ids);
   };
 
   return (
@@ -323,7 +356,6 @@ export function FoodNinja({
             if (phase !== 'playing') return;
             event.currentTarget.setPointerCapture(event.pointerId);
             trail.current = [{ ...point(event), at: performance.now() }];
-            stroke.current = [];
           }}
           onPointerMove={(event) => {
             if (event.buttons === 0 && event.pointerType === 'mouse') return;
@@ -332,24 +364,24 @@ export function FoodNinja({
           onPointerUp={release}
           onPointerCancel={release}
         />
+        {/* While the start event is on its way the press says so; `begin`
+            ignores a second press, so it cannot start the round twice. */}
         {(phase === 'ready' || phase === 'starting') && (
-          <div className="nj-overlay">
-            <p>{copy.ninja.intro}</p>
-            <button type="button" className="btn btn-solid" onClick={begin} disabled={phase === 'starting'}>
-              {phase === 'starting' ? copy.loading : copy.ninja.start}
-            </button>
-          </div>
+          <ReadyVeil intro={copy.ninja.intro} start={phase === 'starting' ? copy.loading : copy.ninja.start} onStart={begin} />
         )}
         {phase === 'over' && (
-          <div className="nj-overlay" role="status">
-            <p>{copy.ninja.over}</p>
-          </div>
+          <EndVeil
+            title={copy.ninja.over}
+            detail={fill(copy.ninja.sliced, { n: `${count} / ${NINJA_PERFECT}` })}
+            pose={count * 2 >= NINJA_PERFECT ? 'happy' : 'idle'}
+          />
         )}
       </div>
 
       {failed && <p className="field-error" role="alert">{copy.ninja.failed}</p>}
 
-      <button type="button" className="link-btn round-quit" onClick={onQuit}>
+      {/* Off once the round is over: it is being banked (see Snake). */}
+      <button type="button" className="link-btn round-quit" onClick={onQuit} disabled={phase === 'over'}>
         {copy.quit}
       </button>
     </div>

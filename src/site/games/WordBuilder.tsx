@@ -1,11 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useCopy, useLanguage } from '../i18n/context';
 import { fill } from '../i18n/currency';
 import { wordPoints, wordRoundPoints } from '../auth/player';
 import { ApiError } from '../api/client';
 import { sendMove } from '../api/consumer';
+import { Icon } from '../icons';
+import { AnimatedPico, type PicoPose } from '../pico';
+import { useTheme } from '../theme/context';
 import type { WordList, WordRow } from './banks';
+import { Diorama } from './diorama';
 import { buildWordRound } from './rounds';
+import { DESK_PALETTE, DESK_ROOM, wordSceneStyle } from './word/desk';
 
 /**
  * Word Builder.
@@ -153,6 +158,28 @@ const SLOT_STATE: Record<Status, string | undefined> = {
   lost: undefined,
 };
 
+/**
+ * What Pico is doing, per status — read off the board, never a state of its
+ * own, so the bird cannot disagree with the row under it.
+ *
+ * Happy when a word lands and gently sad on a wrong row, which lasts exactly
+ * as long as the row stays wrong: the first letter moved puts the board back
+ * to `open` and Pico back to thinking. `lost` is idle rather than sad on
+ * purpose — the network dropped the guess, the player did nothing wrong, and a
+ * downcast bird would be blaming them for it. `sent` is idle too, with the
+ * thought bubble beside him (`.wb-think`) doing the waiting.
+ */
+const PICO_FOR: Record<Status, PicoPose> = {
+  open: 'idle',
+  sent: 'idle',
+  right: 'happy',
+  wrong: 'sad',
+  lost: 'idle',
+};
+
+/** The pieces a solved word throws off the rack — one per spoke of `.wb-burst`. */
+const BURST = Array.from({ length: 12 }, (_, k) => k);
+
 /** Why the hint button did nothing. Cleared by the next press, and by the next word. */
 type Notice = 'spent' | 'unsent';
 
@@ -198,6 +225,10 @@ export function WordBuilder({
 }) {
   const copy = useCopy().games;
   const [language] = useLanguage();
+  /* The study is a scene with materials of its own (`word/config.ts`), and
+     the theme picks which set — read here for the desk's custom properties and
+     the room painter's palette, and for nothing about the game. */
+  const { theme } = useTheme();
   const [deck, setDeck] = useState<Puzzle[] | null>(null);
   const [index, setIndex] = useState(0);
 
@@ -575,16 +606,32 @@ export function WordBuilder({
      there is no word here to spread. */
   const boxes = useMemo(() => Array.from({ length: puzzle?.length ?? 0 }, (_, i) => i), [puzzle]);
 
+  /* The study's materials, as `--wb-*` properties — one object per theme. */
+  const scene = wordSceneStyle(theme);
+
   if (!deck || !puzzle) {
+    /* The study is already up while the list loads, so the panel does not
+       swap from glass to a room under the player the moment the words land. */
     return (
-      <div className="round round-loading" role="status">
+      <div className="round round-loading wb-round" data-stage="study" role="status" style={scene}>
+        <Diorama className="wb-room stage-set" painter={DESK_ROOM} palette={DESK_PALETTE[theme]} />
         {copy.loading}
       </div>
     );
   }
 
   return (
-    <div className="round wb-round">
+    <div className="round wb-round" data-stage="study" style={scene}>
+      {/*
+        ── the study ──
+
+        The room behind everything (`word/desk.ts`): wall, window, lamplight,
+        dust. Then, in the markup and in front of it, the furniture a player
+        actually uses — the shelf Pico reads the clue from, the desk, the rack
+        and the tiles — because those have to sit where the layout puts them.
+      */}
+      <Diorama className="wb-room stage-set" painter={DESK_ROOM} palette={DESK_PALETTE[theme]} />
+
       <div className="round-top">
         <span className="round-count">
           {fill(copy.question, {
@@ -597,92 +644,248 @@ export function WordBuilder({
         </span>
       </div>
 
+      {/* Five stamps, one per word: inked once solved, ringed for the one on
+          the note now. */}
       <div className="wb-pips" aria-hidden>
         {deck.map((_, i) => (
-          <i key={i} data-on={i < solved.length ? 'true' : undefined} />
-        ))}
-      </div>
-
-      <p className="wb-hint">{puzzle.hint}</p>
-
-      {/* The slots. `data-state` carries right/wrong so the whole row can be
-          styled at once rather than each box deciding for itself. `data-shake`
-          is deliberately not here: the effect above sets and clears it on the
-          element itself, because restarting a CSS animation needs a style flush
-          that a re-render cannot guarantee. */}
-      <div className="wb-slots" ref={row} data-state={SLOT_STATE[status]}>
-        {boxes.map((i) => (
-          <span className="wb-slot" key={i}>
-            {tray[slots[i]]?.ch ?? ''}
-          </span>
-        ))}
-      </div>
-
-      <div className="wb-tray">
-        {tray.map((letter, i) => (
-          <button
+          <i
             key={i}
-            type="button"
-            className="wb-key"
-            data-used={letter.used ? 'true' : undefined}
-            disabled={letter.used || locked}
-            onClick={() => tap(i)}
-          >
-            {letter.ch}
-          </button>
+            data-on={i < solved.length ? 'true' : undefined}
+            data-now={i === index ? 'true' : undefined}
+          />
         ))}
       </div>
 
-      {status === 'sent' ? (
-        /* The beat between the last letter and the verdict, in the same slot the
-           result line lands in. A live region and not an animation: the one
-           thing it has to do is say the press registered, and a spinner would be
-           motion added to a screen that has none. */
-        <div className="wb-done" role="status">
-          <b>{copy.wordGame.checking}</b>
-        </div>
-      ) : status === 'right' || status === 'lost' ? (
-        <div className="wb-done">
-          <b>
-            {status === 'right'
-              ? fill(copy.wordGame.correct, {
-                  points: String(solved[solved.length - 1]?.points ?? 0),
-                })
-              : copy.wordGame.unsent}
-          </b>
-          <button type="button" className="btn btn-solid" onClick={next}>
-            {index + 1 >= deck.length ? copy.wordGame.finish : copy.wordGame.next}
-          </button>
-        </div>
-      ) : (
-        <>
-          {notice && (
-            /* Not red, because the palette has one accent: `.field-error` is the
-               field kit's refusal — weighted in `--text` rather than coloured —
-               and a control refusing is exactly what that style is for. */
-            <div className="wb-done" role="status">
-              <span className="field-error">
-                {notice === 'spent' ? copy.wordGame.hintsSpent : copy.wordGame.unsent}
-              </span>
-            </div>
+      {/*
+        ── the shelf ──
+
+        Pico stands on it and holds up the clue: the note is his speech, which
+        is why it has a tail pointing at him. His pose is the board's
+        (`PICO_FOR`), and the lamp over him is the room's one warm light.
+      */}
+      <div className="wb-stage">
+        <div className="wb-perch">
+          <span className="wb-lamp" aria-hidden>
+            <i />
+          </span>
+          <AnimatedPico className="wb-pico" pose={PICO_FOR[status]} />
+          {status === 'sent' && (
+            <span className="wb-think" aria-hidden>
+              <i />
+              <i />
+              <i />
+            </span>
           )}
-          <div className="wb-controls">
-            <button type="button" className="btn btn-ghost" onClick={undo}>
-              {copy.wordGame.undo}
+        </div>
+        <div className="wb-note">
+          {/* The word's tier as three dots — the same number the header names,
+              drawn where the eye already is. */}
+          <span className="wb-tier" aria-hidden>
+            {[1, 2, 3].map((t) => (
+              <i key={t} data-on={t <= puzzle.tier ? 'true' : undefined} />
+            ))}
+          </span>
+          <p className="wb-hint">{puzzle.hint}</p>
+          {status === 'right' && (
+            <span className="wb-stamp" aria-hidden>
+              <Icon name="check" size={20} strokeWidth={3} />
+            </span>
+          )}
+        </div>
+        <ShelfProps />
+      </div>
+
+      {/*
+        ── the desk ──
+
+        Everything that is played is on it: the rack the word is set in, the
+        tiles, the tools. It runs to the panel's edges, which is the whole
+        reason it is its own element rather than the round's background.
+      */}
+      <div className="wb-desk">
+        {/* `--n` is the word's length: the slots share the rack's width between
+            them (`cqi` in the sheet), so an eleven-letter Polish word stays one
+            row on a phone instead of wrapping and stopping reading as a word. */}
+        <div className="wb-rack" style={{ '--n': puzzle.length } as CSSProperties}>
+          {/* The slots. `data-state` carries right/wrong so the whole row can be
+              styled at once rather than each box deciding for itself. `data-shake`
+              is deliberately not here: the effect above sets and clears it on the
+              element itself, because restarting a CSS animation needs a style flush
+              that a re-render cannot guarantee. */}
+          <div className="wb-slots" ref={row} data-state={SLOT_STATE[status]}>
+            {boxes.map((i) => {
+              const at = slots[i];
+              const ch = tray[at]?.ch;
+              return (
+                <span className="wb-slot" key={i} style={{ '--i': i } as CSSProperties}>
+                  {/* Keyed by the tray tile it came from, so a letter arriving
+                      is a new element and plays `wb-land` — the drop into the
+                      groove is CSS on mount, not a timer. */}
+                  {ch !== undefined && (
+                    <b className="wb-tile" key={at}>
+                      {ch}
+                    </b>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+          {status === 'right' && (
+            <span className="wb-burst" aria-hidden>
+              {BURST.map((k) => (
+                <i key={k} style={{ '--k': k } as CSSProperties} />
+              ))}
+            </span>
+          )}
+        </div>
+
+        <div className="wb-tray">
+          {tray.map((letter, i) => (
+            <button
+              key={i}
+              type="button"
+              className="wb-key"
+              data-used={letter.used ? 'true' : undefined}
+              disabled={letter.used || locked}
+              onClick={() => tap(i)}
+            >
+              {letter.ch}
             </button>
-            <button type="button" className="btn btn-ghost" onClick={clear}>
-              {copy.wordGame.clear}
-            </button>
-            <button type="button" className="btn btn-ghost wb-hint-btn" onClick={reveal}>
-              {copy.wordGame.reveal}
+          ))}
+        </div>
+
+        {status === 'sent' ? (
+          /* The beat between the last letter and the verdict, in the same slot the
+             result line lands in. A live region, so the press is *said* to have
+             registered; the thought bubble over Pico is the picture of it. */
+          <div className="wb-done" data-tone="wait" role="status">
+            <b>{copy.wordGame.checking}</b>
+          </div>
+        ) : status === 'right' || status === 'lost' ? (
+          <div className="wb-done" data-tone={status}>
+            <b>
+              {status === 'right'
+                ? fill(copy.wordGame.correct, {
+                    points: String(solved[solved.length - 1]?.points ?? 0),
+                  })
+                : copy.wordGame.unsent}
+            </b>
+            <button type="button" className="btn btn-solid" onClick={next}>
+              {index + 1 >= deck.length ? copy.wordGame.finish : copy.wordGame.next}
+              <Icon name="arrow" size={16} />
             </button>
           </div>
-        </>
-      )}
+        ) : (
+          <>
+            {notice && (
+              /* Not red, because the palette has one accent: `.field-error` is the
+                 field kit's refusal — weighted in `--text` rather than coloured —
+                 and a control refusing is exactly what that style is for. */
+              <div className="wb-done" data-tone="refused" role="status">
+                <span className="field-error">
+                  {notice === 'spent' ? copy.wordGame.hintsSpent : copy.wordGame.unsent}
+                </span>
+              </div>
+            )}
+            <div className="wb-controls">
+              <button type="button" className="btn btn-ghost wb-tool" onClick={undo}>
+                <Icon name="arrow" size={16} className="wb-undo-ico" />
+                {copy.wordGame.undo}
+              </button>
+              <button type="button" className="btn btn-ghost wb-tool" onClick={clear}>
+                <Icon name="close" size={15} />
+                {copy.wordGame.clear}
+              </button>
+              {/* The one tool that costs something, so it says what: the price
+                  under the name, in the button, before the press. */}
+              <button type="button" className="btn btn-ghost wb-tool wb-hint-btn" onClick={reveal}>
+                <Icon name="bulb" size={17} />
+                <span className="wb-hint-label">
+                  {copy.wordGame.reveal}
+                  <small>{copy.wordGame.hintCost}</small>
+                </span>
+              </button>
+            </div>
+          </>
+        )}
 
-      <button type="button" className="link-btn round-quit" onClick={onQuit}>
-        {copy.quit}
-      </button>
+        <button type="button" className="link-btn round-quit" onClick={onQuit}>
+          {copy.quit}
+        </button>
+
+        <DeskProps />
+      </div>
     </div>
+  );
+}
+
+/**
+ * What else is on the desk, in its two front corners where nothing is played:
+ * a cup of mint tea still steaming, and a pencil across a couple of index
+ * cards. Set dressing in the scene's own colours, gone on narrow screens where
+ * the corners are the tiles'.
+ */
+function DeskProps() {
+  return (
+    <>
+      <svg className="wb-desk-prop wb-cup" viewBox="0 0 80 82" aria-hidden>
+        <g className="wb-steam" fill="none" stroke="var(--wb-steam)" strokeWidth="2.6" strokeLinecap="round">
+          <path d="M28 26c-4-5 4-8 0-13s3-8 0-12" />
+          <path d="M38 24c-4-5 4-8 0-13s3-8 0-12" />
+          <path d="M48 26c-4-5 4-8 0-13s3-8 0-12" />
+        </g>
+        <ellipse cx="40" cy="74" rx="34" ry="6.5" fill="var(--wb-tile-side)" />
+        <ellipse cx="40" cy="72.5" rx="33" ry="5.5" fill="var(--wb-pot)" />
+        <path d="M62 44a8 8 0 0 1 0 14" fill="none" stroke="var(--wb-pot)" strokeWidth="4.5" />
+        <path d="M15 36h48l-4 26a7 7 0 0 1-7 6H26a7 7 0 0 1-7-6Z" fill="var(--wb-pot)" />
+        <path d="M17 46h44l-.9 6H17.9Z" fill="var(--wb-book-a)" />
+        <ellipse cx="39" cy="36" rx="24" ry="4.5" fill="var(--wb-pot-hi)" />
+        <ellipse cx="39" cy="36.6" rx="20.5" ry="3" fill="var(--wb-leaf)" />
+      </svg>
+      <svg className="wb-desk-prop wb-cards" viewBox="0 0 118 70" aria-hidden>
+        <g transform="rotate(-7 58 40)">
+          <rect x="18" y="18" width="70" height="44" rx="2.5" fill="var(--wb-tile-side)" />
+          <rect x="18" y="16" width="70" height="44" rx="2.5" fill="var(--wb-paper)" />
+        </g>
+        <g transform="rotate(5 60 38)">
+          <rect x="26" y="12" width="70" height="44" rx="2.5" fill="var(--wb-paper)" />
+          <rect x="32" y="20" width="58" height="1.6" fill="var(--wb-tape)" />
+          <rect x="32" y="29" width="46" height="1.2" fill="var(--wb-paper-mut)" opacity="0.4" />
+          <rect x="32" y="36" width="52" height="1.2" fill="var(--wb-paper-mut)" opacity="0.4" />
+          <rect x="32" y="43" width="30" height="1.2" fill="var(--wb-paper-mut)" opacity="0.4" />
+        </g>
+        <g transform="rotate(-22 60 50)">
+          <rect x="14" y="47" width="78" height="7" rx="1.5" fill="var(--wb-lamp-shade)" />
+          <rect x="14" y="47" width="78" height="2.4" rx="1.2" fill="var(--wb-lamp-shade-hi)" />
+          <rect x="8" y="47" width="7" height="7" rx="1.5" fill="var(--wb-bulb)" />
+          <path d="M92 47l12 3.5L92 54Z" fill="var(--wb-pot)" />
+          <path d="M100.5 49.5l3.5 1-3.5 1Z" fill="var(--wb-tile-ink)" />
+        </g>
+      </svg>
+    </>
+  );
+}
+
+/**
+ * What else is on the shelf: two books, one leaning, and a pot of something
+ * green. Pure set dressing, so it is an inline SVG coloured through the scene's
+ * custom properties and it leaves the stage on a phone, where the note needs
+ * the width.
+ */
+function ShelfProps() {
+  return (
+    <svg className="wb-props" viewBox="0 0 92 72" aria-hidden>
+      <rect x="4" y="14" width="13" height="58" rx="2" fill="var(--wb-book-a)" />
+      <rect x="6.5" y="20" width="8" height="2.4" rx="1" fill="var(--wb-book-b)" opacity="0.7" />
+      <rect x="6.5" y="62" width="8" height="2.4" rx="1" fill="var(--wb-book-b)" opacity="0.7" />
+      <rect x="18" y="22" width="11" height="50" rx="2" fill="var(--wb-book-b)" />
+      <rect x="20" y="28" width="7" height="1.8" rx="0.9" fill="var(--wb-book-c)" opacity="0.6" />
+      <rect x="31" y="27" width="12" height="47" rx="2" fill="var(--wb-book-c)" transform="rotate(14 37 72)" />
+      <path d="M58 48h26l-3 22a3 3 0 0 1-3 2.6H64a3 3 0 0 1-3-2.6Z" fill="var(--wb-pot)" />
+      <rect x="56" y="45" width="30" height="6" rx="2" fill="var(--wb-pot-hi)" />
+      <path d="M71 46c-1-12-9-17-15-18 2 7 7 14 15 18Z" fill="var(--wb-leaf)" />
+      <path d="M71 46c1-15 8-22 15-24-1 9-6 18-15 24Z" fill="var(--wb-leaf-hi)" />
+      <path d="M71 46c-2-10 0-20 4-26 2 8 1 18-4 26Z" fill="var(--wb-leaf)" />
+    </svg>
   );
 }

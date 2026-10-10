@@ -1,9 +1,22 @@
-import type { CSSProperties } from 'react';
-import { FOODS, PREVIEW, type GameId } from '../content';
+import { useEffect, useRef, type CSSProperties } from 'react';
+import { PREVIEW, type GameId } from '../content';
 import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
 import { flagOf, type LocalCountry, type WordList } from './banks';
-import { PARROT_PARTS, WING, type ParrotPart } from '../flight/parrot';
+import { FlightPainter, previewVars } from '../flight/painter';
+import { Pico } from '../pico';
+import { useTheme } from '../theme/context';
+import { tableSceneStyle } from './memory/table';
+import { paintBakeryMiniature } from './bakery/miniature';
+import { paintStallMiniature } from './stall/miniature';
+import { paintFlockMiniature } from './flock/miniature';
+import { paintHarbourMiniature } from './cannon/miniature';
+import { paintBallMiniature } from './ball/miniature';
+import { paintJumpMiniature } from './jump/miniature';
+import { paintPicumaMiniature } from './picuma/miniature';
+import { paintNinjaMiniature } from './ninja/miniature';
+import { displayFont } from './sceneStage';
+import { wordSceneStyle } from './word/desk';
 
 /**
  * The working miniature a catalogue card plays while the pointer rests on it.
@@ -11,9 +24,9 @@ import { PARROT_PARTS, WING, type ParrotPart } from '../flight/parrot';
  * **It is the game, not a picture of one.** Memory Match turns real cards off
  * the Kraków deck and leaves the matched pairs up. Guess the Flag shows a real
  * flag over real country names and lights the right one. Word Builder carries a
- * real word up out of its own shuffled letters. Squawk is the *actual* sprite —
- * the same `PARROT_PARTS` table the game's canvas draws, read into SVG rects
- * instead of into `roundRect` calls — flying through columns at the width, gap
+ * real word up out of its own shuffled letters. Pico is the *actual* bird —
+ * the same `drawPico` the game's canvas calls, in front of a still the game's
+ * own painter made of its world — flying through columns at the width, gap
  * and cap `FLIGHT.pipe` specifies.
  *
  * The version before this drew abstract shapes: bars for answers, a striped
@@ -30,17 +43,19 @@ import { PARROT_PARTS, WING, type ParrotPart } from '../flight/parrot';
  *     rest, so eight mounted previews cost eight static layouts and no frames.
  *     The root `CLAUDE.md` names per-frame work through React state as the
  *     load-bearing rule of the codebase, and a decoration is the last thing
- *     that should be its exception. It is also why Squawk is SVG rather than a
- *     second canvas: `flight/engine.ts` is a simulation with a game loop, and
- *     what a preview wants is his portrait in motion, not his physics.
+ *     that should be its exception. It is also why the flight's miniature is
+ *     not a second game loop: its world is painted *once*, a still, and Pico
+ *     and the columns move on keyframes in front of it — `flight/engine.ts` is
+ *     a simulation, and what a preview wants is his portrait in motion, not
+ *     his physics.
  *   - **The content is real and it is fixed.** `PREVIEW` in `content.ts` and
  *     `copy.games.preview` carry it, and both say why a hover must not reach
  *     into the question banks (the general one is 220 kB) and why a preview
  *     dealing a new question every time would be a slot machine where an
  *     example is wanted.
  *   - **A miniature copies the game's own states, not a livelier version of
- *     them.** Memory Match has no flip — a card changes its border and its fill
- *     and that is all — so this does not flip either. A preview that invents
+ *     them.** Memory Match has no flip — a card's back fades off its face and
+ *     its ring lights, and that is all — so this does not flip either. A preview that invents
  *     motion the game does not have is back to advertising the wrong product,
  *     one step subtler.
  *   - **It is `aria-hidden` and carries no text of its own.** Everything
@@ -96,9 +111,11 @@ export function GamePreview({
  * Six cards, three pairs, turned a pair at a time and left face up.
  *
  * The three states are the board's own (`data-face` on `.mm-card`): `down` is
- * an empty card with a small square on it, `up` shows the emoji, and `matched`
+ * the printed back with Pico's badge, `up` shows the emoji, and `matched`
  * shows the emoji **with its Polish label** — which is the moment the game
- * exists for, so it is the moment the preview holds.
+ * exists for, so it is the moment the preview holds. Dealt on the board's own
+ * table: `tableSceneStyle` hands this miniature the same `--mm-*` materials
+ * the round reads, so the two cannot be drawn from different decks.
  *
  * The order is fixed and deliberately not adjacent: `[0, 1, 2, 1, 0, 2]` puts
  * each pair a row apart, which is what makes the reveal read as *remembering*
@@ -112,10 +129,11 @@ export function GamePreview({
  * reason.
  */
 function MemoryPreview() {
+  const { theme } = useTheme();
   const board = [0, 1, 2, 1, 0, 2];
 
   return (
-    <span className="pv-board">
+    <span className="pv-board" style={tableSceneStyle(theme)}>
       {board.map((pair, i) => {
         const card = PREVIEW.memory[pair];
         return (
@@ -133,245 +151,210 @@ function MemoryPreview() {
 /* ─────────────────────────────────────────────────────────────── 2048 ── */
 
 /**
- * The real board's cells (`.mg-cell`, the same `--mg-level` strength ramp),
- * holding `PREVIEW.merge`. Still, because the game's motion happens only when
- * somebody swipes — a board that slid on its own would be advertising a game
- * that plays itself.
+ * A board game's miniature, painted by the round's own painter into the card's
+ * band — once, and again only when the band's size, the theme or the web font
+ * changes. Both boards are still between moves, so nothing here runs per frame
+ * and nothing animates on hover: a board that moved on its own would be
+ * advertising a game that plays itself.
+ */
+function Miniature({
+  paint,
+}: {
+  paint: (ctx: CanvasRenderingContext2D, w: number, h: number, theme: 'dark' | 'light') => void;
+}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const { theme } = useTheme();
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const draw = () => {
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      const ctx = canvas.getContext('2d');
+      /* A phone hides the band (`display: none`), which measures 0 — nothing to paint. */
+      if (!ctx || !(w > 0 && h > 0)) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      paint(ctx, w, h, theme);
+    };
+    /* Observing paints the first time too, once the band has a size. */
+    const observer = new ResizeObserver(draw);
+    observer.observe(canvas);
+    let live = true;
+    void document.fonts?.ready.then(() => live && draw());
+    return () => {
+      live = false;
+      observer.disconnect();
+    };
+  }, [paint, theme]);
+  return <canvas ref={ref} className="pv-mini" />;
+}
+
+const mergeMiniature = (ctx: CanvasRenderingContext2D, w: number, h: number, theme: 'dark' | 'light') =>
+  paintBakeryMiniature(ctx, w, h, PREVIEW.merge, theme, displayFont());
+
+/**
+ * `PREVIEW.merge` on the round's own tray — the glazed tiles, the wooden frame,
+ * Pico on the rim — drawn by `bakery/miniature.ts` with the scene's functions.
  */
 function MergePreview() {
-  return (
-    <span className="pv-merge">
-      {PREVIEW.merge.map((value, i) => (
-        <span
-          key={i}
-          className="mg-cell"
-          data-value={value || undefined}
-          data-big={value >= 256 ? 'true' : undefined}
-          style={{ '--mg-level': value > 0 ? Math.log2(value) : 0 } as CSSProperties}
-        >
-          {value > 0 ? value : ''}
-        </span>
-      ))}
-    </span>
-  );
+  return <Miniature paint={mergeMiniature} />;
 }
 
 /* ───────────────────────────────────────────────────────────── food cross ── */
 
-/** A still corner of a Food Cross board in the real board's cells (`.fc-cell`). */
+const foodMiniature = (ctx: CanvasRenderingContext2D, w: number, h: number, theme: 'dark' | 'light') =>
+  paintStallMiniature(ctx, w, h, PREVIEW.food, theme);
+
+/** A still 4×4 corner of the round's crate and gingham, with its foods and Pico. */
 function FoodPreview() {
-  return (
-    <span className="pv-food">
-      {PREVIEW.food.map((kind, i) => (
-        <span key={i} className="fc-cell">
-          <span>{FOODS[kind]}</span>
-        </span>
-      ))}
-    </span>
-  );
+  return <Miniature paint={foodMiniature} />;
 }
 
 /* ───────────────────────────────────────────────────── the arcade games ── */
 
 /*
  * Five still frames of the five arcade games, drawn the way each game draws
- * itself: the snake and its food on the grid, a column of numbered blocks over
- * its cannon, the wall over the paddle, the stair of platforms under the
- * jumper, and the chain with its four marks. No motion a game does not have,
+ * itself: Pico's flock and a treat on the lawn, balloons over the bay above
+ * the cannon, the sandcastle over Pico's surfboard, Pico climbing the jungle
+ * (all four painted by their rounds' own scenes), and the chain with its four
+ * marks. No motion a game does not have,
  * and nothing to read — the rule of every preview in this file.
  */
 
-/** A snake turning a corner towards its food, on a 6×4 grid. */
+/**
+ * Pico's Flock (`snake`): Pico leading his line of chicks round a corner
+ * toward a cherry, on the round's own lawn — `flock/miniature.ts`, the round's
+ * scene painting a fixed board.
+ */
 function SnakePreview() {
-  const body = [9, 10, 11, 17, 23];
-  return (
-    <span className="pv-snake">
-      {Array.from({ length: 24 }, (_, i) => (
-        <i key={i} data-on={body.includes(i) ? 'true' : undefined} data-head={i === 9 ? 'true' : undefined}>
-          {i === 7 ? FOODS[0] : ''}
-        </i>
-      ))}
-    </span>
-  );
+  return <Miniature paint={paintFlockMiniature} />;
 }
 
+const cannonMiniature = (ctx: CanvasRenderingContext2D, w: number, h: number, theme: 'dark' | 'light') =>
+  paintHarbourMiniature(ctx, w, h, theme, displayFont());
+
 /**
- * The round in one frame: a sum, three falling numbers with the answer struck,
- * the cannon under them. The distractors are the round's own kind — one either
- * side of the answer — so the picture teaches the rule.
+ * The round in one frame: the sum, three balloons coming down over the bay and
+ * a ball on its way to the answer, Pico at the cannon — `cannon/miniature.ts`,
+ * the round's harbour. The distractors are the round's own kind, one either
+ * side of the answer, so the picture teaches the rule. The sum is the
+ * banner's, set over the canvas.
  */
 function CannonPreview() {
   return (
     <span className="pv-cannon">
+      <Miniature paint={cannonMiniature} />
       <em>3 + 4 = ?</em>
-      <span>
-        <i>6</i>
-        <i data-hit="true">7</i>
-        <i>8</i>
-      </span>
-      <b aria-hidden />
     </span>
   );
 }
 
-/** The wall with a gap knocked in it, the ball, the paddle. */
+/**
+ * Pico's Ball: the sandcastle with a gap knocked in it and a wet block
+ * cracked, the beach ball on its way up, Pico under his surfboard — painted by
+ * the round's own scene (`ball/miniature.ts`).
+ */
 function BreakoutPreview() {
-  const gone = new Set([2, 3, 10]);
-  return (
-    <span className="pv-brick">
-      <span className="pv-brick-wall">
-        {Array.from({ length: 16 }, (_, i) => (
-          <i key={i} data-gone={gone.has(i) ? 'true' : undefined} data-hard={i < 4 ? 'true' : undefined} />
-        ))}
-      </span>
-      <b className="pv-brick-ball" />
-      <b className="pv-brick-paddle" />
-    </span>
-  );
+  return <Miniature paint={paintBallMiniature} />;
 }
 
-/** A stair of platforms and the jumper on its way up. */
+/**
+ * Pico Jump: Pico on his way up off one jungle branch toward the next —
+ * painted by the round's own scene (`jump/miniature.ts`).
+ */
 function DoodlePreview() {
-  return (
-    <span className="pv-doodle">
-      {[
-        [18, 82],
-        [56, 60],
-        [26, 38],
-        [62, 16],
-      ].map(([x, y], i) => (
-        <i key={i} style={{ left: `${x}%`, top: `${y}%` }} />
-      ))}
-      <b style={{ left: '34%', top: '22%' }} />
-    </span>
-  );
+  return <Miniature paint={paintJumpMiniature} />;
 }
 
-/** A stretch of the chain, three of one mark about to touch. */
+/**
+ * Picuma (`zuma`): two dots in the chain on the temple's causeway and a third
+ * on its way to them out of Pico's beak — painted by the round's own scene
+ * (`picuma/miniature.ts`).
+ */
 function ZumaPreview() {
-  const chain = [1, 0, 0, 2, 3, 3, 1, 2];
-  return (
-    <span className="pv-zuma">
-      {chain.map((kind, i) => (
-        <i key={i} data-kind={kind} />
-      ))}
-      <b data-kind={0} />
-    </span>
-  );
+  return <Miniature paint={paintPicumaMiniature} />;
 }
 
 /* ──────────────────────────────────────────────────────────── food ninja ── */
 
+const ninjaMiniature = (ctx: CanvasRenderingContext2D, w: number, h: number, theme: 'dark' | 'light') =>
+  paintNinjaMiniature(ctx, w, h, PREVIEW.ninja, theme);
+
 /**
- * Three foods in the air and one blade stroke through the middle one, which is
- * drawn in two halves — the moment the game is about, held still.
+ * Pico Ninja (`ninja`): three foods in the air over the night market and the
+ * blade through the middle one, already in two halves with its juice flying —
+ * the moment the game is about, held still, painted by the round's own scene
+ * (`ninja/miniature.ts`) at the places `PREVIEW.ninja` gives.
  */
 function NinjaPreview() {
-  return (
-    <span className="pv-ninja">
-      <i className="pv-ninja-blade" />
-      {PREVIEW.ninja.map((food, i) =>
-        'sliced' in food ? (
-          <span
-            key={i}
-            className="pv-ninja-food"
-            data-sliced="true"
-            style={{ left: `${food.x * 100}%`, top: `${food.y * 100}%` }}
-          >
-            <b>{FOODS[food.kind]}</b>
-            <b>{FOODS[food.kind]}</b>
-          </span>
-        ) : (
-          <span key={i} className="pv-ninja-food" style={{ left: `${food.x * 100}%`, top: `${food.y * 100}%` }}>
-            <b>{FOODS[food.kind]}</b>
-          </span>
-        ),
-      )}
-    </span>
-  );
+  return <Miniature paint={ninjaMiniature} />;
 }
 
 /* ────────────────────────────────────────────────────────────── flight ── */
 
-/** The game's own clamp: a radius never exceeds half the shorter side. */
-const radiusOf = (part: ParrotPart) => Math.min(part.r, part.w / 2, part.h / 2);
-
-const Rect = ({ part, className }: { part: ParrotPart; className: string }) => (
-  <rect
-    x={part.x}
-    y={part.y}
-    width={part.w}
-    height={part.h}
-    rx={radiusOf(part)}
-    className={className}
-  />
-);
+/**
+ * The size the miniature's backdrop is painted at, in CSS pixels. Fixed, and
+ * scaled into the band with `object-fit: cover` (bottom-anchored, so the turf
+ * stays on the floor), because the band changes height on hover — its top
+ * moves up when the card's head steps out — and a canvas painted to the
+ * band's own box would rebuild the whole scene on every hover in and out.
+ */
+const STILL = { width: 540, height: 240, plane: 37 } as const;
 
 /**
- * Squawk, off the same table the game's canvas draws him from.
- *
- * `PARROT_PARTS` is eleven rounded rectangles in a unit square, which is a
- * `roundRect` on one side and an `<rect rx>` on the other — the same eleven
- * rows either way, so the bird in the preview cannot become a different bird
- * from the one in the round. `WING` is one rect pivoted about a shoulder and
- * drawn after index `WING.after`, which is exactly where it goes here.
- *
- * **The pivot is derived, not measured.** `transform-box: fill-box` puts the
- * origin inside the wing's own box, so the shoulder is a percentage of that
- * box — and the shoulder happens to lie inside it, which is what makes this
- * work at all. Both are computed from `WING` so a tuning change moves the
- * preview with the game. The two frame angles ride along as custom properties
- * for the same reason; the sheet only swings between them.
- *
- * The `viewBox` is the unit square plus the room the crest and the tail take
- * outside it — the parts run x `-0.28…1.08` and y `-0.22…0.92`, so a `0 0 1 1`
- * box would cut off his head.
+ * The flight's world, painted once — by the game's own painter, so the card
+ * and the round are one picture — and then left alone. Repainted only when the
+ * theme changes, and after the page has settled rather than during its first
+ * render: a dozen cards mount together and only this one paints.
  */
-function Squawk() {
-  const wing = {
-    '--wing-x': `${((WING.pivot.x - WING.rect.x) / WING.rect.w) * 100}%`,
-    '--wing-y': `${((WING.pivot.y - WING.rect.y) / WING.rect.h) * 100}%`,
-    '--wing-up': `${(WING.frames[0] * 180) / Math.PI}deg`,
-    '--wing-down': `${(WING.frames[1] * 180) / Math.PI}deg`,
-  } as CSSProperties;
-
-  return (
-    <svg className="pv-bird" viewBox="-0.32 -0.26 1.44 1.24" focusable="false">
-      {PARROT_PARTS.slice(0, WING.after + 1).map((part, i) => (
-        <Rect key={i} part={part} className={`pv-p-${part.style}`} />
-      ))}
-      {/* Its own colour, and not one of `PART_STYLES`: the skin has a fifth
-          slot for the wing, and the game applies it outside the style table. */}
-      <rect
-        className="pv-wing"
-        x={WING.rect.x}
-        y={WING.rect.y}
-        width={WING.rect.w}
-        height={WING.rect.h}
-        rx={WING.rect.r}
-        style={wing}
-      />
-      {PARROT_PARTS.slice(WING.after + 1).map((part, i) => (
-        <Rect key={i} part={part} className={`pv-p-${part.style}`} />
-      ))}
-    </svg>
-  );
+function FlightBackdrop({ tone, accent }: { tone: 'glow' | 'ink'; accent: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const paint = () => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(STILL.width * dpr);
+      canvas.height = Math.round(STILL.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const painter = new FlightPainter();
+      painter.configure(STILL.width, STILL.height, dpr, tone, accent);
+      painter.still(ctx, STILL.plane);
+    };
+    const idle = window.requestIdleCallback;
+    if (idle) {
+      const id = idle(paint, { timeout: 1500 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(paint, 200);
+    return () => window.clearTimeout(id);
+  }, [tone, accent]);
+  return <canvas ref={ref} className="pv-scene" />;
 }
 
 /**
- * The stage: columns crossing, and Squawk rising and falling between them.
+ * The stage: columns crossing, and Pico rising and falling between them.
  *
  * Two columns rather than the game's stream, because a preview lasts a few
  * seconds and a third would only ever be half on screen. Each is a top piece
  * and a bottom piece with the gap between them, both running past the frame so
- * only the mouth shows a rounded end — the same construction the canvas uses,
- * and for the same reason: a column with four rounded corners floats where
- * these are meant to be cut out of the frame.
+ * only the mouth shows its capital — the same construction the canvas uses,
+ * and for the same reason: a column that ends in the air floats where these
+ * are meant to be cut out of the frame. They are dressed in the scene's own
+ * stone and moss, carried in as custom properties (`previewVars`) because the
+ * sheet may not name a scene colour; the runes on each capital are the page's
+ * accent, as they are in the round.
  *
- * **He is flying it, not being carried through it.** The bird holds no altitude
- * of his own: every rise is an impulse and everything between impulses is a
- * fall, which is what the game is and what the smooth sine wave here before was
- * not. See `pv-flap` in the sheet.
+ * **He is flying it, not being carried through it.** Pico holds no altitude of
+ * his own: every rise is an impulse and everything between impulses is a
+ * fall, which is what the game is. See `pv-swoop` in the sheet. His wing is
+ * two still frames of the real drawing — top and bottom of the stroke —
+ * swapped on a `steps()` keyframe, so even the beat costs no frame loop.
  *
  * `--gap` is where the hole is, and the two differ by less than
  * `FLIGHT.pipe.maxStep` allows, so the pair is a course the generator could
@@ -380,13 +363,15 @@ function Squawk() {
  * **The two heights and the bird's bob are one arrangement, not two.** A column
  * reaches him about three quarters of the way through its travel, and the second
  * is half a cycle ahead of the first, so he meets one of them at each end of his
- * bob — which is why the sheet times `pv-bob` to the *column* cycle rather than
- * to a rhythm of its own. Get that wrong and the preview shows him flying
+ * bob — which is why the sheet times `pv-course` to the *column* cycle rather
+ * than to a rhythm of its own. Get that wrong and the preview shows him flying
  * through a wall, which is the one thing the real game will not let you do.
  */
 function FlightPreview() {
+  const { palette } = useTheme();
   return (
-    <span className="pv-sky">
+    <span className="pv-sky" style={previewVars(palette.tone) as CSSProperties}>
+      <FlightBackdrop tone={palette.tone} accent={palette.primary} />
       {[
         { p: 0, gap: 40 },
         { p: 1, gap: 60 },
@@ -401,7 +386,7 @@ function FlightPreview() {
         </span>
       ))}
 
-      {/* The tap that does it. Squawk does not drift — somebody is flapping him,
+      {/* The tap that does it. Pico does not drift — somebody is flapping him,
           and a preview that leaves that out is showing a bird on a conveyor
           belt. The ring pulses on the same clock as the impulse, so what the
           card teaches is the control: press, and he climbs. */}
@@ -409,12 +394,15 @@ function FlightPreview() {
 
       {/* Two elements and two motions, composed. The wrapper flies the
           **course** — the slow drift that puts him in one gap and then the next
-          — and the sprite inside does the **flap**, the fast rise and the
+          — and the bird inside does the **flap**, the fast rise and the
           accelerating fall that is the actual game. One transform cannot do
           both: they have different periods, and the whole point is that the
           fast one rides on the slow one. */}
       <span className="pv-bird-path">
-        <Squawk />
+        <span className="pv-bird">
+          <Pico pose="flap" flap={0.75} className="pv-pico pv-pico-up" />
+          <Pico pose="flap" flap={0.25} className="pv-pico pv-pico-down" />
+        </span>
       </span>
     </span>
   );
@@ -528,8 +516,14 @@ function Options({ options }: { options: readonly string[] }) {
  * Which list is previewed follows the card: the English Word Builder shows an
  * English word and the local one shows the language of the city on the profile,
  * because a card should preview the round it is actually going to deal.
+ *
+ * Set in the study's own materials (`wordSceneStyle`), with Pico holding the
+ * clue as he does on the shelf — a still `<Pico>`, since the miniature's motion
+ * is the tiles' and a second animated bird per card would be a frame loop for a
+ * decoration.
  */
 function WordPreview({ list }: { list: WordList }) {
+  const { theme } = useTheme();
   const row = PREVIEW.word[list];
   /* The clue in the reader's language, the word in the list's. */
   const hint = useCopy().games.preview.word[list];
@@ -537,11 +531,16 @@ function WordPreview({ list }: { list: WordList }) {
   const keys = [...letters.slice(2), ...letters.slice(0, 2)];
 
   return (
-    <span className="pv-word">
-      <span className="pv-hint">{hint}</span>
+    <span className="pv-word" style={wordSceneStyle(theme)}>
+      <span className="pv-say">
+        <Pico size={40} />
+        <span className="pv-hint">{hint}</span>
+      </span>
+      {/* `data-l` is the letter again, for the accent overlay that marks the
+          whole row right at once (`::after` in the sheet). */}
       <span className="pv-slots">
         {letters.map((letter, i) => (
-          <i key={i} style={{ '--p': i } as CSSProperties}>
+          <i key={i} data-l={letter} style={{ '--p': i } as CSSProperties}>
             {letter}
           </i>
         ))}

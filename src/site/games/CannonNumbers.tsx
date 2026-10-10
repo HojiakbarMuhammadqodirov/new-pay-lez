@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useCopy } from '../i18n/context';
-import { fill } from '../i18n/currency';
-import { usePalette } from '../theme/context';
+import { useCopy, useLanguage } from '../i18n/context';
+import { fill, plural } from '../i18n/currency';
+import { useTheme } from '../theme/context';
 import { arcadeMilestones, arcadePoints } from './arcade';
 import {
-  ASPECT,
   BALL,
   CANNON,
   CANNON_PERFECT,
@@ -26,6 +25,8 @@ import {
   netHits,
   type Goal,
 } from './cannon/goals';
+import { MOTION } from './cannon/look';
+import { createHarbourScene, type HarbourScene, type HarbourView } from './cannon/scene';
 
 /**
  * Canon Numbers — a sum at the top, numbered targets drifting down, and a
@@ -44,11 +45,36 @@ import {
  * `server/domain/games.ts`). The session's opening `board` is the held game the
  * Flutter app still plays; this screen does not read it.
  *
+ * ## Two rules about time
+ *
+ * - **The ninety seconds are the game's own**, summed from the frames it
+ *   simulated, not read off the wall. The loop already capped a frame at 50 ms,
+ *   so a hidden tab froze the field — but the clock was wall time, and a player
+ *   who glanced at another tab came back to a round that had run out under a
+ *   field that had not moved. Now both stop together.
+ * - **A shot is judged by the sum it was fired at.** A hit deals a new sum at
+ *   once, so on "any multiple of 5" a quick second shot at another multiple —
+ *   right when it left the barrel — used to land on the *new* sum and cost a
+ *   point. A ball that strikes a number which answered the sum it was fired
+ *   at, after that sum has gone, is neither a hit nor a miss: the disc fades
+ *   and nothing is scored. It cannot score twice from one sum, so it is no
+ *   way to farm one.
+ *
  * ## Per frame, nothing goes through React
  *
  * Targets, balls, the barrel and the feedback marks live in refs and are
  * stepped and drawn in one `requestAnimationFrame` loop. React hears the goal
  * when it changes, the score when it changes and the clock in whole seconds.
+ *
+ * ## What it looks like
+ *
+ * A harbour at golden hour (the bay under a moon in dark): the numbers come
+ * down on balloons, the cannon is bronze on a ship's deck, and Pico is the
+ * cannoneer on a powder keg beside it — a beat of wing at every shot, a cheer
+ * for a right answer, a slump for a wrong one. `cannon/scene.ts` paints it and
+ * `cannon/look.ts` holds its palette and proportions. The painter only reads
+ * the refs below; every rule above is untouched by it. Between rounds a second,
+ * ambient loop keeps the harbour moving while the field is on screen.
  *
  * ## Reduced motion
  *
@@ -76,6 +102,9 @@ interface Ball {
   y: number;
   vx: number;
   vy: number;
+  /** The sum on the banner when this ball was fired, and which deal it was. */
+  goal: Goal;
+  deal: number;
 }
 
 interface Float {
@@ -99,9 +128,10 @@ export function CannonNumbers({
   onQuit: () => void;
 }) {
   const copy = useCopy().games;
-  const palette = usePalette();
-  const colors = useRef(palette);
-  colors.current = palette;
+  const [language] = useLanguage();
+  const { theme } = useTheme();
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
 
   const canvas = useRef<HTMLCanvasElement>(null);
   const still = useRef(reducedMotion());
@@ -116,8 +146,12 @@ export function CannonNumbers({
   const hits = useRef(0);
   const wrong = useRef(0);
   const goalRef = useRef<Goal>(dealGoal(0, Math.random));
+  /* Which sum is on the banner: one more on every correct hit. */
+  const deal = useRef(0);
   const font = useRef('sans-serif');
   const finished = useRef(false);
+  const done = useRef(onDone);
+  done.current = onDone;
 
   const [phase, setPhase] = useState<'ready' | 'playing' | 'over'>('ready');
   const [goal, setGoal] = useState<Goal>(goalRef.current);
@@ -175,157 +209,39 @@ export function CannonNumbers({
 
   /* ── drawing ── */
 
+  /* The picture: the harbour painter watches these refs and draws them as a
+     place (`cannon/scene.ts`); it never steps, scores or deals anything. */
+  const sceneRef = useRef<HarbourScene | null>(null);
+  if (!sceneRef.current) sceneRef.current = createHarbourScene(still.current);
+  const view = useRef<HarbourView>({ targets: [], balls: [], floats: [], angle: 0, shotAt: -Infinity, phase: 'ready', score: 0 });
+  const phaseRef = useRef<'ready' | 'playing' | 'over'>('ready');
+  phaseRef.current = phase;
+
   const paint = useCallback((now: number) => {
     const element = canvas.current;
     const context = element?.getContext('2d');
-    if (!element || !context) return;
-    const ratio = window.devicePixelRatio || 1;
+    const scene = sceneRef.current;
+    if (!element || !context || !scene) return;
+    const ratio = Math.min(window.devicePixelRatio || 1, MOTION.maxRatio);
     const width = element.clientWidth;
     const height = element.clientHeight;
+    if (!(width > 0)) return;
     if (element.width !== Math.round(width * ratio) || element.height !== Math.round(height * ratio)) {
       element.width = Math.round(width * ratio);
       element.height = Math.round(height * ratio);
     }
-    const k = width;
-    const { primary, onPrimary } = colors.current;
-    const calm = still.current;
+    scene.resize(width, ratio, themeRef.current === 'light' ? 'light' : 'dark', font.current);
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, width, height);
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-
-    /* The ground line: below it is the cannon's, and a target that reaches it is gone. */
-    context.globalAlpha = 0.25;
-    context.strokeStyle = primary;
-    context.lineWidth = 1;
-    context.setLineDash([4, 6]);
-    context.beginPath();
-    context.moveTo(0, TARGET.floorY * k);
-    context.lineTo(k, TARGET.floorY * k);
-    context.stroke();
-    context.setLineDash([]);
-
-    /* The aim line, so a keyboard player can see where a shot will go. */
-    const a = angle.current;
-    const tipX = CANNON.x + Math.sin(a) * CANNON.barrelLength;
-    const tipY = CANNON.y - Math.cos(a) * CANNON.barrelLength;
-    context.globalAlpha = 0.22;
-    context.setLineDash([2, 7]);
-    context.lineWidth = 2;
-    context.beginPath();
-    context.moveTo(tipX * k, tipY * k);
-    context.lineTo((tipX + Math.sin(a) * 0.55) * k, (tipY - Math.cos(a) * 0.55) * k);
-    context.stroke();
-    context.setLineDash([]);
-
-    /* Targets. */
-    const r = TARGET.radius;
-    for (const t of targets.current) {
-      const age = now - t.born;
-      const fadeIn = calm ? 1 : Math.min(1, age / TARGET.fadeMs);
-      if (t.state === 'live') {
-        context.globalAlpha = fadeIn;
-        context.fillStyle = primary;
-        context.beginPath();
-        context.arc(t.x * k, t.y * k, r * k, 0, Math.PI * 2);
-        context.fill();
-        const digits = String(t.value).length;
-        context.fillStyle = onPrimary;
-        context.font = `800 ${Math.round(r * k * (digits >= 3 ? 0.78 : 0.98))}px ${font.current}`;
-        context.fillText(String(t.value), t.x * k, t.y * k + 1);
-      } else if (t.state === 'hit') {
-        /* A correct hit: a ring that grows and fades — the accent saying yes. */
-        const p = Math.min(1, (now - (t.endAt - FEEDBACK.burstMs)) / FEEDBACK.burstMs);
-        context.globalAlpha = 1 - p;
-        context.strokeStyle = primary;
-        context.lineWidth = 4 * (1 - p) + 1;
-        context.beginPath();
-        context.arc(t.x * k, t.y * k, (r + (calm ? 0 : FEEDBACK.burstGrow * p)) * k, 0, Math.PI * 2);
-        context.stroke();
-      } else if (t.state === 'wrong') {
-        /* A wrong hit: the disc empties to an outline, crossed out, shakes, and
-           stays as long as its "−1" so the two are read together. */
-        const since = now - (t.endAt - FEEDBACK.wrongMs);
-        const shake = Math.min(1, since / FEEDBACK.shakeMs);
-        const dx = calm ? 0 : Math.sin(shake * Math.PI * 6) * FEEDBACK.shakeAmplitude * (1 - shake);
-        const cx = (t.x + dx) * k;
-        const cy = t.y * k;
-        context.globalAlpha = 1 - Math.min(1, since / FEEDBACK.wrongMs) * 0.8;
-        context.strokeStyle = primary;
-        context.lineWidth = 2.5;
-        context.beginPath();
-        context.arc(cx, cy, r * k, 0, Math.PI * 2);
-        context.stroke();
-        context.fillStyle = primary;
-        context.font = `800 ${Math.round(r * k * 0.9)}px ${font.current}`;
-        context.fillText(String(t.value), cx, cy + 1);
-        const s = r * k * 0.72;
-        context.lineWidth = 3;
-        context.beginPath();
-        context.moveTo(cx - s, cy - s);
-        context.lineTo(cx + s, cy + s);
-        context.moveTo(cx + s, cy - s);
-        context.lineTo(cx - s, cy + s);
-        context.stroke();
-      } else {
-        const p = Math.min(1, (now - (t.endAt - TARGET.fadeMs)) / TARGET.fadeMs);
-        context.globalAlpha = 1 - p;
-        context.fillStyle = primary;
-        context.beginPath();
-        context.arc(t.x * k, t.y * k, r * k, 0, Math.PI * 2);
-        context.fill();
-      }
-    }
-
-    /* Balls. */
-    context.globalAlpha = 1;
-    context.fillStyle = primary;
-    for (const b of balls.current) {
-      context.beginPath();
-      context.arc(b.x * k, b.y * k, BALL.radius * k, 0, Math.PI * 2);
-      context.fill();
-    }
-
-    /* The cannon: a barrel on a domed carriage, kicking back on a shot. */
-    const kick = calm ? 0 : Math.max(0, 1 - (now - lastShot.current) / CANNON.recoilMs) * CANNON.recoil;
-    context.save();
-    context.translate(CANNON.x * k, CANNON.y * k);
-    context.rotate(a);
-    context.fillStyle = primary;
-    const bw = CANNON.barrelWidth * k;
-    const reach = (CANNON.barrelLength - kick) * k;
-    context.beginPath();
-    context.roundRect(-bw / 2, -reach, bw, reach, bw * 0.3);
-    context.fill();
-    /* The muzzle band, a little wider than the barrel: the shape that says cannon. */
-    context.beginPath();
-    context.roundRect(-bw * 0.66, -reach, bw * 1.32, bw * 0.5, bw * 0.2);
-    context.fill();
-    context.restore();
-    context.beginPath();
-    context.arc(CANNON.x * k, CANNON.y * k, CANNON.baseRadius * k, Math.PI, 0);
-    context.closePath();
-    context.fill();
-    /* The plinth, rounded on top so the carriage reads as one piece. */
-    context.beginPath();
-    context.roundRect(
-      (CANNON.x - CANNON.baseRadius * 1.6) * k,
-      (CANNON.y - 0.004) * k,
-      CANNON.baseRadius * 3.2 * k,
-      (ASPECT - CANNON.y + 0.01) * k,
-      [CANNON.baseRadius * 0.5 * k, CANNON.baseRadius * 0.5 * k, 0, 0],
-    );
-    context.fill();
-
-    /* "+1" / "−1" over the target it belongs to. */
-    context.font = `800 ${Math.round(0.055 * k)}px ${font.current}`;
-    for (const f of floats.current) {
-      const p = Math.min(1, (now - f.at) / FEEDBACK.floatMs);
-      context.globalAlpha = 1 - p;
-      context.fillStyle = primary;
-      context.fillText(f.text, f.x * k, (f.y - (calm ? 0 : 0.06 * p)) * k);
-    }
-    context.globalAlpha = 1;
+    const v = view.current;
+    v.targets = targets.current;
+    v.balls = balls.current;
+    v.floats = floats.current;
+    v.angle = angle.current;
+    v.shotAt = lastShot.current;
+    v.phase = phaseRef.current;
+    v.score = netHits(hits.current, wrong.current);
+    scene.paint(context, now, v);
   }, []);
 
   /* Repaint at rest (ready screen, theme switch, resize) — the loop owns play. */
@@ -339,7 +255,37 @@ export function CannonNumbers({
     const onResize = () => paint(performance.now());
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [paint, palette]);
+  }, [paint, theme]);
+
+  /* Between rounds the harbour stays alive — clouds, gulls, the beam, Pico
+     blinking — but only while the field is on screen, and not at all under
+     reduced motion, where the paints above are the whole picture. */
+  useEffect(() => {
+    if (phase === 'playing') return;
+    if (still.current) {
+      paint(performance.now());
+      return;
+    }
+    const element = canvas.current;
+    let visible = true;
+    const observer =
+      element && 'IntersectionObserver' in window
+        ? new IntersectionObserver(([entry]) => {
+            visible = entry?.isIntersecting ?? true;
+          })
+        : null;
+    if (element) observer?.observe(element);
+    let frame = 0;
+    const loop = (now: number) => {
+      if (visible) paint(now);
+      frame = requestAnimationFrame(loop);
+    };
+    frame = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [phase, paint]);
 
   /* ── firing ── */
 
@@ -353,6 +299,8 @@ export function CannonNumbers({
       y: CANNON.y - Math.cos(a) * CANNON.barrelLength,
       vx: Math.sin(a) * BALL.speed,
       vy: -Math.cos(a) * BALL.speed,
+      goal: goalRef.current,
+      deal: deal.current,
     });
   }, []);
 
@@ -376,12 +324,19 @@ export function CannonNumbers({
   useEffect(() => {
     if (phase !== 'playing') return;
     let frame = 0;
-    const started = performance.now();
-    let last = started;
+    let last = performance.now();
+    /* Seconds of play simulated: the round's clock (see the header). */
+    let played = 0;
     let shownLeft = ROUND_SECONDS;
 
-    const strike = (t: Target, now: number) => {
+    const strike = (t: Target, now: number, ball: Ball) => {
       const right = answers(goalRef.current, t.value);
+      if (!right && ball.deal !== deal.current && answers(ball.goal, t.value)) {
+        /* Fired at the sum before this one, and right for it: forgiven. */
+        t.state = 'gone';
+        t.endAt = now + TARGET.fadeMs;
+        return;
+      }
       if (right) {
         hits.current += 1;
         t.state = 'hit';
@@ -390,6 +345,7 @@ export function CannonNumbers({
         const net = netHits(hits.current, wrong.current);
         const next = dealGoal(levelIndex(net), Math.random, goalRef.current);
         goalRef.current = next;
+        deal.current += 1;
         setGoal(next);
         setScore(net);
         setPulse((p) => ({ n: (p?.n ?? 0) + 1, kind: 'hit' }));
@@ -408,9 +364,10 @@ export function CannonNumbers({
     };
 
     const loop = (now: number) => {
-      const dt = Math.min(50, now - last) / 1000;
+      const dt = Math.min(50, Math.max(0, now - last)) / 1000;
       last = now;
-      const elapsed = (now - started) / 1000;
+      played += dt;
+      const elapsed = played;
       const level = levelFor(netHits(hits.current, wrong.current));
       const calm = still.current;
 
@@ -458,7 +415,7 @@ export function CannonNumbers({
           (t) => t.state === 'live' && Math.hypot(t.x - b.x, t.y - b.y) <= TARGET.radius + BALL.radius,
         );
         if (target) {
-          strike(target, now);
+          strike(target, now, b);
           continue;
         }
         if (b.y > -BALL.radius && b.x > -BALL.radius && b.x < 1 + BALL.radius) flying.push(b);
@@ -497,13 +454,13 @@ export function CannonNumbers({
       finished.current = true;
       const net = netHits(hits.current, wrong.current);
       const performance = cannonPerformance(hits.current, wrong.current);
-      onDone(arcadePoints(performance), arcadeMilestones(performance), net >= CANNON_PERFECT, net, {
+      done.current(arcadePoints(performance), arcadeMilestones(performance), net >= CANNON_PERFECT, net, {
         hits: hits.current,
         wrong: wrong.current,
       });
     }, END_MS);
     return () => window.clearTimeout(timer);
-  }, [phase, onDone]);
+  }, [phase]);
 
   /* ── keyboard: ← → (or A D) aim, Space / ↑ / W fires ── */
 
@@ -559,7 +516,7 @@ export function CannonNumbers({
         <span
           className="round-count cn-clock"
           data-warn={phase === 'playing' && left <= FEEDBACK.warnSeconds ? 'true' : undefined}
-          aria-label={fill(copy.cannon.timeLabel, { n: String(left) })}
+          aria-label={fill(plural(language, left, copy.cannon.timeLabel), { n: String(left) })}
         >
           {clock}
         </span>
@@ -595,13 +552,14 @@ export function CannonNumbers({
           </div>
         )}
         {phase === 'over' && (
-          <div className="ar-overlay" role="status">
+          <div className="ar-overlay ar-over-late" role="status">
             <p>{copy.cannon.over}</p>
           </div>
         )}
       </div>
 
-      <button type="button" className="link-btn round-quit" onClick={onQuit}>
+      {/* Off once the round is over: it is being banked (see Snake). */}
+      <button type="button" className="link-btn round-quit" onClick={onQuit} disabled={phase === 'over'}>
         {copy.quit}
       </button>
     </div>

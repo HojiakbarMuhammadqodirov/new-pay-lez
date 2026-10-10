@@ -42,26 +42,57 @@
  * the bound would still credit as perfect — must not be shorter. Measured at
  * a typical round (`typicalSeconds`, typical performance in the comment):
  *
- *   game            perfect at          typical round      pts/min (typ.)
- *   ─────────────── ─────────────────── ────────────────── ──────────────
- *   quiz ×3         5/5                 ~45 s, perf 60–80  ~15–19
- *   Word Builder    3 words, no hints   ~45 s, perf 70–100 ~17–24
- *   Memory Match    ≤10 moves           ~60 s, perf 72–85  ~13–15
- *   Bird's Flight   25 gaps             ~30 s, perf 20–60  ~8–22
- *   2048            the 2048 tile       ~4 min, perf 50–65 ~2–3
- *   Food Cross      2 000 in 20 swaps   ~75 s, perf ~80    ~11
- *   Food Ninja      50 foods            60 s, perf 60–100  ~11–18
- *   Snake           25 foods            ~60 s, perf 40–80  ~7–14
- *   Canon Numbers   25 net hits         90 s, perf 40–80   ~5–10
- *   Bounce Ball     the whole wall      ~60 s, perf 30–70  ~5–13
- *   Doodle Jump     50 platforms        ~50 s, perf 40–80  ~8–17
- *   Zuma            the whole chain     ~70 s, perf 40–80  ~6–12
+ *   game            perfect at         the round ends at…               typical            pts/min (typ.)
+ *   ─────────────── ────────────────── ──────────────────────────────── ────────────────── ──────────────
+ *   quiz ×3         5/5                five questions                   ~45 s, perf 60–80  ~15–19
+ *   Word Builder    3 words, no hints  three words                      ~45 s, perf 70–100 ~17–24
+ *   Memory Match    ≤10 moves          six pairs, or 90 s               ~60 s, perf 72–85  ~13–15
+ *   Bird's Flight   25 gaps            a crash                          ~30 s, perf 20–60  ~8–22
+ *   2048            the 2048 tile      no move left                     ~4 min, perf 50–65 ~2–3
+ *   Food Cross      2 000 in 20 swaps  twenty swaps                     ~75 s, perf ~80    ~11
+ *   Food Ninja      50 foods           60 s                             60 s, perf 50–90   ~9–16
+ *   Snake           25 foods           a crash, or 90 s                 ~45 s, perf 30–80  ~7–19
+ *   Canon Numbers   25 net hits        90 s                             90 s, perf 50–80   ~6–9
+ *   Bounce Ball     the whole wall     ball lost, wall cleared, 150 s   ~60 s, perf 20–60  ~4–11
+ *   Doodle Jump     50 platforms       a fall, the summit, or 90 s      ~45 s, perf 30–70  ~7–17
+ *   Zuma            the whole chain    the hole, chain cleared, 120 s   ~75 s, perf 30–80  ~4–11
  *
  * Points per minute at decay 1.00 on Free. Every arcade game sits at or below
  * the quizzes and Word Builder, which is the intended direction: the
  * question games are the L-Earn content, and an arcade game that paid better
  * per minute would empty them (rulebook §4.1, "if Bird's Flight paid more than
- * Memory Match, everyone would play Bird's Flight").
+ * Memory Match, everyone would play Bird's Flight"). Per **energy** they are
+ * level by construction — a round is a round — and the casual / good / perfect
+ * points a round pays are tabled under "Arcade economics" in `server/README.md`,
+ * with each figure's source (the rulebook's own typical points for the four
+ * the app plays, autopilot runs of this code for the timings).
+ *
+ * ## Every round ends, and the website shows when
+ *
+ * `roundSeconds` is the website's round: the clock its header counts down,
+ * and the latest a round can end. Each end is the game's own rather than a
+ * timeout bolted on — Snake is a 90-second race to grow (a crash still ends
+ * it), Doodle Jump a climb to a summit at the perfect height with 90 seconds
+ * to make it, and Bounce Ball and Zuma keep the rulebook's ends (the ball
+ * lost; the wall or chain cleared; the hole) and gain a clock only so that a
+ * ball caught in a loop or a chain pushed back again and again still
+ * finishes. Three rules hold for every row, and `verify:api` checks the first
+ * two:
+ *
+ *   - **a perfect round fits the clock**: `(perfect − allowance) /
+ *     unitsPerSecond` must not be longer than `roundSeconds`, or the bound
+ *     would refuse the very perfect round the clock just allowed;
+ *   - **the typical round fits it** (`typicalSeconds ≤ roundSeconds`);
+ *   - **the clock is the game's own**, so it stops with the game when the tab
+ *     is hidden. The server measures wall time from `started_at`, which is
+ *     never shorter, so a paused round is never clamped for having paused.
+ *
+ * Only Snake's end is this server's to enforce: it is replayed, so the replay
+ * stops where the clock does (`roundMs`, written into the round's secret at
+ * `/start` so a change here never moves a round in flight). The bounded games'
+ * clocks are the client's — the rate bound already caps any claim by the real
+ * elapsed time — and the Flutter app plays its versions with the rulebook's
+ * ends and no clock, which none of this re-scores.
  *
  * ## Caps, per round and per day
  *
@@ -92,6 +123,12 @@ export interface ArcadeEconomy {
   slackMs: number;
   /** A typical round, for the per-minute comparison only. */
   typicalSeconds: number;
+  /**
+   * The website's round, in seconds of the game's own clock: what its header
+   * counts down and the latest the round can end. Enforced here only for
+   * Snake, whose replay stops at it; see "Every round ends" above.
+   */
+  roundSeconds: number;
   /** A reported count's hard ceiling, however long the round ran. Unset where the level itself is the ceiling. */
   maxUnits?: number;
 }
@@ -102,12 +139,17 @@ export const ARCADE_ECONOMY: Readonly<
   /*
    * Snake — **replayed**: the server plays the reported turns again on the
    * round's own food list and counts what that game ate, held to the round's
-   * duration plus `slackMs`. 4 a food, so 25 is perfect. The rate bound is the
-   * replay itself (a tick is 140 ms falling to 70, and a food is ~8 cells
-   * away played well), so `unitsPerSecond` here is documentation of that
-   * floor rather than a second check: 25 foods × 8 cells × ~100 ms ≈ 20 s.
+   * duration plus `slackMs` **and to `roundSeconds` of the game's own clock**
+   * (the sum of its ticks), so the replay ends exactly where the screen's
+   * countdown did and turns reported after it are not played. 4 a food, so 25
+   * is perfect. The rate bound is the replay itself (a tick is 140 ms falling
+   * to 70, and a food is ~10 cells away), so `unitsPerSecond` here is
+   * documentation of that floor rather than a second check: a shortest-path
+   * autopilot on the real step needs 23–33 s of game time for 25 (median 29;
+   * 33–44 s when it wanders 15% of the time), which is why the clock is 90 s
+   * and not 60.
    */
-  snake: { measure: 'count', performancePerUnit: 4, unitsPerSecond: 1.25, allowance: 0, slackMs: 3000, typicalSeconds: 60 },
+  snake: { measure: 'count', performancePerUnit: 4, unitsPerSecond: 1.25, allowance: 0, slackMs: 3000, typicalSeconds: 45, roundSeconds: 90 },
   /*
    * Canon Numbers as the website plays it — **reported and bounded**: shoot
    * the number that answers the sum, `{hits, wrong}` at the end. 4 a net
@@ -118,6 +160,8 @@ export const ARCADE_ECONOMY: Readonly<
    * 90-second round; 1 a second plus 4 for clocks and latency makes a perfect
    * claim take at least 21 s. `maxUnits` is the ceiling on any claim. The
    * app's held board is scored separately (`cannonPerformancePerBlock`).
+   * `roundSeconds` mirrors `ROUND_SECONDS` in the same config file; a quick
+   * player answers 25 sums in ~60–70 s, so the perfect round fits.
    */
   cannon_numbers: {
     measure: 'count',
@@ -126,6 +170,7 @@ export const ARCADE_ECONOMY: Readonly<
     allowance: 4,
     slackMs: 0,
     typicalSeconds: 90,
+    roundSeconds: 90,
     maxUnits: 150,
   },
   /*
@@ -136,32 +181,49 @@ export const ARCADE_ECONOMY: Readonly<
    * above the wall. 1.2 a second plus 4 lets the best honest run through and
    * makes a perfect claim take at least 30 s. It was 4 a second, which
    * credited a whole wall nine seconds after `/start`.
+   *
+   * The clock is the longest of the six because the wall is slow to finish,
+   * not because the round is meant to be long: an autopilot that never misses
+   * and aims every return at an exposed brick clears the wall in 108–150 s
+   * (random aim: ~120–210 s), and no honest run came within 4 bricks of the
+   * rate bound. One ball (the rulebook's rule), so most rounds end with it
+   * long before the clock; the clock is what ends a ball caught in a loop.
    */
-  breakout: { measure: 'share', performancePerUnit: 0, unitsPerSecond: 1.2, allowance: 4, slackMs: 0, typicalSeconds: 60 },
+  breakout: { measure: 'share', performancePerUnit: 0, unitsPerSecond: 1.2, allowance: 4, slackMs: 0, typicalSeconds: 60, roundSeconds: 150 },
   /*
    * Doodle Jump — **bounded**: 2 a platform, so 50 is perfect. A jump peaks
    * 0.32 above its platform after 0.5 s and the gaps open from 0.15 to 0.26,
    * so two platforms a landing is possible only for the first nine or so and
    * one a landing after that: ~3 a second at the very start, ~1.3 for the rest.
    * 2 a second plus 5 makes a perfect claim take at least 22.5 s (it was 3 a
-   * second, 15 s).
+   * second, 15 s). An autopilot steering for the next platform reaches the
+   * 50th in 36–42 s and never comes within one platform of the bound, so the
+   * website's summit — the 50th platform, where its round ends won — and its
+   * 90-second clock leave a careful climber more than twice that.
    */
-  doodle_jump: { measure: 'count', performancePerUnit: 2, unitsPerSecond: 2, allowance: 5, slackMs: 0, typicalSeconds: 50 },
+  doodle_jump: { measure: 'count', performancePerUnit: 2, unitsPerSecond: 2, allowance: 5, slackMs: 0, typicalSeconds: 45, roundSeconds: 90 },
   /*
    * Zuma — **bounded**: a share of the 60-ball chain, counting chain balls
    * only. One shot is in flight at a time and travels ~0.6 field units at 1.7 a
    * second, and a three-match clears two chain balls and the shot, so even a
    * flawless shooter clears under three chain balls a second. 2.5 plus 6
    * makes a perfect claim take at least 21.6 s (it was 5 a second, 10.8 s).
+   *
+   * The hole is the round's real end (~73 s left alone; aiming autopilots
+   * reach it in 60–92 s having cleared 17–53). But clearing the front pulls
+   * the chain back, and an autopilot that played for that kept a chain alive
+   * for 400 s while clearing no more — so the website adds a 120-second clock
+   * as a backstop that a normal round never meets.
    */
-  zuma: { measure: 'share', performancePerUnit: 0, unitsPerSecond: 2.5, allowance: 6, slackMs: 0, typicalSeconds: 70 },
+  zuma: { measure: 'share', performancePerUnit: 0, unitsPerSecond: 2.5, allowance: 6, slackMs: 0, typicalSeconds: 75, roundSeconds: 120 },
   /*
    * Food Ninja — **bounded by the schedule**: a slice counts only for a food
    * the server's seeded schedule has in the air by the server's clock, once,
    * at most six a swipe. 2 a food, so 50 of the ~90 thrown is perfect; the
-   * round is a fixed 60 s, which is the time bound.
+   * round is a fixed 60 s (`DURATION_MS` in `domain/foodNinja.ts`), which is
+   * the time bound and the one clock here that is the server's, not the game's.
    */
-  food_ninja: { measure: 'count', performancePerUnit: 2, unitsPerSecond: 1, allowance: 0, slackMs: 1500, typicalSeconds: 60 },
+  food_ninja: { measure: 'count', performancePerUnit: 2, unitsPerSecond: 1, allowance: 0, slackMs: 1500, typicalSeconds: 60, roundSeconds: 60 },
 };
 
 export const CONFIG = {
@@ -1131,6 +1193,11 @@ export const CONFIG = {
     snakePerformancePerFood: ARCADE_ECONOMY.snake.performancePerUnit,
     /** How much longer than the round lasted a replay may run, in ms. */
     snakeSlackMs: ARCADE_ECONOMY.snake.slackMs,
+    /**
+     * The round's own clock, in seconds of ticks: the replay stops here, as the
+     * screen's countdown does. Copied into the secret at `/start` as `roundMs`.
+     */
+    snakeRoundSeconds: ARCADE_ECONOMY.snake.roundSeconds,
     /** Canon Numbers on the held board (the app): 4 a block destroyed, so 25 is a perfect round. */
     cannonPerformancePerBlock: 4,
     /** Canon Numbers as the website plays it: 4 a net hit, bounded by `ARCADE_ECONOMY.cannon_numbers`. */
@@ -1533,7 +1600,7 @@ export const CONFIG = {
    *
    * `timeoutMs` is short because a hung fetch holds a request on *this* server
    * for the sake of a picture the client already has a fallback for. The same
-   * argument `PAYLEZ_LLM_TIMEOUT_MS` makes, at a tenth the stakes.
+   * argument `PAYLEZ_LLM_REQUEST_MS` makes, at a tenth the stakes.
    */
   media: {
     /**
@@ -1694,14 +1761,19 @@ export const CONFIG = {
   /* ────────────────────────────────────────────────── the language model ── */
 
   /**
-   * The assistant's optional writer — see `ports/llm.ts` for what it may and may
-   * not do, which is the part that matters.
+   * The assistant's model — see `ports/llm.ts` for the loop and the guard, and
+   * `domain/assistantTools.ts` for the only things it is allowed to look at.
    *
    * Off unless *both* `PAYLEZ_LLM=live` and a key are set. Two switches rather
    * than one because they answer different questions: the key says whether a
    * model *can* be called, the flag says whether this deployment *wants* one.
    * A staging box with the production key in its environment should not start
    * spending on it because someone copied an env file.
+   *
+   * **Off, or failing, the assistant still answers** — from the deterministic
+   * router in `domain/assistant.ts`, which is what it was before the model
+   * answered anything. Every limit below is a ceiling after which that answer
+   * is sent instead, never a reason to return an error.
    */
   llm: {
     /**
@@ -1717,35 +1789,70 @@ export const CONFIG = {
     /** `live` turns it on; anything else (including unset) leaves it off. */
     mode: process.env.PAYLEZ_LLM ?? 'off',
     /**
-     * Claude Haiku 4.5.
+     * Claude Sonnet 5.5.
      *
-     * The job is to rewrite one already-correct sentence so it reads like a
-     * person wrote it — the facts, the figures and the action are decided by
-     * `domain/assistant.ts` before the model is called and are re-checked after
-     * it answers. That is a small job, it is on the request path of a chat
-     * panel, and it is the cheapest and fastest model in the family. Overridable
-     * so the model can be changed without a deploy.
+     * The job stopped being "reword one sentence" and became "answer the
+     * question": pick which of the assistant's tools to call, read what they
+     * return, and write a short answer in the reader's language without
+     * inventing a figure. That is multistep tool use on a chat panel, which is
+     * the Sonnet tier's job. `claude-haiku-5-5` is the cheaper option (about a
+     * twentieth of the price, noticeably weaker at choosing tools);
+     * `claude-opus-5-5` the strongest (twice the price, slower). Overridable so
+     * the model can be changed without a deploy, and the boot log names the one
+     * in use.
      */
-    model: process.env.PAYLEZ_LLM_MODEL ?? 'claude-haiku-4-5',
+    model: process.env.PAYLEZ_LLM_MODEL ?? 'claude-sonnet-5-5',
     /**
-     * Ceiling on the rewrite, in tokens.
-     *
-     * Small on purpose: the draft it is rewriting is one or two sentences, and a
-     * ceiling this low is a second, cruder guard against a model that decides to
-     * write an essay. A truncated rewrite fails the post-check below and the
-     * draft is used instead, so the failure mode is "no worse than off".
+     * `output_config.effort`. `low` is the documented starting point for chat:
+     * at `low` the model skips thinking on most simple requests, which is the
+     * difference between an answer in three seconds and one in ten. Sent only to
+     * models that accept it (`ports/llm.ts`, `acceptsEffort`).
      */
-    maxTokens: Number(process.env.PAYLEZ_LLM_MAX_TOKENS ?? 400),
+    effort: process.env.PAYLEZ_LLM_EFFORT ?? 'low',
     /**
-     * How long to wait before giving up and using the draft, ms.
+     * `max_tokens` on each call, **thinking included** — on the current models
+     * thinking counts against it even when its text is not returned. The answer
+     * itself is a few sentences; this is room for the reasoning around a tool
+     * call. A call that hits it is a failed answer (the deterministic one is
+     * sent), so it errs high: it is a ceiling, not a spend.
      *
-     * The assistant is a panel somebody is watching. Three seconds is roughly
-     * the point at which a person decides a chat is broken, and the draft is
-     * always ready — so waiting longer buys nothing but a worse answer later.
+     * `PAYLEZ_LLM_MAX_TOKENS` (400) and `PAYLEZ_LLM_TIMEOUT_MS` (3000) sized the
+     * old one-sentence rewrite and are **no longer read** — at those values a
+     * tool loop could never finish. The boot line says so if either is still set.
      */
-    timeoutMs: Number(process.env.PAYLEZ_LLM_TIMEOUT_MS ?? 3000),
-    /** The Messages API. Overridable for a proxy or a gateway. */
-    baseUrl: process.env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com',
+    maxTokens: Number(process.env.PAYLEZ_LLM_OUTPUT_TOKENS ?? 3000),
+    /** One Messages call, ms. A slow call is cut here and the loop gives up. */
+    requestTimeoutMs: Number(process.env.PAYLEZ_LLM_REQUEST_MS ?? 10_000),
+    /**
+     * The whole answer — every call and every tool in between — ms.
+     *
+     * The panel shows a thinking turn for as long as this takes, so it is the
+     * longest anybody waits before the deterministic answer arrives instead.
+     * Fifteen seconds is two or three tool rounds at chat effort, and it is set
+     * by the slowest client rather than by the model: the phone app gives up on
+     * any request at **20 s** (`ApiConfig.timeout`), so the server has to have
+     * answered — from the router, if it comes to that — with the network's
+     * share of those twenty still to spare. Raise this and the phone times out
+     * on exactly the answers that were about to fall back.
+     */
+    deadlineMs: Number(process.env.PAYLEZ_LLM_DEADLINE_MS ?? 15_000),
+    /** Rounds of tool calls before the model is made to answer with what it has. */
+    toolRounds: Number(process.env.PAYLEZ_LLM_TOOL_ROUNDS ?? 4),
+    /**
+     * The server-side refusal fallback (`fallbacks: "default"`), on the models
+     * that take it. A policy decline is re-run on Anthropic's recommended model
+     * instead of becoming a deterministic answer. `off` disables it; a request
+     * the API rejects *because* of it turns it off for the life of the process.
+     */
+    fallbacks: process.env.PAYLEZ_LLM_FALLBACKS !== 'off',
+    /**
+     * The Messages API. `PAYLEZ_LLM_BASE` points it at a proxy, a gateway — or
+     * at the fake endpoint `verify:api` scripts its conversations on, which is
+     * why it exists. `ANTHROPIC_BASE_URL` is still honoured underneath.
+     */
+    baseUrl: process.env.PAYLEZ_LLM_BASE ?? process.env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com',
+    /** The two variables the rewrite read, if they are still set — reported at boot, never read. */
+    retired: ['PAYLEZ_LLM_MAX_TOKENS', 'PAYLEZ_LLM_TIMEOUT_MS'].filter((name) => process.env[name] !== undefined),
   },
 
   /**

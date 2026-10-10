@@ -526,6 +526,8 @@ export async function migrate(db: PgDb): Promise<void> {
   /* NFC tags (`NFC.md`). Same lines in `db.ts`, for the reason `seq` gives. */
   await add('tag_registry', 'label', 'TEXT');
   await add('tag_registry', 'last_tap_at', 'TEXT');
+  /* Which path wrote an assistant answer. Same line in `db.ts`, for the reason `seq` gives. */
+  await add('assistant_messages', 'answered_by', 'TEXT');
 
   await db.exec(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_norm ON users (username_norm)',

@@ -555,6 +555,20 @@ export function openAssistant(text?: string): void {
   );
 }
 
+/**
+ * Closing the dock from somewhere that is not the dock — the Play screen's
+ * invite panel (`InvitePanel.tsx`), a modal sheet down the right. One side
+ * panel at a time: the invite panel closes the dock when it opens, and closes
+ * itself when `ASSISTANT_OPEN_EVENT` fires. The dock does **not** take focus
+ * back to its button on this close, because focus is on its way into whatever
+ * asked it to go.
+ */
+export const ASSISTANT_CLOSE_EVENT = 'paylez:assistant-close';
+
+export function closeAssistant(): void {
+  window.dispatchEvent(new Event(ASSISTANT_CLOSE_EVENT));
+}
+
 /* ─────────────────────────────────────────────────────────────── contact ── */
 
 /*

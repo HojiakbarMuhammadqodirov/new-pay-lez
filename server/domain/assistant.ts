@@ -2,22 +2,27 @@
  * The assistant — consumer §10 and partner B8.
  *
  * The architectural claim in both specs is the same and it is the only one that
- * matters: **the model composes from retrieved facts and never invents venues,
- * numbers or config.** So this module is a retrieval layer with a grounded
- * composer on top, and the language model — if one is used at all — sits behind
- * `ports/llm.ts` with the retrieved facts as its only input.
+ * matters: **the answer is composed from retrieved facts and never invents
+ * venues, numbers or config.** There are two ways an answer is made here, and
+ * both keep it:
  *
- * That ordering is deliberate. Retrieval first means the assistant's answers are
- * a function of the database, and the worst failure available to it is an
- * awkward sentence rather than a confident lie about a discount that does not
- * exist. Every answer here carries its `grounding` — the ids of the records it
- * was built from — which is stored on the message so any answer can be traced
- * back to what justified it.
+ * - **The model** (`ports/llm.ts`), when `PAYLEZ_LLM=live` and a key are set.
+ *   It answers the question itself — anything from "how do I get a PESEL" to
+ *   "which game should I play" — but it can only see what the tools in
+ *   `assistantTools.ts` read for *this* asker, and every figure it writes is
+ *   checked against what they returned before the answer leaves this process.
+ * - **The router** below, which is what the assistant was before the model
+ *   answered anything: the question is matched on a few words to the balance,
+ *   the streak, the vouchers or a catalogue search, and a deterministic
+ *   sentence is built from the rows. It answers when the model is off and
+ *   whenever the model fails — a timeout, a refusal, a figure it could not
+ *   ground — so the endpoint never errors because the model did.
  *
- * The composer below is deterministic and produces the shape both specs ask for:
- * "a sentence with a number, plus an action". With no LLM configured it *is* the
- * answer; with one configured it is the prompt's factual payload and the model
- * only rewrites the sentence.
+ * Either way the response is the one shape both clients already read — `text`,
+ * `facts`, `results`, `action`, `grounding`, `empty` — and the stored message
+ * records which of the two answered (`answered_by`). Every answer carries its
+ * `grounding`, the ids of the records it was built from, so any answer can be
+ * traced back to what justified it.
  */
 import type { Db } from '../db/db.ts';
 import * as llm from '../ports/llm.ts';
@@ -25,6 +30,9 @@ import * as analytics from './analytics.ts';
 import * as budget from './budget.ts';
 import * as deals from './deals.ts';
 import * as ledger from './ledger.ts';
+import * as team from './team.ts';
+import { consumerTools, partnerTools, type Gathered } from './assistantTools.ts';
+import { contextFor, systemFor } from './assistantPrompt.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
 import { now, type Iso } from './time.ts';
@@ -105,6 +113,13 @@ export async function partnerConversation(
   return input.sessionId;
 }
 
+/**
+ * Which path wrote an answer: the model; the router because the model was
+ * tried and failed; or the router because no model is configured. Stored on the
+ * message so "is the model actually answering?" is a query, not a guess.
+ */
+export type AnsweredBy = 'model' | 'fallback' | 'rules';
+
 async function appendMessage(
   db: Db,
   sessionId: string,
@@ -112,6 +127,7 @@ async function appendMessage(
   text: string,
   grounding: string[] = [],
   at: Iso = now(),
+  answeredBy: AnsweredBy | null = null,
 ): Promise<void> {
   const seq =
     ((await db.get<{ n: number | null }>(
@@ -119,8 +135,8 @@ async function appendMessage(
       { s: sessionId },
     ))?.n ?? 0) + 1;
   await db.run(
-    `INSERT INTO assistant_messages (id, session_id, seq, role, text, grounding, created_at)
-     VALUES ($i, $s, $q, $r, $t, $g, $at)`,
+    `INSERT INTO assistant_messages (id, session_id, seq, role, text, grounding, answered_by, created_at)
+     VALUES ($i, $s, $q, $r, $t, $g, $b, $at)`,
     {
       i: newId('msg'),
       s: sessionId,
@@ -128,10 +144,81 @@ async function appendMessage(
       r: role,
       t: text,
       g: JSON.stringify(grounding),
+      b: answeredBy,
       at,
     },
   );
   await db.run(`UPDATE assistant_sessions SET updated_at = $t WHERE id = $s`, { t: at, s: sessionId });
+}
+
+/**
+ * The conversation so far, as the model is shown it: the last few exchanges,
+ * oldest first, as plain text.
+ *
+ * Read **before** the new question is written, so it is the history and not
+ * the question. Text only — no tool results, no thinking — which is what keeps
+ * a stored conversation replayable to any model on any later day: there is
+ * nothing in it bound to the request that produced it. A follow-up that needs a
+ * figure again looks it up again.
+ */
+const HISTORY_MESSAGES = 6;
+
+async function historyOf(db: Db, sessionId: string): Promise<llm.Turn[]> {
+  const rows = await db.all<{ role: 'user' | 'assistant'; text: string }>(
+    `SELECT role, text FROM assistant_messages WHERE session_id = $s ORDER BY seq DESC LIMIT $n`,
+    { s: sessionId, n: HISTORY_MESSAGES },
+  );
+  return rows.reverse().map((row) => ({ role: row.role, text: row.text.slice(0, 1500) }));
+}
+
+/**
+ * The response a model answer is returned in — the router's shape, filled from
+ * what the tools read.
+ *
+ * - `facts` are the candidates whose figure the sentence actually writes: the
+ *   receipt under an answer is the figures *it* used, not everything looked at.
+ * - `results` are the rows a search or a place lookup read (or, for an answer
+ *   about spending points, the voucher rungs within reach) — the cards both
+ *   clients draw. The partner dashboard reads `results[0]` as one of its three
+ *   reports, so a partner answer carries none: its sentence *is* the answer.
+ * - `action` is the heaviest destination a tool proposed, or none.
+ */
+function assemble(text: string, gathered: Gathered, side: Side): Answer {
+  const facts: Fact[] = [];
+  const seen = new Set<string>();
+  for (const { fact, match } of gathered.candidates) {
+    const key = `${fact.kind}|${fact.label}|${String(fact.value)}`;
+    if (seen.has(key) || !llm.mentions(text, match)) continue;
+    seen.add(key);
+    facts.push(fact);
+    if (facts.length === 6) break;
+  }
+
+  const rows = (list: Array<Record<string, unknown>>, max: number) => {
+    const out: Array<Record<string, unknown>> = [];
+    const keys = new Set<string>();
+    for (const row of list) {
+      const key = `${String(row.id ?? row.venue_id)}|${String(row.name)}|${String(row.discount_pct ?? '')}`;
+      if (keys.has(key)) continue;
+      keys.add(key);
+      out.push(row);
+      if (out.length === max) break;
+    }
+    return out;
+  };
+  const results =
+    side === 'partner' ? [] : gathered.places.length > 0 ? rows(gathered.places, 8) : rows(gathered.tiers, 6);
+
+  let action: Answer['action'] = null;
+  let weight = -Infinity;
+  for (const entry of gathered.actions) {
+    if (entry.weight > weight) {
+      weight = entry.weight;
+      action = entry.action;
+    }
+  }
+
+  return { text, facts, results, action, grounding: [...new Set(gathered.grounding)], empty: false };
 }
 
 /* Scoped to the asker. It read any conversation by id alone, so a leaked id —
@@ -148,27 +235,14 @@ export const transcript = async (db: Db, sessionId: string, userId: string) =>
 /**
  * Ask the consumer assistant.
  *
- * Two jobs, decided by what the question is *about* rather than by an intent
- * classifier: if it names something findable, it is a search; if it names the
- * user's own state, it is an explanation. Anything else gets the honest
- * "I don't know, but here is the nearest real thing" of §10.2 — which is a
- * feature, not a fallback.
- */
-/**
- * Async because of two lines near the bottom, and only because of them.
+ * The model first, when there is one; the router when there is not or when the
+ * model could not produce a grounded answer. Both answers are written to the
+ * transcript the same way, so the daily meter (`assistantAsksToday`, counted
+ * off the user rows) and the audit trail do not care which one answered.
  *
- * Everything that decides *what* the answer is stays synchronous and stays
- * here: the retrieval, the figures, the results and the action are all computed
- * from the database before anything leaves this process. `llm.compose` is
- * handed the finished sentence and may return a better-reading one; with no
- * model configured it returns the string it was given, which is the default and
- * the state `verify:api` runs in.
- *
- * The rewrite happens **before** the transcript is written, and that ordering is
- * the point. The stored message is the audit trail — its `grounding` is what
- * lets an answer be traced back to the records that justified it — so persisting
- * the draft while returning the rewrite would leave the trail describing a
- * sentence nobody was ever shown.
+ * The answer is written **after** it is final — the model's checked text or the
+ * router's sentence — because the stored message is the audit trail, and a
+ * trail describing a sentence nobody was shown is no trail.
  */
 export async function askConsumer(
   db: Db,
@@ -176,28 +250,65 @@ export async function askConsumer(
 ): Promise<Answer> {
   const at = input.at ?? now();
   const language = input.language ?? 'en';
-  const text = input.text.trim().toLowerCase();
 
+  const history = input.sessionId ? await historyOf(db, input.sessionId) : [];
   if (input.sessionId) await appendMessage(db, input.sessionId, 'user', input.text, [], at);
 
+  let answer: Answer | null = null;
+  let by: AnsweredBy = 'rules';
+  if (llm.mode() === 'live') {
+    answer = await modelForConsumer(db, { ...input, language, at }, history);
+    by = answer ? 'model' : 'fallback';
+  }
+  answer ??= await routeConsumer(db, { ...input, language, at });
+
+  if (input.sessionId) await appendMessage(db, input.sessionId, 'assistant', answer.text, answer.grounding, at, by);
+  return answer;
+}
+
+async function modelForConsumer(
+  db: Db,
+  input: { userId: string; text: string; language: string; city?: string; at: Iso },
+  history: llm.Turn[],
+): Promise<Answer | null> {
+  const user = await db.get<{ city: string | null; country_code: string | null }>(
+    `SELECT city, country_code FROM users WHERE id = $u`,
+    { u: input.userId },
+  );
+  const city = input.city ?? user?.city ?? undefined;
+  const box = consumerTools(db, { userId: input.userId, language: input.language, city, at: input.at });
+  const result = await llm.ask({
+    system: await systemFor(db, 'consumer'),
+    context: contextFor({ at: input.at, language: input.language, city, country: user?.country_code }),
+    tools: box.specs,
+    history,
+    question: input.text,
+    run: box.run,
+  });
+  return result.ok ? assemble(result.text, box.gathered, 'consumer') : null;
+}
+
+/**
+ * The router: what the assistant answers with no model, and after a failed one.
+ *
+ * Two jobs, decided by what the question is *about* rather than by an intent
+ * classifier: if it names the user's own state, it is an explanation; anything
+ * else is a search, and a search that finds nothing gets the honest "I could
+ * not find that" of §10.2 with the nearest real thing to do.
+ */
+async function routeConsumer(
+  db: Db,
+  input: { userId: string; text: string; language: string; city?: string; at: Iso },
+): Promise<Answer> {
+  const text = input.text.trim().toLowerCase();
   const balance = await ledger.balance(db, input.userId);
-  const answer = /point|balance|punkt|баланс|ball/.test(text)
+  return /point|balance|punkt|баланс|ball/.test(text)
     ? await explainBalance(db, balance, input.city)
     : /streak|seria|стрик/.test(text)
       ? await explainStreak(db, input.userId)
       : /voucher|kupon|ваучер|discount|zniżk/.test(text)
         ? await explainVouchers(db, input.userId, balance, input.city)
-        : await searchCatalogue(db, { text, language, city: input.city, userId: input.userId, at });
-
-  answer.text = await llm.compose({
-    draft: answer.text,
-    facts: answer.facts,
-    language,
-    side: 'consumer',
-  });
-
-  if (input.sessionId) await appendMessage(db, input.sessionId, 'assistant', answer.text, answer.grounding, at);
-  return answer;
+        : await searchCatalogue(db, { text, language: input.language, city: input.city, userId: input.userId, at: input.at });
 }
 
 async function explainBalance(db: Db, balance: number, city: string | undefined): Promise<Answer> {
@@ -617,18 +728,64 @@ export async function review(db: Db, venueId: string, at: Iso = now(), limit = 5
 /**
  * B8 "answer": conversational access to the venue's own analytics.
  *
- * A sentence, a number, and an action — and when the number is suppressed by the
- * minimum cohort, it says so rather than rounding to something reportable.
+ * The model first, with the partner toolbox — every tool reads this one venue
+ * and re-checks, on every call, that the asker still manages it. The router
+ * otherwise: a sentence, a number and an action from the report the question's
+ * words point at, and when the number is suppressed by the minimum cohort it
+ * says so rather than rounding to something reportable.
+ *
+ * The access check is here as well as on the route. The route already refuses a
+ * venue the caller does not manage; this is so the *model* is never called on
+ * one, whoever calls this function.
  */
-/** Async for the one reason `askConsumer` is — see the note there. */
 export async function askPartner(
   db: Db,
-  input: { sessionId?: string; venueId: string; userId: string; text: string; at?: Iso },
+  input: { sessionId?: string; venueId: string; userId: string; text: string; language?: string; at?: Iso },
 ): Promise<Answer> {
   const at = input.at ?? now();
-  const text = input.text.trim().toLowerCase();
+  const language = input.language ?? 'en';
+  await team.requireManage(db, input.venueId, input.userId);
+
+  const history = input.sessionId ? await historyOf(db, input.sessionId) : [];
   if (input.sessionId) await appendMessage(db, input.sessionId, 'user', input.text, [], at);
 
+  let answer: Answer | null = null;
+  let by: AnsweredBy = 'rules';
+  if (llm.mode() === 'live') {
+    answer = await modelForPartner(db, { ...input, language, at }, history);
+    by = answer ? 'model' : 'fallback';
+  }
+  answer ??= await routePartner(db, { venueId: input.venueId, text: input.text, at });
+
+  if (input.sessionId) await appendMessage(db, input.sessionId, 'assistant', answer.text, answer.grounding, at, by);
+  return answer;
+}
+
+async function modelForPartner(
+  db: Db,
+  input: { venueId: string; userId: string; text: string; language: string; at: Iso },
+  history: llm.Turn[],
+): Promise<Answer | null> {
+  const venue = await getVenue(db, input.venueId);
+  const box = partnerTools(db, { userId: input.userId, venueId: input.venueId, language: input.language, at: input.at });
+  const result = await llm.ask({
+    system: await systemFor(db, 'partner'),
+    context: contextFor({
+      at: input.at,
+      language: input.language,
+      venue: { name: venue.name, city: venue.city, currency: venue.currency, timezone: venue.timezone },
+    }),
+    tools: box.specs,
+    history,
+    question: input.text,
+    run: box.run,
+  });
+  return result.ok ? assemble(result.text, box.gathered, 'partner') : null;
+}
+
+async function routePartner(db: Db, input: { venueId: string; text: string; at: Iso }): Promise<Answer> {
+  const at = input.at;
+  const text = input.text.trim().toLowerCase();
   const context = await venueContext(db, input.venueId, at);
   if (context.empty) {
     const answer = emptyContext(
@@ -637,7 +794,6 @@ export async function askPartner(
     );
     answer.facts = context.facts;
     answer.results = context.suggestions;
-    if (input.sessionId) await appendMessage(db, input.sessionId, 'assistant', answer.text, [], at);
     return answer;
   }
 
@@ -680,17 +836,6 @@ export async function askPartner(
       empty: false,
     };
   }
-
-  answer.text = await llm.compose({
-    draft: answer.text,
-    facts: answer.facts,
-    /* A partner session is opened in one language and stays in it, and this
-       endpoint carries no per-ask language to read. */
-    language: 'en',
-    side: 'partner',
-  });
-
-  if (input.sessionId) await appendMessage(db, input.sessionId, 'assistant', answer.text, answer.grounding, at);
   return answer;
 }
 

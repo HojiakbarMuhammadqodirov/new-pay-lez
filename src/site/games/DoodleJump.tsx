@@ -1,21 +1,34 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useReducedMotion } from '../../components/GlobeHero/hooks/useReducedMotion';
 import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
-import { usePalette } from '../theme/context';
+import { useTheme } from '../theme/context';
 import {
   DOODLE_PER_PLATFORM,
   DOODLE_PERFECT,
+  DOODLE_ROUND_SECONDS,
   arcadeMilestones,
   arcadePoints,
+  doodleAdvance,
+  doodleCentre,
   doodleHeights,
   doodlePlatforms,
+  doodleStart,
+  doodleSteerToward,
+  doodleTime,
   localRng,
+  type DoodleEnd,
+  type DoodleState,
 } from './arcade';
-import { PerfectBar, RoundClock } from './hud';
+import { EndVeil, PerfectBar, RoundClock } from './hud';
+import { JUMP_SCENE } from './jump/config';
+import { JumpScene, type JumpView } from './jump/scene';
 
 /**
- * Doodle Jump — bounce from platform to platform, as high as you can; falling
- * off the bottom ends the round. Scored on the highest platform stood on.
+ * Pico Jump (`doodle`) — Pico bounces from platform to platform up to the
+ * summit; falling off the bottom ends the round. Scored on the highest
+ * platform stood on. The game the server calls `doodle_jump`, under the name
+ * the app gives it.
  *
  * ## What the server can and cannot know
  *
@@ -26,22 +39,35 @@ import { PerfectBar, RoundClock } from './hud';
  * holds it to what the round's duration allows (`server/domain/arcade.ts`).
  * Without one the platforms are `localRng`'s.
  *
+ * ## The round ends: a fall, the summit, or the clock
+ *
+ * The server deals 400 platforms and the app climbs them without end; the
+ * website's level is the first `DOODLE_PERFECT` (50) — the height that is a
+ * perfect round — and the 50th is the **summit**: landing on it ends the round,
+ * won. It carries a flag and nothing is drawn above it, so the goal is plain
+ * the moment it scrolls into view. A fall still ends a round, as the
+ * rulebook has it, and `DOODLE_ROUND_SECONDS` of climbing ends one that has
+ * stopped going up — the jumper bounces on its own, so a player who never
+ * steered used to bounce on the floor for ever.
+ *
+ * ## The picture is `jump/scene.ts`, and it only reads
+ *
+ * The climb is drawn as a journey — jungle branches, then clouds, then
+ * floating rocks under the stars, to a flag on a snowy crag — by `JumpScene`,
+ * which is handed the jumper every frame and never writes to it. This file is
+ * the game exactly as it was: the same integrator, the same inputs, the same
+ * report. Between rounds (the ready veil, the beat after the end) a second,
+ * picture-only loop keeps the scene breathing; it steps nothing.
+ *
  * ## Per frame, nothing goes through React
  *
- * The jumper, the camera and the platforms live in refs and are stepped and
- * drawn in one loop; React hears about the height only when it rises.
+ * The jumper and the camera live in a ref and are stepped by `doodleAdvance`
+ * in fixed 1/120 s steps — the app's integrator, so a 60 Hz phone and a 144 Hz
+ * monitor fly the same arc — and drawn once a frame; React hears about the
+ * height when it rises and the clock when its whole second changes.
  */
 
 const END_MS = 900;
-/** Field heights per second squared, and the take-off speed it implies. */
-const GRAVITY = 2.6;
-/** Rises 0.32 of the field — above the widest gap, so every platform is reachable. */
-const JUMP = Math.sqrt(2 * GRAVITY * 0.32);
-/** Platform and jumper widths, as fractions of the field's width. */
-const PLATFORM_W = 0.2;
-const JUMPER_W = 0.09;
-/** How far a jumper may drift sideways, in field widths a second. */
-const DRIFT = 1.4;
 const ASPECT = 4 / 3;
 
 export function DoodleJump({
@@ -57,123 +83,120 @@ export function DoodleJump({
   onQuit: () => void;
 }) {
   const copy = useCopy().games;
-  const palette = usePalette();
+  const { theme, palette } = useTheme();
+  const reduced = useReducedMotion();
   const remote = Boolean(session && serverRound?.platforms?.length);
 
-  const xs = useRef<number[]>(remote ? serverRound!.platforms : doodlePlatforms(localRng));
-  const ys = useRef<number[]>(doodleHeights(xs.current.length));
-  /* Where each platform sits across the field — its centre — kept inside it. */
-  const centre = (n: number) => PLATFORM_W / 2 + xs.current[n] * (1 - PLATFORM_W);
-  const jumper = useRef({ x: 0.5, y: 0, vy: JUMP });
+  /* The level: the dealt platforms up to the summit, and no further. */
+  const level = useRef<{ centres: number[]; heights: number[] } | null>(null);
+  if (level.current === null) {
+    const xs = (remote ? serverRound!.platforms : doodlePlatforms(localRng)).slice(0, DOODLE_PERFECT);
+    level.current = { centres: xs.map(doodleCentre), heights: doodleHeights(xs.length) };
+  }
+  const jumper = useRef<DoodleState>(doodleStart());
   const target = useRef<number | null>(null);
   const keys = useRef({ left: false, right: false });
-  const camera = useRef(0);
-  const reachedRef = useRef(0);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const colors = useRef(palette);
-  colors.current = palette;
+
+  /* The picture: one scene for the round's life, told the theme and the phase. */
+  const scene = useRef<JumpScene | null>(null);
+  if (scene.current === null) {
+    scene.current = new JumpScene();
+    scene.current.setLevel(level.current.centres, level.current.heights);
+  }
+  const view = useRef<JumpView>({ phase: 'ready', end: null, steer: 0, reduced });
+  const look = useRef({ theme, accent: palette.primary });
+  look.current = { theme, accent: palette.primary };
+  view.current.reduced = reduced;
 
   const [phase, setPhase] = useState<'ready' | 'playing' | 'over'>('ready');
   const [reached, setReached] = useState(0);
+  const [left, setLeft] = useState(DOODLE_ROUND_SECONDS);
+  const [end, setEnd] = useState<DoodleEnd>('fell');
   const finished = useRef(false);
+  const done = useRef(onDone);
+  done.current = onDone;
+  view.current.phase = phase;
 
   const paint = useCallback(() => {
     const element = canvas.current;
     const context = element?.getContext('2d');
     if (!element || !context) return;
-    const ratio = window.devicePixelRatio || 1;
+    const ratio = Math.min(window.devicePixelRatio || 1, JUMP_SCENE.maxRatio);
     const width = element.clientWidth;
     const height = element.clientHeight;
-    if (element.width !== Math.round(width * ratio)) {
+    if (element.width !== Math.round(width * ratio) || element.height !== Math.round(height * ratio)) {
       element.width = Math.round(width * ratio);
       element.height = Math.round(height * ratio);
     }
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.clearRect(0, 0, width, height);
-    context.fillStyle = colors.current.primary;
-    const toY = (y: number) => height - (y - camera.current) * height;
-
-    /* The floor, while it is still on screen. */
-    if (camera.current < 0.05) {
-      context.globalAlpha = 0.35;
-      context.fillRect(0, toY(0), width, 3);
-    }
-    for (let n = 0; n < ys.current.length; n += 1) {
-      const y = ys.current[n];
-      if (y < camera.current - 0.05) continue;
-      if (y > camera.current + 1.05) break;
-      /* Climbed platforms are fainter: the next one up is the one to look at. */
-      context.globalAlpha = n < reachedRef.current ? 0.35 : 0.85;
-      context.beginPath();
-      context.roundRect((centre(n) - PLATFORM_W / 2) * width, toY(y), PLATFORM_W * width, height * 0.018, 4);
-      context.fill();
-    }
-    context.globalAlpha = 1;
-
-    /* The jumper: a rounded block with two eyes cut out, in the accent. */
     const j = jumper.current;
-    const size = JUMPER_W * width;
-    const px = j.x * width - size / 2;
-    const py = toY(j.y) - size;
-    context.beginPath();
-    context.roundRect(px, py, size, size, size * 0.3);
-    context.fill();
-    context.fillStyle = colors.current.background;
-    context.fillRect(px + size * 0.25, py + size * 0.3, size * 0.14, size * 0.18);
-    context.fillRect(px + size * 0.61, py + size * 0.3, size * 0.14, size * 0.18);
+    const v = view.current;
+    v.end = j.end;
+    /* The lean reads the steer the loop applies — the same pure rule, asked again. */
+    v.steer =
+      target.current !== null
+        ? doodleSteerToward(j.x, target.current)
+        : (keys.current.right ? 1 : 0) - (keys.current.left ? 1 : 0);
+    const s = scene.current!;
+    s.configure(width, height, ratio, look.current.theme, look.current.accent);
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    s.paint(context, j, v, performance.now());
   }, []);
 
   useEffect(() => {
     paint();
-  }, [paint, palette]);
+  }, [paint, theme, palette]);
+
+  /* A resized field rebuilds the scene's sheets; between frames, nothing else would. */
+  useEffect(() => {
+    const element = canvas.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => paint());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [paint]);
+
+  /* Between rounds the scene still breathes — fireflies, clouds, a blink, the
+     tumble after a fall. Picture only: this loop steps nothing. */
+  useEffect(() => {
+    if (phase === 'playing' || reduced) return;
+    let frame = 0;
+    const loop = () => {
+      paint();
+      frame = requestAnimationFrame(loop);
+    };
+    frame = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frame);
+  }, [phase, reduced, paint]);
 
   useEffect(() => {
     if (phase !== 'playing') return;
     let frame = 0;
     let last = performance.now();
+    let shown = -1;
     const loop = (now: number) => {
-      const dt = Math.min(0.04, (now - last) / 1000);
+      const dt = (now - last) / 1000;
       last = now;
       const j = jumper.current;
+      const { centres, heights } = level.current!;
 
-      /* Sideways: towards the finger, or by the keys; off one edge is on at the other. */
-      let dx = (keys.current.right ? 1 : 0) - (keys.current.left ? 1 : 0);
-      if (target.current !== null) {
-        const gap = target.current - j.x;
-        dx = Math.abs(gap) < 0.01 ? 0 : Math.max(-1, Math.min(1, gap * 8));
-      }
-      j.x += dx * DRIFT * dt;
-      if (j.x < 0) j.x += 1;
-      if (j.x > 1) j.x -= 1;
-
-      const before = j.y;
-      j.vy -= GRAVITY * dt;
-      j.y += j.vy * dt;
-
-      /* Landing: only on the way down, through a platform's top, inside its width. */
-      if (j.vy < 0) {
-        if (before >= 0 && j.y <= 0 && camera.current < 0.05) {
-          j.y = 0;
-          j.vy = JUMP;
-        }
-        for (let n = 0; n < ys.current.length; n += 1) {
-          const y = ys.current[n];
-          if (y > before) break;
-          if (j.y > y || before < y) continue;
-          if (Math.abs(j.x - centre(n)) > (PLATFORM_W + JUMPER_W) / 2) continue;
-          j.y = y;
-          j.vy = JUMP;
-          if (n + 1 > reachedRef.current) {
-            reachedRef.current = n + 1;
-            setReached(n + 1);
-          }
-          break;
-        }
+      /* Sideways: towards the finger, or by the keys. */
+      const steer =
+        target.current !== null
+          ? doodleSteerToward(j.x, target.current)
+          : (keys.current.right ? 1 : 0) - (keys.current.left ? 1 : 0);
+      const before = j.reached;
+      doodleAdvance(j, dt, steer, centres, heights, { summit: centres.length, seconds: DOODLE_ROUND_SECONDS });
+      if (j.reached !== before) setReached(j.reached);
+      const remaining = Math.max(0, Math.ceil(DOODLE_ROUND_SECONDS - doodleTime(j)));
+      if (remaining !== shown) {
+        shown = remaining;
+        setLeft(remaining);
       }
 
-      camera.current = Math.max(camera.current, j.y - 0.45);
       paint();
-      if (j.y < camera.current - 0.08) {
+      if (j.end) {
+        setEnd(j.end);
         setPhase('over');
         return;
       }
@@ -206,27 +229,29 @@ export function DoodleJump({
     const timer = window.setTimeout(() => {
       if (finished.current) return;
       finished.current = true;
-      const n = reachedRef.current;
+      const n = jumper.current.reached;
       const performance = Math.min(100, n * DOODLE_PER_PLATFORM);
-      onDone(arcadePoints(performance), arcadeMilestones(performance), n >= DOODLE_PERFECT, n, { reached: n });
+      done.current(arcadePoints(performance), arcadeMilestones(performance), n >= DOODLE_PERFECT, n, { reached: n });
     }, END_MS);
     return () => window.clearTimeout(timer);
-  }, [phase, onDone]);
+  }, [phase]);
 
   const aim = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
     target.current = Math.max(0, Math.min(1, (event.clientX - box.left) / box.width));
   };
 
+  const height = fill(copy.doodle.height, { n: `${reached} / ${DOODLE_PERFECT}` });
+
   return (
     <div className="round ar-round">
       <div className="round-top">
-        <span className="round-count">{fill(copy.doodle.height, { n: `${reached} / ${DOODLE_PERFECT}` })}</span>
-        <RoundClock running={phase === 'playing'} />
+        <span className="round-count">{height}</span>
+        <RoundClock left={left} />
       </div>
       <PerfectBar performance={reached * DOODLE_PER_PLATFORM} label={copy.perfectProgress} />
 
-      <div className="ar-field ar-tall" style={{ aspectRatio: `${1} / ${ASPECT}` }}>
+      <div className="ar-field ar-tall pj-field" style={{ aspectRatio: `${1} / ${ASPECT}` }}>
         <canvas
           ref={canvas}
           className="ar-canvas"
@@ -243,6 +268,7 @@ export function DoodleJump({
             target.current = null;
           }}
         />
+        {/* No host in this veil: Pico is already standing in the scene above it. */}
         {phase === 'ready' && (
           <div className="ar-overlay">
             <p>{copy.doodle.intro}</p>
@@ -252,13 +278,16 @@ export function DoodleJump({
           </div>
         )}
         {phase === 'over' && (
-          <div className="ar-overlay" role="status">
-            <p>{copy.doodle.over}</p>
-          </div>
+          <EndVeil
+            title={end === 'summit' ? copy.doodle.summit : end === 'time' ? copy.roundTime : copy.doodle.over}
+            detail={height}
+            pose={end === 'summit' ? 'happy' : end === 'time' ? 'idle' : 'sad'}
+          />
         )}
       </div>
 
-      <button type="button" className="link-btn round-quit" onClick={onQuit}>
+      {/* Off once the round is over: it is being banked (see Snake). */}
+      <button type="button" className="link-btn round-quit" onClick={onQuit} disabled={phase === 'over'}>
         {copy.quit}
       </button>
     </div>

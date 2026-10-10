@@ -1301,18 +1301,28 @@ function buildNinja(): Built {
 export const arcadeRng = (seed: string, tag: string): arcade.Rng => (n) =>
   createHmac('sha256', seed).update(`${tag}:${n}`).digest().readUInt32BE(0);
 
-/** Snake: the food list goes to the client, which has to draw it; the seed stays. */
+/**
+ * Snake: the food list goes to the client, which has to draw it; the seed stays.
+ *
+ * `roundMs` is the round's own clock (`ARCADE_ECONOMY.snake.roundSeconds`),
+ * written into the secret as well as sent, so the replay at `/finish` stops
+ * where *this* round's countdown did even if the config moved in between. A
+ * secret without it is a round opened before the clock existed, and is replayed
+ * with no clock — never re-scored by a rule it was not played under.
+ */
 function buildSnake(): Built {
   const seed = newId('gev');
+  const roundMs = CONFIG.games.snakeRoundSeconds * 1000;
   return {
     seed,
-    secret: { kind: 'snake', seed },
+    secret: { kind: 'snake', seed, roundMs },
     content: {
       cols: arcade.SNAKE_COLS,
       rows: arcade.SNAKE_ROWS,
       foods: arcade.snakeFoods(arcadeRng(seed, 'snake')),
       perFood: CONFIG.games.snakePerformancePerFood,
       perfectFoods: Math.ceil(100 / CONFIG.games.snakePerformancePerFood),
+      roundMs,
     },
   };
 }
@@ -3165,7 +3175,9 @@ function share(done: number, total: number): Scored {
 /**
  * Snake: the reported **turns**, replayed against this round's food list —
  * never a food count. `turns` is `[tick, dir]` pairs and `ticks` the tick the
- * round ended on; the replay is held to the round's own duration plus slack.
+ * round ended on; the replay is held to the round's real duration plus slack,
+ * and to its own clock (`roundMs`), whichever ends it first. Clamped, never
+ * refused: a report that runs past the clock is scored on the ticks inside it.
  */
 function scoreSnake(secret: Record<string, unknown>, report: Record<string, unknown>, elapsed: number): Scored {
   const list = arcade.snakeFoods(arcadeRng(String(secret.seed), 'snake'));
@@ -3174,7 +3186,10 @@ function scoreSnake(secret: Record<string, unknown>, report: Record<string, unkn
   for (const item of raw.slice(0, arcade.SNAKE_MAX_TURNS)) {
     if (Array.isArray(item) && item.length === 2) turns.push([Number(item[0]), Number(item[1])]);
   }
-  const played = arcade.snakeReplay(list, turns, Number(report.ticks) || 0, elapsed * 1000 + CONFIG.games.snakeSlackMs);
+  const roundMs = Number(secret.roundMs);
+  const clock = Number.isFinite(roundMs) && roundMs > 0 ? roundMs : Number.POSITIVE_INFINITY;
+  const maxMs = Math.min(elapsed * 1000 + CONFIG.games.snakeSlackMs, clock);
+  const played = arcade.snakeReplay(list, turns, Number(report.ticks) || 0, maxMs);
   return perUnit(played.eaten, CONFIG.games.snakePerformancePerFood);
 }
 

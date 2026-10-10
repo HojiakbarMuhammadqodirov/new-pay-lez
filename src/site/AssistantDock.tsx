@@ -6,13 +6,14 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
-import { ASSISTANT_OPEN_EVENT, type AssistantOpenDetail } from './content';
+import { ASSISTANT_CLOSE_EVENT, ASSISTANT_OPEN_EVENT, NAV_HREFS, type AssistantOpenDetail } from './content';
 import { Icon } from './icons';
 import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import { PATHS } from './router';
 import {
+  actionDestination,
   ask,
   isOutOfAsks,
   isUnreachable,
@@ -53,24 +54,29 @@ import {
  * This file used to end with "the composer is real; the answers are not" — the
  * reply was a canned line saying no model was connected, on the argument that a
  * fake answer dressed as a real one is the wrong kind of finished. That was
- * right, and it has expired: `api/assistant.ts` calls the server's retrieval
- * assistant, which composes from **this account's own points, vouchers, streak
- * and city** and may hand the sentence to a model to reword before returning it.
+ * right, and it has expired twice over: `api/assistant.ts` calls the server's
+ * assistant, and with a model configured that is Claude answering the question
+ * itself — points, games, vouchers, places, the newcomer's guide — from tools
+ * that read **this account's own** data and the platform's, never invented.
  *
  * Three things follow, and each of them is a state this panel now has to draw
  * rather than a line of copy it can print:
  *
- * - **A real call takes time**, and the model leg has a three-second timeout on
- *   the server. So there is a *thinking* turn, put in the thread the instant the
- *   question is sent rather than a spinner somewhere else: the question you just
- *   asked stays on screen with something happening under it, which is the whole
- *   difference between "it is working" and "did that send?".
+ * - **A real answer takes time** — a few seconds usually, up to the server's
+ *   fifteen-second deadline when it has several things to look up, and nothing
+ *   on this side times it out. So there is a *thinking* turn, put in the thread
+ *   the instant the question is sent rather than a spinner somewhere else: the
+ *   question you just asked stays on screen with something happening under it,
+ *   which is the whole difference between "it is working" and "did that send?".
+ *   Past a few seconds the dots say so in words (`thinkingLong`), because three
+ *   dots for fifteen seconds reads as stuck.
  * - **The facts are the receipt, not decoration.** Every figure in the sentence
- *   was checked against `answer.facts` on the server before it was returned
- *   (`onlyKnownNumbers`), so drawing the facts under the answer is what makes
- *   "640 points" something a reader can verify rather than something they have
- *   to trust. A panel that hid them would be asking for exactly the trust the
- *   server went to the trouble of not needing.
+ *   was checked on the server against what the lookups returned before it was
+ *   sent (`groundedNumbers`), and `answer.facts` are the figures the sentence
+ *   used — so drawing them under the answer is what makes "640 points"
+ *   something a reader can verify rather than something they have to trust. A
+ *   panel that hid them would be asking for exactly the trust the server went
+ *   to the trouble of not needing.
  * - **A refusal is a state and not an error.** Over the daily allowance the
  *   server refuses rather than quietly answering from a cheaper path — the note
  *   in `http/routes/consumer.ts` argues that — so "that is your questions for
@@ -83,7 +89,9 @@ import {
  * you can press. A venue row has an id and this site has no venue route to open
  * it in, and a row styled like a control that does nothing is the "picture of a
  * control" this repo's own rule forbids. The one thing that *is* pressable is
- * `answer.action`, because the server sent somewhere real to go.
+ * `answer.action` — read through `actionDestination`, because the server writes
+ * its hrefs in the phone app's words, and one that names no page here is not
+ * drawn at all.
  */
 
 /* ────────────────────────────────────────────────────────────────── turns ── */
@@ -123,14 +131,35 @@ type Turn =
 
 /* ─────────────────────────────────────────────────────────────── the reply ── */
 
-/** The three dots. Motion is CSS; `prefers-reduced-motion` stills them there. */
-function Thinking({ label }: { label: string }) {
+/**
+ * How long the dots go on alone before they say why, ms.
+ *
+ * A routed answer lands well inside it; a model answer with lookups often does
+ * not, and the server allows itself fifteen seconds before it answers from its
+ * router instead. Five is about where silence starts to read as a hang.
+ */
+const SLOW_AFTER_MS = 5_000;
+
+/**
+ * The three dots, and after a few seconds a line saying it is still looking.
+ *
+ * Motion is CSS; `prefers-reduced-motion` stills the dots there, and the line
+ * is text, which needs no stilling. The timer is per turn — this component
+ * mounts with the turn and unmounts when the answer replaces it.
+ */
+function Thinking({ label, slowLabel }: { label: string; slowLabel: string }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSlow(true), SLOW_AFTER_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
   return (
     <p className="ai-typing" role="status">
       <span className="visually-hidden">{label}</span>
       <span className="ai-dot" aria-hidden />
       <span className="ai-dot" aria-hidden />
       <span className="ai-dot" aria-hidden />
+      {slow && <span className="ai-typing-note">{slowLabel}</span>}
     </p>
   );
 }
@@ -182,14 +211,18 @@ function Results({ answer }: { answer: AssistantAnswer }) {
 }
 
 function Answer({ answer, onNavigate }: { answer: AssistantAnswer; onNavigate: () => void }) {
+  const nav = useCopy().nav;
+  /* The page on this site the server's href means, named in the reader's
+     language — or no link, when it means a screen this site does not have. */
+  const to = answer.action ? actionDestination(answer.action.href) : null;
   return (
     <>
       <p>{answer.text}</p>
       <Facts answer={answer} />
       <Results answer={answer} />
-      {answer.action && (
-        <a className="ai-action" href={answer.action.href} onClick={onNavigate}>
-          {answer.action.label}
+      {to && (
+        <a className="ai-action" href={NAV_HREFS[to]} onClick={onNavigate}>
+          {nav[to]}
           <Icon name="arrow" size={14} strokeWidth={2.4} />
         </a>
       )}
@@ -226,7 +259,7 @@ function Thread({
           {turn.from === 'you' ? (
             <p>{turn.text}</p>
           ) : turn.state === 'thinking' ? (
-            <Thinking label={copy.thinking} />
+            <Thinking label={copy.thinking} slowLabel={copy.thinkingLong} />
           ) : turn.state === 'answer' ? (
             <Answer answer={turn.answer} onNavigate={onNavigate} />
           ) : (
@@ -616,6 +649,18 @@ export function AssistantDock() {
     };
     window.addEventListener(ASSISTANT_OPEN_EVENT, onOpen);
     return () => window.removeEventListener(ASSISTANT_OPEN_EVENT, onOpen);
+  }, []);
+
+  /* Closed from somewhere else — the Play screen's invite panel opening (see
+     `closeAssistant`). Not `close()`: focus is going into that panel, not back
+     to this button. */
+  useEffect(() => {
+    const onClose = () => {
+      setOpen(false);
+      setOpening(null);
+    };
+    window.addEventListener(ASSISTANT_CLOSE_EVENT, onClose);
+    return () => window.removeEventListener(ASSISTANT_CLOSE_EVENT, onClose);
   }, []);
 
   const clearOpening = useCallback(() => setOpening(null), []);

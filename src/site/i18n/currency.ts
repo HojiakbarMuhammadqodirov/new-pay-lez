@@ -273,3 +273,44 @@ export function moneyParts(
 export function fill(template: string, values: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match);
 }
+
+/**
+ * A counted phrase, one wording per plural category the language tells apart.
+ *
+ * English has two (`1 day`, `2 days`). Polish, Russian and Ukrainian have three
+ * that whole numbers reach — one, few, many — and which a number takes is the
+ * language's rule rather than its last digit: 22 is `few` and 12 is `many` in
+ * all three, and Polish puts 21 under `many` where Russian puts it under `one`.
+ * `Intl.PluralRules` carries those rules, so a dictionary only carries words.
+ *
+ * `other` is the form every language has and the fallback for a category left
+ * out. A phrasing that does not agree with its number is a **plain string**
+ * instead — Uzbek, whose noun stays singular after a numeral (`5 kun`), and a
+ * label such as `Ruchy: {n}` or `Пройдено ворот: {n}`, which reads right at any
+ * count — so `en.ts` marks a counted key `as Counted` and the other dictionaries
+ * use whichever shape their grammar needs.
+ */
+export interface Plural {
+  one?: string;
+  few?: string;
+  many?: string;
+  other: string;
+}
+
+/** A counted phrase: forms per plural category, or one string that fits every count. */
+export type Counted = Plural | string;
+
+const PLURAL_RULES = new Map<string, Intl.PluralRules>();
+
+/** The wording of `forms` that `n` takes in `language`; holes are left for `fill`. */
+export function plural(language: LanguageCode, n: number, forms: Counted): string {
+  if (typeof forms === 'string') return forms;
+  let rules = PLURAL_RULES.get(language);
+  if (!rules) {
+    rules = new Intl.PluralRules(language);
+    PLURAL_RULES.set(language, rules);
+  }
+  const category = rules.select(n);
+  const form = category === 'one' || category === 'few' || category === 'many' ? forms[category] : undefined;
+  return form ?? forms.other;
+}

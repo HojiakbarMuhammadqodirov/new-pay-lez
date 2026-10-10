@@ -1755,6 +1755,12 @@ CREATE TABLE IF NOT EXISTS assistant_messages (
   -- answer can be traced back to what grounded it (§10.2).
   grounding  TEXT,
   created_at TEXT NOT NULL,
+  -- On an assistant row, which path wrote it: 'model' (Claude, tool-grounded),
+  -- 'fallback' (the model was tried and failed, the keyword router answered),
+  -- 'rules' (no model configured). NULL on question rows and on every row that
+  -- predates the column. No CHECK: added by `addColumn`, which cannot carry one
+  -- onto an existing table, and a fresh file and a migrated one must agree.
+  answered_by TEXT,
   UNIQUE (session_id, seq)
 );
 

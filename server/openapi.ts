@@ -1076,7 +1076,9 @@ const SCHEMAS: Record<string, Schema> = {
     type: 'object',
     description:
       'An assistant reply. Assembled from real records — `grounding` lists the ids it ' +
-      'was built from. It never invents a venue, a price or a number.',
+      'was built from. It never invents a venue, a price or a number: `facts` are the figures ' +
+      'the sentence used, `results` the venue, deal and directory rows (or voucher rungs) it read, ' +
+      '`action` the one place it points to.',
     properties: {
       text: str(),
       facts: arrayOf({ type: 'object' }),
@@ -2443,8 +2445,13 @@ const DOCS: Record<string, Doc> = {
   'POST /v1/assistant/ask': {
     summary: 'Ask the assistant',
     description:
-      'Two jobs: find things in the catalogue, and explain the account’s own data. ' +
-      'Returns structured results, not prose — render the cards, not the sentence alone.\n\n' +
+      'Answers any question about Paylez, the account’s own points, wallet, games and missions, ' +
+      'the places on Paylez and the newcomer’s guide. With a model configured on the server ' +
+      '(`PAYLEZ_LLM=live`) Claude answers in the reader’s language from tools bound to this ' +
+      'account, and every figure is checked against what they returned; otherwise, or when the ' +
+      'model fails, a keyword router answers. **The response shape is the same either way** — ' +
+      'render `facts` and `results`, not the sentence alone. A model answer can take several ' +
+      'seconds (the server gives up at 15 and answers from the router), so set no client timeout under ~20 s.\n\n' +
       'Metered per day by `assistant_uses_per_day` — 5 free, 20 on Pro, effectively ' +
       'uncapped on Premium — and **refused, never quietly degraded**, because a worse ' +
       'answer for an invisible reason is how somebody learns to distrust an assistant. ' +

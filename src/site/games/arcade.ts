@@ -15,7 +15,18 @@
  *   browser never plays it, so its copy was removed rather than left to rot.
  * - **The three physics games** draw the level the server dealt (bricks,
  *   platforms, chain) and report what happened; their physics live in their
- *   components.
+ *   components, except Doodle Jump's, which is here so `npm run verify` can fly
+ *   it at any frame rate and get the same climb.
+ *
+ * ## Every round ends
+ *
+ * Each game's round has a definite end, and the latest it can come is
+ * `roundSeconds` in the server's `ARCADE_ECONOMY` table — mirrored below as
+ * `…_ROUND_…` and held to it by `npm run verify`. The clock is always the
+ * **game's own** (ticks played, fixed steps taken), never the wall clock: it
+ * stops with the game when the tab is hidden, the screen's countdown and the
+ * game agree to the frame, and the server — which measures real elapsed time,
+ * never less — has no reason to clamp a round for having paused.
  *
  * Offline — the demo accounts and a dead backend — the levels come from
  * `localRng` instead, which is `Math.random` behind the same `n → uint32` shape.
@@ -38,6 +49,18 @@ const DX = [0, 1, 0, -1];
 const DY = [-1, 0, 1, 0];
 
 export const snakeTickMs = (eaten: number): number => Math.max(70, 140 - eaten * 3);
+
+/**
+ * The round: 90 seconds of the game's own clock — the ticks played, `ms` —
+ * after which the next tick is not taken. `ARCADE_ECONOMY.snake.roundSeconds`
+ * on the server, which sends it as `content.roundMs` and replays to it; this is
+ * the offline round's copy and the fallback for a server that did not send one.
+ */
+export const SNAKE_ROUND_MS = 90_000;
+
+/** Exactly the server's `snakeOutOfTime`: the next tick would end past the clock. */
+export const snakeOutOfTime = (state: { ms: number; eaten: number }, limitMs: number): boolean =>
+  state.ms + snakeTickMs(state.eaten) > limitMs;
 
 export const snakeFoods = (rng: Rng): number[] =>
   Array.from({ length: SNAKE_FOOD_LIST }, (_, n) => rng(n) % (SNAKE_COLS * SNAKE_ROWS));
@@ -116,11 +139,27 @@ export function breakoutWall(rng: Rng): number[] {
   });
 }
 
+/**
+ * Bounce Ball's clock, in seconds of play. The rulebook's ends stay — the one
+ * ball lost, or the wall cleared — and this is the third, for a ball caught in
+ * a loop that would otherwise never come down. Long because a whole wall is
+ * slow: a flawless, aiming autopilot needs 108–150 s (see the `breakout` row).
+ */
+export const BREAKOUT_ROUND_SECONDS = 150;
+
 /* ═════════════════════════════════════════════════════════════ Doodle Jump ══ */
 
 export const DOODLE_PLATFORMS = 400;
 export const DOODLE_PER_PLATFORM = 2;
 export const DOODLE_PERFECT = Math.ceil(100 / DOODLE_PER_PLATFORM);
+/**
+ * The climb's clock, in seconds of play. The website's level ends at the
+ * summit — platform `DOODLE_PERFECT`, the perfect round — and landing on it
+ * ends the round won; a fall ends it as before, and this ends a climber who
+ * stopped climbing (bouncing on one platform, or on the floor, for ever). An
+ * autopilot reaches the summit in 36–42 s, so 90 leaves a careful hand room.
+ */
+export const DOODLE_ROUND_SECONDS = 90;
 
 export const doodlePlatforms = (rng: Rng): number[] =>
   Array.from({ length: DOODLE_PLATFORMS }, (_, n) => (rng(n) % 1000) / 1000);
@@ -139,6 +178,142 @@ export function doodleHeights(count: number): number[] {
     y += doodleGap(n);
   }
   return heights;
+}
+
+/**
+ * Doodle Jump's physics, as a fixed-step integrator.
+ *
+ * It used to step once per animation frame, and that made the climb depend on
+ * the screen: semi-implicit Euler at a frame's `dt` peaks lower the longer the
+ * frame — 0.309 of the field at 60 Hz, 0.295 at 25 Hz, against the 0.32 the
+ * constants promise — so a phone dropping frames jumped measurably lower than
+ * a 144 Hz monitor, over gaps that open to 0.26. The Flutter app had already
+ * fixed this (`pico_jump.dart` steps a fixed 1/120 s and carries the
+ * remainder), and these are its numbers and its integrator, step for step, so
+ * the two clients fly the same arc at any frame rate. A frame longer than
+ * `maxFrame` is not integrated in one go: a tab coming back from the
+ * background resumes rather than leaping.
+ *
+ * Field units: `x` in field widths (0..1, wrapping), `y` in field heights.
+ */
+export const DOODLE = {
+  gravity: 2.6,
+  /** A bounce rises this far — above the widest gap, so every platform is reachable. */
+  peak: 0.32,
+  platformW: 0.2,
+  jumperW: 0.09,
+  /** Sideways speed at full steer, field widths a second. */
+  drift: 1.4,
+  /** The camera keeps the jumper this far above the bottom of the view. */
+  cameraLead: 0.45,
+  /** How far below the view the jumper may drop before the round is over. */
+  fallMargin: 0.08,
+  step: 1 / 120,
+  maxFrame: 0.04,
+} as const;
+export const DOODLE_JUMP_SPEED = Math.sqrt(2 * DOODLE.gravity * DOODLE.peak);
+
+/** How a climb ended: off the bottom, on the summit, or out of time. */
+export type DoodleEnd = 'fell' | 'summit' | 'time';
+
+export interface DoodleState {
+  x: number;
+  y: number;
+  vy: number;
+  /** The bottom of the view, in field heights. It only rises. */
+  camera: number;
+  /** The highest platform stood on, as a count (index + 1) — the report. */
+  reached: number;
+  /** Fixed steps taken: the round's clock is `steps × DOODLE.step`. */
+  steps: number;
+  carry: number;
+  end: DoodleEnd | null;
+}
+
+export const doodleStart = (): DoodleState => ({
+  x: 0.5,
+  y: 0,
+  vy: DOODLE_JUMP_SPEED,
+  camera: 0,
+  reached: 0,
+  steps: 0,
+  carry: 0,
+  end: null,
+});
+
+/** Platform `x` (0..1 as dealt) as the centre of a platform kept inside the field. */
+export const doodleCentre = (x: number): number => DOODLE.platformW / 2 + x * (1 - DOODLE.platformW);
+
+/** The finger rule: full steer toward `target`, proportional near it, still inside a dead zone. */
+export function doodleSteerToward(x: number, target: number): number {
+  const gap = target - x;
+  return Math.abs(gap) < 0.01 ? 0 : Math.max(-1, Math.min(1, gap * 8));
+}
+
+/** Seconds of climbing so far. */
+export const doodleTime = (state: DoodleState): number => state.steps * DOODLE.step;
+
+/**
+ * Advance the climb by a frame of `dt` seconds at `steer` (−1..1), in as many
+ * fixed steps as are owed. `centres` and `heights` are the level — the website
+ * passes the first `summit` platforms, so the level visibly ends at the top —
+ * and `limits` the two ends that are not a fall. Mutates `state`: it is the
+ * per-frame object a ref holds, and a loop at 120 steps a second should not
+ * allocate.
+ */
+export function doodleAdvance(
+  state: DoodleState,
+  dt: number,
+  steer: number,
+  centres: readonly number[],
+  heights: readonly number[],
+  limits: { summit: number; seconds: number },
+): void {
+  if (state.end) return;
+  state.carry += Math.min(DOODLE.maxFrame, Math.max(0, dt));
+  const lastStep = Math.round(limits.seconds / DOODLE.step);
+  while (state.carry >= DOODLE.step && !state.end) {
+    state.carry -= DOODLE.step;
+    doodleStep(state, steer, centres, heights);
+    if (state.reached >= limits.summit) state.end = 'summit';
+    else if (state.y < state.camera - DOODLE.fallMargin) state.end = 'fell';
+    else if (state.steps >= lastStep) state.end = 'time';
+  }
+}
+
+/** One fixed step — `pico_jump.dart`'s `step`, line for line. */
+function doodleStep(state: DoodleState, steer: number, centres: readonly number[], heights: readonly number[]): void {
+  const h = DOODLE.step;
+  state.steps += 1;
+  const dx = Math.max(-1, Math.min(1, steer));
+  state.x += dx * DOODLE.drift * h;
+  /* Off one edge is on at the other. */
+  if (state.x < 0) state.x += 1;
+  if (state.x > 1) state.x -= 1;
+
+  const before = state.y;
+  state.vy -= DOODLE.gravity * h;
+  state.y += state.vy * h;
+
+  /* Landing: only on the way down, through a platform's top, inside its width. */
+  if (state.vy < 0) {
+    if (before >= 0 && state.y <= 0 && state.camera < 0.05) {
+      state.y = 0;
+      state.vy = DOODLE_JUMP_SPEED;
+    }
+    const reach = (DOODLE.platformW + DOODLE.jumperW) / 2;
+    for (let n = 0; n < heights.length; n += 1) {
+      const top = heights[n];
+      if (top > before) break;
+      if (state.y > top || before < top) continue;
+      if (Math.abs(state.x - centres[n]) > reach) continue;
+      state.y = top;
+      state.vy = DOODLE_JUMP_SPEED;
+      if (n + 1 > state.reached) state.reached = n + 1;
+      break;
+    }
+  }
+  state.camera = Math.max(state.camera, state.y - DOODLE.cameraLead);
 }
 
 /* ════════════════════════════════════════════════════════════════════ Zuma ══ */
@@ -160,6 +335,16 @@ export function zumaChain(rng: Rng): number[] {
 
 export const zumaShots = (rng: Rng): number[] =>
   Array.from({ length: ZUMA_SHOTS }, (_, n) => rng(10_000 + n) % ZUMA_COLORS);
+
+/**
+ * Zuma's clock, in seconds of play — a backstop rather than the end. The hole is
+ * the end (~73 s for a chain left alone); but clearing the front pulls the chain
+ * back, and nothing else stops a player doing that for ever. Two minutes is past
+ * every round an aiming autopilot played to the hole (60–92 s).
+ */
+export const ZUMA_ROUND_SECONDS = 120;
+/** The fixed step the chain and the shot move in — the app's (`picuma.dart`). */
+export const ZUMA_STEP = 1 / 60;
 
 /* ═══════════════════════════════════════════════════════════ the scale ══ */
 

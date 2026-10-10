@@ -23,18 +23,27 @@
  * it apologises for, and `isPlanLocked` exists so it is never drawn with a
  * retry button: pressing one would spend a request to be told the same thing.
  *
- * ## What comes back is structure, and the screen writes the sentence
+ * ## What comes back is structure — or, from the model, the answer itself
  *
- * The partner composer speaks English only (`askPartner` hands `llm.compose`
- * `language: 'en'`), writes money into its prose as raw minor units ("You spent
- * 12000 on …") and interpolates a withheld metric as the word `null`. None of
- * that can be put in front of an owner reading in Polish. What *can* be is what
- * the sentence was built from, which every answer carries: `results[0]` is the
- * heat map, the cost report or the overview the server read. `readAnswer`
+ * `askPartner` answers in one of two ways and the response says which by its
+ * shape, not by a new field.
+ *
+ * **The keyword router** speaks English only, writes money into its prose as
+ * raw minor units ("You spent 12000 on …") and interpolates a withheld metric
+ * as the word `null`. None of that can be put in front of an owner reading in
+ * Polish. What *can* be is what the sentence was built from: `results[0]` is
+ * the heat map, the cost report or the overview the server read. `readAnswer`
  * recognises those three shapes and the empty-venue answer, so the screen can
  * say the same thing from the same figures in the reader's language and
  * currency. A shape it does not recognise is quoted verbatim — the server's own
  * words, marked as English — rather than guessed at.
+ *
+ * **The model** (when the server has one) answers the question in the reader's
+ * language — `askAssistant` sends it — from tools that read this one venue,
+ * with every figure checked against them before it is sent. Its answer carries
+ * **no** `results`: the sentence is the answer, and `results[0]` being a report
+ * is what would make this screen replace it. So an answer with no rows that is
+ * not the empty-venue answer is `prose`, drawn as written.
  *
  * ## No conversation id, and why
  *
@@ -165,11 +174,18 @@ export const useAssistantReview = (venueId: string | null) =>
 const assistantPath = (venueId: string, what: 'ask' | 'draft') =>
   `/v1/partner/venues/${encodeURIComponent(venueId)}/assistant/${what}`;
 
-/** One question. `text` is capped at 500 on the server; the composer caps it too. */
-export const askAssistant = (input: { venueId: string; text: string; signal?: AbortSignal }) =>
+/**
+ * One question. `text` is capped at 500 on the server; the composer caps it too.
+ * `language` is the screen's, sent as the header like every other call that
+ * reads translated content. The server prefers the account's own setting —
+ * which `AuthProvider` keeps in step with the switcher — and a model answer is
+ * written in whichever it settles on.
+ */
+export const askAssistant = (input: { venueId: string; text: string; language?: string; signal?: AbortSignal }) =>
   call<PartnerAnswer>(assistantPath(input.venueId, 'ask'), {
     method: 'POST',
     body: { text: input.text },
+    language: input.language,
     signal: input.signal,
   });
 
@@ -304,12 +320,18 @@ export type AnswerReading =
       salesMinor: Metric | null;
       averageCheckMinor: Metric | null;
     }
+  | { shape: 'prose' }
   | { shape: 'unknown' };
 
 export function readAnswer(answer: PartnerAnswer): AnswerReading {
   if (answer.empty) {
     return { shape: 'starts', suggestions: answer.results.filter(isSuggestion) };
   }
+
+  /* The model's answer: no report behind it to re-say, because the sentence
+     already is the answer, in the reader's language. The router always sends
+     the report it read, so an answer with none can only be this. */
+  if (answer.results.length === 0) return { shape: 'prose' };
 
   const first = answer.results[0];
   if (!isRecord(first)) return { shape: 'unknown' };

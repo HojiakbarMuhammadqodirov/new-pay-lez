@@ -12,7 +12,9 @@
  *   made. The client reports its turns; this file plays them again and counts
  *   what *that* game ate. A client cannot report a food it did not reach,
  *   because there is no food count in the report at all. The replay is also
- *   held to the clock: it may not have played longer than the round lasted.
+ *   held to two clocks: it may not have played longer than the round lasted,
+ *   and it stops at the round's own end — `roundMs` of ticks, the 90 seconds
+ *   the screen counts down (`snakeOutOfTime`, the same rule on both sides).
  * - **Canon Numbers is held.** Turn-based, like 2048: the board lives in the
  *   session's secret, each shot is applied here, and the new row of blocks
  *   comes from a seed the client never sees.
@@ -52,6 +54,17 @@ const DY = [-1, 0, 1, 0];
 
 /** A tick's length: the snake quickens as it eats, down to a floor. */
 export const snakeTickMs = (eaten: number): number => Math.max(70, 140 - eaten * 3);
+
+/**
+ * Whether the round's clock has run out before the next tick: that tick would
+ * end past `limitMs` of play. The round's clock is the **game's own** — the sum
+ * of the ticks played, `state.ms` — not a wall clock, so the screen and this
+ * replay stop on exactly the same tick however the frames fell, and a round
+ * paused in a hidden tab loses none of its time. The website's copy is the
+ * same line; both suites pin the tick a circling snake stops on.
+ */
+export const snakeOutOfTime = (state: { ms: number; eaten: number }, limitMs: number): boolean =>
+  state.ms + snakeTickMs(state.eaten) > limitMs;
 
 export const snakeFoods = (rng: Rng): number[] =>
   Array.from({ length: SNAKE_FOOD_LIST }, (_, n) => rng(n) % (SNAKE_COLS * SNAKE_ROWS));
@@ -128,9 +141,11 @@ export function snakeStep(state: SnakeState, list: number[], turn?: Dir): SnakeS
  *
  * `turns` are `[tick, dir]` pairs — the tick a turn was applied *before*. The
  * replay stops at the first of: a crash, the reported end tick, or the point
- * where the ticks played would have taken longer than `maxMs`, the round's own
- * duration plus slack. The last is what stops a client replaying a perfect run
- * at a pace no hand could keep.
+ * where the ticks played would run past `maxMs`. The caller passes the smaller
+ * of two limits there — the round's real duration plus slack, which stops a
+ * client replaying a perfect run at a pace no hand could keep, and the round's
+ * own clock (`roundMs`), which is where the screen's countdown ended it — so a
+ * turn reported after the end is simply never played.
  */
 export function snakeReplay(
   list: number[],
@@ -148,7 +163,7 @@ export function snakeReplay(
   let state = snakeStart(list);
   const last = Math.min(Math.max(0, Math.floor(endTick)), SNAKE_MAX_TICKS);
   while (!state.dead && state.tick < last) {
-    if (state.ms + snakeTickMs(state.eaten) > maxMs) break;
+    if (snakeOutOfTime(state, maxMs)) break;
     const asked = byTick.get(state.tick);
     /* Several turns on one tick: each is checked against the direction the one
        before it left, and the last that is legal is the one taken. */

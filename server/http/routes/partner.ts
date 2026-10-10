@@ -1083,7 +1083,9 @@ export const partnerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/partner/venues/:id/assistant/ask',
     auth: 'partner',
-    /* Async for the one reason the consumer's ask is — see `ports/llm.ts`. */
+    /* The model answers when one is configured, with tools that read this one
+       venue (`domain/assistantTools.ts`); the keyword router answers when not,
+       or when the model fails. Same response shape either way. */
     handler: async (ctx) => {
       const venue = await mine(ctx);
       entitlements.requireEntitlement(await entOf(ctx, venue.id), 'assistant');
@@ -1097,6 +1099,9 @@ export const partnerRoutes: Route[] = [
         venueId: venue.id,
         userId: actor(ctx).user.id,
         text: str(ctx.body, 'text', { max: 500 }),
+        /* The reader's language — the model answers in it. The router's
+           sentences stay English, as the dashboard already expects. */
+        language: ctx.language,
         at: ctx.at,
       });
     },
